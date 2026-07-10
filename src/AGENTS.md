@@ -12,10 +12,18 @@ on the Rust side, not here.
 - **Strict TypeScript.** No `any`, no `@ts-ignore` / `@ts-expect-error`. Fix types
   properly.
 - **Components stay small** (~200 lines max). Split when they grow.
+- **No `<StrictMode>`.** `main.tsx` renders `<App />` bare, on purpose. StrictMode's
+  dev-only double-invoke of effects would spawn and then immediately tear down real
+  OS resources (terminal PTYs, and later embedded webviews) — those aren't
+  idempotent React state, so the double-mount actively breaks them. Don't re-add it.
 - **Tailwind v4, no config file.** Styling is `@import "tailwindcss"` in
   `index.css` plus utility classes, wired through the `@tailwindcss/vite` plugin.
   Do **not** add `tailwind.config.js` or a PostCSS pipeline — that's the v3 way and
-  will fight the v4 setup.
+  will fight the v4 setup. The color theme is defined once as `@theme` tokens in
+  `index.css` (the single source for chrome colors, e.g. `bg-sidebar`,
+  `text-foreground`). Biome's CSS parser rejects `@theme` as an unknown at-rule, so
+  `biome.json` sets `css.parser.tailwindDirectives` — that flag exists only to teach
+  the linter v4 syntax, not to relax or swap tooling.
 - **No magic numbers.** Ports, timeouts, limits, and the project **color palette**
   are named constants. The palette lives in exactly one place (`src/lib`) and is
   the single source of truth — Rust just stores whatever hex string it receives.

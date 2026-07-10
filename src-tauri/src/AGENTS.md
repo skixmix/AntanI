@@ -32,6 +32,13 @@ belongs here.
   its capability — leave no dead grants.
 - **No panics on user-reachable paths.** No `unwrap`/`expect` on input or file
   contents. A single `expect` at `run()` startup is acceptable.
+- **Terminal PTYs are session-only and must leave zero orphans.** They live in an
+  in-memory map keyed by tab id — never persisted, because tabs are ephemeral. A
+  `PtySession` kills its child on `Drop`, so closing a tab (removing it from the
+  map) reaps that process, and on app quit `RunEvent::Exit` clears the whole map so
+  nothing survives. Dropping the PTY **master** closes the pty and SIGHUPs the
+  foreground process group, so a shell's children (e.g. `htop`) die with it — don't
+  downgrade this to killing only the shell pid.
 
 ## Testing: behavior, not brittle
 

@@ -1,6 +1,25 @@
 @import "tailwindcss";
 
-/* AntanI base theme. Full polish pass happens in Phase 5. */
+/* Tailwind v4 @theme: each token auto-generates bg-/text-/border-/ring- utilities. */
+@theme {
+  --color-background: #1e2025;
+  --color-foreground: #c8c5bc;
+  --color-card: #252830;
+  --color-popover: #252830;
+  --color-primary: #d4622a;
+  --color-primary-foreground: #1e2025;
+  --color-secondary: #2d3038;
+  --color-muted: #2d3038;
+  --color-muted-foreground: #8a8b90;
+  --color-accent: #363a42;
+  --color-tertiary: #181a1e;
+  --color-destructive: #c94040;
+  --color-border: #363a42;
+  --color-sidebar: #181a1e;
+  --color-sidebar-foreground: #b8b6ae;
+  --color-ring: #d4622a;
+}
+
 :root {
   color-scheme: dark;
 }
@@ -13,8 +32,8 @@ body,
 }
 
 body {
-  background-color: #0d0d0f;
-  color: #e7e7ea;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;

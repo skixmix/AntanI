@@ -11,7 +11,7 @@ export function ColorPicker({ selected, onPick, onClose }: ColorPickerProps) {
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="absolute right-0 z-50 mt-1 grid grid-cols-5 gap-1.5 rounded-lg border border-white/10 bg-[#1a1a1f] p-2 shadow-xl">
+      <div className="absolute right-0 z-50 mt-1 grid grid-cols-5 gap-1.5 rounded-lg border border-border bg-popover p-2 shadow-xl">
         {PROJECT_COLORS.map((color) => (
           <button
             key={color}
@@ -23,7 +23,7 @@ export function ColorPicker({ selected, onPick, onClose }: ColorPickerProps) {
               onClose();
             }}
             className={`h-5 w-5 rounded-full transition-transform hover:scale-110 ${
-              selected === color ? "ring-2 ring-white" : "ring-1 ring-white/20"
+              selected === color ? "ring-2 ring-primary" : "ring-1 ring-border"
             }`}
             style={{ backgroundColor: color }}
           />

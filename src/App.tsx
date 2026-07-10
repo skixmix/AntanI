@@ -3,16 +3,31 @@ import { Sidebar } from "./components/Sidebar";
 import { Workspace } from "./components/Workspace";
 import * as api from "./lib/api";
 import { basename, defaultColorForIndex, MAX_QUICK_SWITCH } from "./lib/constants";
-import type { AppData } from "./lib/types";
+import {
+  addTab,
+  closeTab,
+  createTab,
+  recolorTab,
+  removeProjectTabs,
+  renameTab,
+  setActiveTab,
+  type TabKind,
+  type TabsState,
+} from "./lib/tabs";
+import type { AppData, Settings } from "./lib/types";
 
 function App() {
   const [data, setData] = useState<AppData | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [tabs, setTabs] = useState<TabsState>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api
-      .getAppState()
-      .then(setData)
+    Promise.all([api.getAppState(), api.getSettings()])
+      .then(([appData, appSettings]) => {
+        setData(appData);
+        setSettings(appSettings);
+      })
       .catch((e) => setError(String(e)));
   }, []);
 
@@ -37,6 +52,41 @@ function App() {
     }
   }, [data, run]);
 
+  const handleRemove = useCallback(
+    (id: string) => {
+      setTabs((t) => removeProjectTabs(t, id));
+      void run(() => api.removeProject(id));
+    },
+    [run],
+  );
+
+  const activeId = data?.activeProjectId ?? null;
+
+  const openTab = useCallback(
+    (kind: TabKind) => {
+      if (activeId && settings) setTabs((t) => addTab(t, activeId, createTab(kind, settings)));
+    },
+    [activeId, settings],
+  );
+  const selectTab = useCallback(
+    (tabId: string) => activeId && setTabs((t) => setActiveTab(t, activeId, tabId)),
+    [activeId],
+  );
+  const handleCloseTab = useCallback(
+    (tabId: string) => activeId && setTabs((t) => closeTab(t, activeId, tabId)),
+    [activeId],
+  );
+  const handleRenameTab = useCallback(
+    (tabId: string, title: string) =>
+      activeId && setTabs((t) => renameTab(t, activeId, tabId, title)),
+    [activeId],
+  );
+  const handleRecolorTab = useCallback(
+    (tabId: string, color: string) =>
+      activeId && setTabs((t) => recolorTab(t, activeId, tabId, color)),
+    [activeId],
+  );
+
   // Cmd+1..9 switches to the Nth project.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -53,10 +103,10 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [data, run]);
 
-  if (!data) {
+  if (!data || !settings) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-neutral-600">
-        {error ? <span className="text-red-400">{error}</span> : "Loading…"}
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        {error ? <span className="text-destructive">{error}</span> : "Loading…"}
       </div>
     );
   }
@@ -64,7 +114,7 @@ function App() {
   const active = data.projects.find((p) => p.id === data.activeProjectId) ?? null;
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full bg-background">
       <Sidebar
         projects={data.projects}
         activeProjectId={data.activeProjectId}
@@ -72,18 +122,27 @@ function App() {
         onSelect={(id) => run(() => api.setActiveProject(id))}
         onRename={(id, name) => run(() => api.renameProject(id, name))}
         onRecolor={(id, color) => run(() => api.setProjectColor(id, color))}
-        onRemove={(id) => run(() => api.removeProject(id))}
+        onRemove={handleRemove}
         onReorder={(ids) => run(() => api.reorderProjects(ids))}
       />
-      <Workspace project={active} />
+      <Workspace
+        project={active}
+        projects={data.projects}
+        tabs={tabs}
+        onOpenTab={openTab}
+        onSelectTab={selectTab}
+        onCloseTab={handleCloseTab}
+        onRenameTab={handleRenameTab}
+        onRecolorTab={handleRecolorTab}
+      />
 
       {error && (
-        <div className="fixed bottom-3 right-3 z-50 max-w-sm rounded-md border border-red-500/40 bg-red-950/80 px-3 py-2 text-xs text-red-200 shadow-lg">
+        <div className="fixed bottom-3 right-3 z-50 max-w-sm rounded-md border border-destructive bg-destructive/90 px-3 py-2 text-xs text-foreground shadow-lg">
           {error}
           <button
             type="button"
             onClick={() => setError(null)}
-            className="ml-2 underline decoration-red-400/50 hover:text-white"
+            className="ml-2 underline decoration-foreground/50 hover:text-foreground"
           >
             dismiss
           </button>

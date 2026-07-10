@@ -1,7 +1,8 @@
+mod pty;
 mod state;
 
-use state::{AppData, AppState, PROJECTS_FILE};
-use tauri::{Manager, State};
+use state::{AppData, AppState, Settings, SettingsState, PROJECTS_FILE, SETTINGS_FILE};
+use tauri::{Manager, RunEvent, State};
 
 /// Lock the state mutex, run a mutation, persist to disk, and return the new state.
 fn mutate<F>(state: &AppState, f: F) -> Result<AppData, String>
@@ -10,7 +11,7 @@ where
 {
     let mut data = state.data.lock().map_err(|e| e.to_string())?;
     f(&mut data);
-    state::save(&state.file_path, &data).map_err(|e| e.to_string())?;
+    state::save(&state.file_path, &*data).map_err(|e| e.to_string())?;
     Ok(data.clone())
 }
 
@@ -60,6 +61,28 @@ fn set_active_project(state: State<AppState>, id: Option<String>) -> Result<AppD
     mutate(&state, |d| d.set_active(id))
 }
 
+#[tauri::command]
+fn get_settings(settings: State<SettingsState>) -> Result<Settings, String> {
+    settings
+        .data
+        .lock()
+        .map(|s| s.clone())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_settings(
+    settings: State<SettingsState>,
+    claude_command: String,
+    opencode_command: String,
+) -> Result<Settings, String> {
+    let mut data = settings.data.lock().map_err(|e| e.to_string())?;
+    data.claude_command = claude_command;
+    data.opencode_command = opencode_command;
+    state::save(&settings.file_path, &*data).map_err(|e| e.to_string())?;
+    Ok(data.clone())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -67,8 +90,9 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
-            let file_path = dir.join(PROJECTS_FILE);
-            app.manage(AppState::new(file_path));
+            app.manage(AppState::new(dir.join(PROJECTS_FILE)));
+            app.manage(SettingsState::new(dir.join(SETTINGS_FILE)));
+            app.manage(pty::PtyManager::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -78,8 +102,21 @@ pub fn run() {
             rename_project,
             set_project_color,
             reorder_projects,
-            set_active_project
+            set_active_project,
+            get_settings,
+            update_settings,
+            pty::pty_spawn,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_kill
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let RunEvent::Exit = event {
+                if let Some(manager) = app_handle.try_state::<pty::PtyManager>() {
+                    manager.kill_all();
+                }
+            }
+        });
 }

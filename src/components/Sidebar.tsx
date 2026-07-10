@@ -42,14 +42,14 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-white/10 bg-[#141417]">
+    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
       <header className="flex items-center justify-between px-3 py-3 no-select">
-        <span className="text-sm font-semibold tracking-wide text-neutral-300">{APP_NAME}</span>
+        <span className="text-sm font-semibold tracking-wide text-foreground">{APP_NAME}</span>
         <button
           type="button"
           aria-label="Add project"
           onClick={onAdd}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-lg leading-none text-neutral-400 hover:bg-white/10 hover:text-white"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-lg leading-none text-muted-foreground hover:bg-secondary hover:text-foreground"
         >
           +
         </button>
@@ -57,10 +57,10 @@ export function Sidebar({
 
       <div className="flex-1 overflow-y-auto px-2 pb-2">
         {projects.length === 0 ? (
-          <div className="mt-8 px-3 text-center text-xs leading-relaxed text-neutral-500 no-select">
+          <div className="mt-8 px-3 text-center text-xs leading-relaxed text-muted-foreground no-select">
             No projects yet.
             <br />
-            Click <span className="text-neutral-300">+</span> to add a folder.
+            Click <span className="text-foreground">+</span> to add a folder.
           </div>
         ) : (
           <div className="flex flex-col gap-0.5" onDragEnd={handleDrop}>

@@ -12,3 +12,8 @@ export interface AppData {
   projects: Project[];
   activeProjectId: string | null;
 }
+
+export interface Settings {
+  claudeCommand: string;
+  opencodeCommand: string;
+}

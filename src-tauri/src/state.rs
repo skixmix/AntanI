@@ -1,3 +1,4 @@
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
@@ -6,6 +7,15 @@ use std::sync::Mutex;
 
 /// Filename (inside the OS app-data dir) where the project list is persisted.
 pub const PROJECTS_FILE: &str = "projects.json";
+
+/// Filename (inside the OS app-data dir) where user settings are persisted.
+pub const SETTINGS_FILE: &str = "settings.json";
+
+/// Default launch command for a Claude tab (overridable in settings).
+pub const DEFAULT_CLAUDE_COMMAND: &str = "claude";
+
+/// Default launch command for an opencode tab (overridable in settings).
+pub const DEFAULT_OPENCODE_COMMAND: &str = "opencode";
 
 /// A project is a local folder the user has added to the sidebar.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -89,23 +99,23 @@ impl AppData {
     }
 }
 
-/// Load app data from `path`. A missing or unparseable file yields defaults —
+/// Load JSON state from `path`. A missing or unparseable file yields defaults —
 /// we never crash on a bad file; the next save rewrites it cleanly.
-pub fn load(path: &Path) -> AppData {
+pub fn load<T: DeserializeOwned + Default>(path: &Path) -> T {
     let Ok(bytes) = fs::read(path) else {
-        return AppData::default();
+        return T::default();
     };
-    match serde_json::from_slice::<AppData>(&bytes) {
+    match serde_json::from_slice::<T>(&bytes) {
         Ok(data) => data,
         Err(err) => {
             eprintln!("antani: failed to parse {}: {err}", path.display());
-            AppData::default()
+            T::default()
         }
     }
 }
 
-/// Persist app data to `path` atomically (write to a temp file, then rename).
-pub fn save(path: &Path, data: &AppData) -> io::Result<()> {
+/// Persist JSON state to `path` atomically (write to a temp file, then rename).
+pub fn save<T: Serialize>(path: &Path, data: &T) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -125,7 +135,43 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(file_path: PathBuf) -> Self {
-        let data = load(&file_path);
+        let data: AppData = load(&file_path);
+        Self {
+            data: Mutex::new(data),
+            file_path,
+        }
+    }
+}
+
+/// User-configurable settings, persisted to `settings.json`. Currently just the
+/// launch commands for the Claude and opencode tab types (for users with aliases
+/// or wrappers). `#[serde(default)]` fills any missing field from `Default`, so a
+/// partially hand-edited or older file still loads with sane values.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Settings {
+    pub claude_command: String,
+    pub opencode_command: String,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            claude_command: DEFAULT_CLAUDE_COMMAND.to_string(),
+            opencode_command: DEFAULT_OPENCODE_COMMAND.to_string(),
+        }
+    }
+}
+
+/// Managed Tauri state for user settings (mirrors `AppState`).
+pub struct SettingsState {
+    pub data: Mutex<Settings>,
+    pub file_path: PathBuf,
+}
+
+impl SettingsState {
+    pub fn new(file_path: PathBuf) -> Self {
+        let data: Settings = load(&file_path);
         Self {
             data: Mutex::new(data),
             file_path,
@@ -225,7 +271,7 @@ mod tests {
         d.set_active(Some(d.projects[2].id.clone()));
         let path = std::env::temp_dir().join(format!("antani-test-{}.json", uuid::Uuid::new_v4()));
         save(&path, &d).unwrap();
-        let loaded = load(&path);
+        let loaded: AppData = load(&path);
         assert_eq!(loaded, d);
         let _ = fs::remove_file(&path);
     }
@@ -234,6 +280,38 @@ mod tests {
     fn load_missing_file_returns_default() {
         let path =
             std::env::temp_dir().join(format!("antani-missing-{}.json", uuid::Uuid::new_v4()));
-        assert_eq!(load(&path), AppData::default());
+        assert_eq!(load::<AppData>(&path), AppData::default());
+    }
+
+    #[test]
+    fn settings_default_are_the_bare_commands() {
+        let s = Settings::default();
+        assert_eq!(s.claude_command, "claude");
+        assert_eq!(s.opencode_command, "opencode");
+    }
+
+    #[test]
+    fn settings_save_then_load_round_trips() {
+        let s = Settings {
+            claude_command: "my-claude --flag".into(),
+            opencode_command: "oc".into(),
+        };
+        let path =
+            std::env::temp_dir().join(format!("antani-settings-{}.json", uuid::Uuid::new_v4()));
+        save(&path, &s).unwrap();
+        let loaded: Settings = load(&path);
+        assert_eq!(loaded, s);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn settings_partial_json_fills_missing_field_from_default() {
+        let path =
+            std::env::temp_dir().join(format!("antani-partial-{}.json", uuid::Uuid::new_v4()));
+        fs::write(&path, br#"{"claudeCommand":"oc-claude"}"#).unwrap();
+        let loaded: Settings = load(&path);
+        assert_eq!(loaded.claude_command, "oc-claude");
+        assert_eq!(loaded.opencode_command, "opencode");
+        let _ = fs::remove_file(&path);
     }
 }

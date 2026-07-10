@@ -36,3 +36,12 @@ export function basename(path: string): string {
 
 /** Number of projects reachable via Cmd+1..9. */
 export const MAX_QUICK_SWITCH = 9;
+
+/** xterm scrollback buffer in lines. */
+export const TERMINAL_SCROLLBACK = 10_000;
+
+/** Terminal font size in pixels. */
+export const TERMINAL_FONT_SIZE = 13;
+
+/** Debounce before pushing a resize to the PTY; fit() itself runs immediately. */
+export const PTY_RESIZE_DEBOUNCE_MS = 150;

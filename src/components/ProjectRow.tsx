@@ -58,8 +58,8 @@ export function ProjectRow({
       onClick={onSelect}
       title={project.path}
       className={`group relative flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 no-select ${
-        active ? "bg-white/10" : "hover:bg-white/5"
-      } ${isDragging ? "opacity-40" : ""} ${isDropTarget ? "ring-1 ring-white/40" : ""}`}
+        active ? "bg-accent" : "hover:bg-secondary"
+      } ${isDragging ? "opacity-40" : ""} ${isDropTarget ? "ring-1 ring-primary" : ""}`}
     >
       <span
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-semibold text-black/80"
@@ -82,7 +82,7 @@ export function ProjectRow({
               setEditing(false);
             }
           }}
-          className="min-w-0 flex-1 rounded bg-black/40 px-1.5 py-0.5 text-sm outline-none ring-1 ring-white/20"
+          className="min-w-0 flex-1 rounded bg-tertiary px-1.5 py-0.5 text-sm outline-none ring-1 ring-border"
         />
       ) : (
         <span
@@ -91,7 +91,7 @@ export function ProjectRow({
             setDraft(project.name);
             setEditing(true);
           }}
-          className="min-w-0 flex-1 truncate text-sm text-neutral-200"
+          className="min-w-0 flex-1 truncate text-sm text-foreground"
         >
           {project.name}
         </span>
@@ -109,7 +109,7 @@ export function ProjectRow({
               e.stopPropagation();
               setPickerOpen((v) => !v);
             }}
-            className="h-4 w-4 rounded-full ring-1 ring-white/30"
+            className="h-4 w-4 rounded-full ring-1 ring-border"
             style={{ backgroundColor: project.color }}
           />
           <button
@@ -119,7 +119,7 @@ export function ProjectRow({
               e.stopPropagation();
               onRemove();
             }}
-            className="flex h-5 w-5 items-center justify-center rounded text-neutral-400 hover:bg-white/10 hover:text-white"
+            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
             ×
           </button>
