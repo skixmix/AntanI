@@ -61,7 +61,11 @@ export function TerminalView({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
-    try { term.loadAddon(new CanvasAddon()); } catch { /* fallback to default renderer */ }
+    try {
+      term.loadAddon(new CanvasAddon());
+    } catch {
+      /* fallback to default renderer */
+    }
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
@@ -140,7 +144,11 @@ export function TerminalView({
       window.clearTimeout(resizeTimer);
       window.clearTimeout(silenceTimer);
       unlisten?.();
-      try { term.dispose(); } catch { /* ignore dispose errors */ }
+      try {
+        term.dispose();
+      } catch {
+        /* ignore dispose errors */
+      }
       void spawned.finally(() => killPty(tabId));
     };
   }, [tabId, cwd, startupCommand, isAi, onStatusChange]);
@@ -174,19 +182,11 @@ export function TerminalView({
     <div className="absolute inset-0" style={{ display: visible ? "block" : "none" }}>
       <div ref={containerRef} className="absolute inset-0 overflow-hidden p-1.5" />
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded bg-black/40 px-2 py-1 text-[11px] text-white/60">
-        <button
-          type="button"
-          className="hover:text-white"
-          onClick={() => zoom(-1)}
-        >
+        <button type="button" className="hover:text-white" onClick={() => zoom(-1)}>
           −
         </button>
         <span className="tabular-nums w-8 text-center text-white/80">{fontSize}px</span>
-        <button
-          type="button"
-          className="hover:text-white"
-          onClick={() => zoom(1)}
-        >
+        <button type="button" className="hover:text-white" onClick={() => zoom(1)}>
           +
         </button>
       </div>

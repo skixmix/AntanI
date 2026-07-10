@@ -15,7 +15,9 @@ export function ImportVscodeModal({ onClose }: ImportVscodeModalProps) {
   // Park native webviews while modal is open.
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("antani:picker-open"));
-    return () => { window.dispatchEvent(new CustomEvent("antani:picker-close")); };
+    return () => {
+      window.dispatchEvent(new CustomEvent("antani:picker-close"));
+    };
   }, []);
 
   async function runImport() {
@@ -84,7 +86,9 @@ export function ImportVscodeModal({ onClose }: ImportVscodeModalProps) {
               <h2 className="text-base font-semibold text-foreground">
                 {phase === "done" ? "Import complete" : "Import failed"}
               </h2>
-              <p className={`text-sm leading-relaxed ${phase === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+              <p
+                className={`text-sm leading-relaxed ${phase === "error" ? "text-destructive" : "text-muted-foreground"}`}
+              >
                 {result}
               </p>
               {phase === "done" && (

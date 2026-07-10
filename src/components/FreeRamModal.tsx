@@ -13,7 +13,9 @@ export function FreeRamModal({ memMb, instanceCount, onConfirm, onCancel }: Free
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("antani:picker-open"));
-    return () => { window.dispatchEvent(new CustomEvent("antani:picker-close")); };
+    return () => {
+      window.dispatchEvent(new CustomEvent("antani:picker-close"));
+    };
   }, []);
 
   return createPortal(
@@ -32,9 +34,8 @@ export function FreeRamModal({ memMb, instanceCount, onConfirm, onCancel }: Free
             <span className="text-foreground">
               {instanceCount} VS Code {instanceCount === 1 ? "instance" : "instances"}
             </span>{" "}
-            currently using{" "}
-            <span className="text-foreground">{memLabel}</span>.
-            Any unsaved work in the editor will be lost.
+            currently using <span className="text-foreground">{memLabel}</span>. Any unsaved work in
+            the editor will be lost.
           </p>
         </div>
 

@@ -17,7 +17,9 @@ export function ColorPicker({ anchorEl, selected, onPick, onClose }: ColorPicker
   // all web content and would clip this overlay.
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("antani:picker-open"));
-    return () => { window.dispatchEvent(new CustomEvent("antani:picker-close")); };
+    return () => {
+      window.dispatchEvent(new CustomEvent("antani:picker-close"));
+    };
   }, []);
 
   function commitHex(value: string) {
@@ -53,7 +55,10 @@ export function ColorPicker({ anchorEl, selected, onPick, onClose }: ColorPicker
               key={color}
               type="button"
               aria-label={`Set color ${color}`}
-              onClick={() => { onPick(color); onClose(); }}
+              onClick={() => {
+                onPick(color);
+                onClose();
+              }}
               className={`h-6 w-6 rounded-full transition-transform hover:scale-110 ${
                 selected === color
                   ? "ring-2 ring-primary ring-offset-1 ring-offset-popover"

@@ -8,7 +8,12 @@ interface IdeLayerProps {
   ideEverOpenedByProject: Record<string, boolean>;
 }
 
-export function IdeLayer({ projects, activeProjectId, ideOpen, ideEverOpenedByProject }: IdeLayerProps) {
+export function IdeLayer({
+  projects,
+  activeProjectId,
+  ideOpen,
+  ideEverOpenedByProject,
+}: IdeLayerProps) {
   return (
     <>
       {projects.map((project) => {
