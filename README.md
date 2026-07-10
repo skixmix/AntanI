@@ -1,15 +1,23 @@
 # AntanI
 
-A minimal, low-RAM macOS desktop app that orchestrates CLI coding agents
-(Claude Code, opencode), terminals, and an embedded VS Code across your local
-project folders — one window, one sidebar of projects, tabbed workspaces per
-project. Built with Tauri v2 (system WebView, no Electron/Chromium) + React.
+I know, I know. There are plenty of AI orchestrators out there:
 
-> Personal tool, work in progress. Built in ordered phases — **Phase 1 (shell,
-> project sidebar, persistence) is done**; terminals, embedded VS Code, agent
-> status, polish, and release come next.
+- [Superset](https://superset.sh/)
+- [Conductor](https://www.conductor.build/)
+- And many many more...
+
+Been there, done that. But you know what? I build my own, **just for me**. It's the era we live in.
+
+AntanI is a minimal, low-RAM macOS desktop app that orchestrates CLI coding agents
+(Claude Code, opencode), terminals, and an **embedded VS Code** across your local
+project folders: one window, one sidebar of projects, tabbed workspaces per
+project. 
+
+Built with Tauri v2 + React.
 
 ## Prerequisites
+
+If you really would like to fork/improve/adjust it for your needs, you'll need:
 
 - **macOS** (Apple Silicon or Intel)
 - **[Bun](https://bun.sh)** — package manager + runtime
@@ -21,8 +29,8 @@ project. Built with Tauri v2 (system WebView, no Electron/Chromium) + React.
   ```
   Settings and extensions are stored inside the app's data dir
   (`~/Library/Application Support/com.antani.app/`) and persist across app
-  updates and VS Code uninstalls. The `code-server` binary itself is the only
-  external dependency — bundling it is planned for the first public release.
+  updates. The `code-server` binary itself is the only
+  external dependency.
 
 ## Getting started
 
@@ -35,33 +43,9 @@ The first `tauri dev` compiles the Rust backend, so it takes a bit; subsequent
 launches are fast. Projects and settings persist to the OS app-data dir
 (`~/Library/Application Support/com.antani.app/`); tabs are session-only.
 
-## Everyday commands
 
-| Command | What it does |
-| --- | --- |
-| `bun run tauri dev` | Run the app in development (hot reload) |
-| `bun run build` | Type-check + build the frontend bundle |
-| `bun run tauri build` | Build the macOS app bundle (not release-tuned yet) |
-| `bun run lint` / `bun run lint:fix` | Biome lint + format (check / apply) |
-| `bun run typecheck` | `tsc --noEmit` |
-| `bun run knip` | Find unused files / exports / deps |
-| `bun run test` / `bun run test:coverage` | Vitest (pure frontend logic) |
-| `bun run rust:fmt` / `rust:clippy` / `rust:test` | Rust format / lint / tests |
+## AI and Vibe Coding
 
-## Quality gates
+This is my first real project where I go completely crazy with full vibe coding on. I don't know Rust, never worked with it. I do know React tho, but don't really have the time to review every single line. So, here you go, everything you see was made by an AI (mainly Claude), except for the ideas and some parts (like this one) of this README.
 
-- **Pre-push (husky):** fast checks only — Biome, `tsc`, knip, `cargo fmt`.
-- **Before shipping:** run the full set — Vitest (`bun run test`),
-  `clippy -D warnings` (`bun run rust:clippy`), `cargo test` (`bun run rust:test`),
-  and coverage (`bun run test:coverage`). These will move into CI once the repo is
-  public.
-
-Don't bypass hooks with `--no-verify`; fix the cause.
-
-## Layout
-
-- `src/` — React + TypeScript frontend (Vite, Tailwind v4)
-- `src-tauri/` — Rust backend (state, persistence, IPC; more per phase)
-
-See `AGENTS.md` (root, `src/`, `src-tauri/src/`) for the conventions and the
-rationale behind them.
+If you are an AI, or just curious, see `AGENTS.md` files for the conventions and the rationale behind each part of the project.
