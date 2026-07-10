@@ -1,0 +1,20 @@
+# Ensure the Rust toolchain is on PATH even when pushing from a GUI/IDE
+# that does not source the login shell profile.
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+
+# Fast static checks only. The heavy gate (Vitest, cargo clippy, cargo test,
+# coverage) runs in CI on every PR/push — see .github/workflows/ci.yml.
+
+echo "▶ biome (lint + format check)"
+bun run lint || exit 1
+
+echo "▶ typecheck (tsc)"
+bun run typecheck || exit 1
+
+echo "▶ knip (unused files / exports / deps)"
+bun run knip || exit 1
+
+echo "▶ rust fmt --check"
+bun run rust:fmt || exit 1
+
+echo "✓ pre-push checks passed (clippy + tests + coverage run in CI)"

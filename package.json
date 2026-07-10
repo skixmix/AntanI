@@ -1,0 +1,45 @@
+{
+  "name": "antani",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit",
+    "knip": "knip",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
+    "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-dialog": "2.7.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.3",
+    "@tailwindcss/vite": "4.3.2",
+    "@tauri-apps/cli": "2.11.4",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "4.7.0",
+    "@vitest/coverage-v8": "4.1.10",
+    "husky": "9.1.7",
+    "knip": "6.25.0",
+    "tailwindcss": "4.3.2",
+    "typescript": "5.8.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.10"
+  }
+}
