@@ -2,7 +2,7 @@
  * App-wide constants. Renaming the app later means changing APP_NAME here
  * plus productName/title in src-tauri/tauri.conf.json.
  */
-export const APP_NAME = "AntanI";
+const APP_NAME = "AntanI";
 
 /**
  * Fixed project color palette (Phase 1 requirement: ~10 colors, no color wheel).
@@ -41,7 +41,7 @@ export const MAX_QUICK_SWITCH = 9;
 export const TERMINAL_SCROLLBACK = 10_000;
 
 /** Terminal font size in pixels. */
-export const TERMINAL_FONT_SIZE = 13;
+const TERMINAL_FONT_SIZE = 13;
 
 /** Debounce before pushing a resize to the PTY; fit() itself runs immediately. */
 export const PTY_RESIZE_DEBOUNCE_MS = 150;
