@@ -3,22 +3,33 @@ name: bump-tap
 # Fires when a release moves from draft to published (or a non-draft release
 # is created directly) — i.e. the exact moment you click "Publish release".
 # Assets on a draft aren't publicly downloadable, so this can't run in the
-# same job that creates the draft (see release.yml).
+# same job that creates the draft (see release.yml). workflow_dispatch lets
+# you retry a failed run for an already-published release without having to
+# unpublish/republish it.
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to bump the tap to (e.g. v0.2.0)"
+        required: true
 
 jobs:
   bump-cask:
     runs-on: macos-latest
     steps:
+      - name: Resolve target tag
+        id: target
+        run: echo "tag=${{ github.event.inputs.tag || github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+
       - name: Locate dmg asset on the published release
         id: asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          assets=$(gh release view "${{ github.event.release.tag_name }}" --repo "${{ github.repository }}" \
+          assets=$(gh release view "${{ steps.target.outputs.tag }}" --repo "${{ github.repository }}" \
             --json assets -q '[.assets[] | select(.name | endswith(".dmg"))]')
           count=$(jq 'length' <<<"$assets")
           if [ "$count" -ne 1 ]; then
@@ -45,9 +56,12 @@ jobs:
             echo "::error::Downloaded asset is only ${size_bytes} bytes — likely an error page, not a DMG."
             exit 1
           fi
-          if ! file asset.dmg | grep -qi "apple disk image"; then
-            echo "::error::Downloaded file is not a valid DMG:"
-            file asset.dmg
+          # `file` doesn't reliably recognize UDIF images (they read back as
+          # generic "zlib compressed data"); hdiutil actually understands the
+          # format and is what verifies it's a real, unbroken disk image.
+          if ! hdiutil imageinfo asset.dmg >/dev/null 2>&1; then
+            echo "::error::Downloaded file is not a valid disk image:"
+            hdiutil imageinfo asset.dmg || true
             exit 1
           fi
 
@@ -58,7 +72,7 @@ jobs:
           TAP_REPO_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
         run: |
           set -euo pipefail
-          version="${{ github.event.release.tag_name }}"
+          version="${{ steps.target.outputs.tag }}"
           version="${version#v}"
 
           git clone "https://x-access-token:${TAP_REPO_TOKEN}@github.com/skixmix/homebrew-antani.git" tap
