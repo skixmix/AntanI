@@ -36,20 +36,19 @@ jobs:
             echo "::error::Expected exactly one .dmg asset on this release, found $count."
             exit 1
           fi
+          # `url` here is the plain public download link (repo is public, no
+          # auth needed) — used both to fetch the file for hashing and as the
+          # Cask's final url. There is no separate "browser_download_url"
+          # field on this gh CLI output; that was a bug.
           jq -r '.[0].name' <<<"$assets" | sed 's/^/name=/' >> "$GITHUB_OUTPUT"
           jq -r '.[0].url' <<<"$assets" | sed 's/^/url=/' >> "$GITHUB_OUTPUT"
-          jq -r '.[0].browser_download_url' <<<"$assets" | sed 's/^/download_url=/' >> "$GITHUB_OUTPUT"
 
       - name: Download asset and compute sha256
         id: hash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           echo "Downloading ${{ steps.asset.outputs.name }}..."
-          curl -sL --fail -H "Accept: application/octet-stream" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            "${{ steps.asset.outputs.url }}" -o asset.dmg
+          curl -sL --fail "${{ steps.asset.outputs.url }}" -o asset.dmg
 
           size_bytes=$(stat -f%z asset.dmg)
           if [ "$size_bytes" -lt 102400 ]; then
@@ -80,7 +79,7 @@ jobs:
 
           sed -i '' "s#version \".*\"#version \"$version\"#" Casks/antani.rb
           sed -i '' "s#sha256 \".*\"#sha256 \"${{ steps.hash.outputs.sha256 }}\"#" Casks/antani.rb
-          sed -i '' "s#url \".*\"#url \"${{ steps.asset.outputs.download_url }}\"#" Casks/antani.rb
+          sed -i '' "s#url \".*\"#url \"${{ steps.asset.outputs.url }}\"#" Casks/antani.rb
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
