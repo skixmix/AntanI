@@ -118,10 +118,9 @@ describe("projectTabs", () => {
 describe("setActiveTab", () => {
   it("switches the active tab", () => {
     const state = seed(["terminal", "claude"]);
-    const [t0, t1] = projectTabs(state, PROJECT).tabs;
+    const [t0] = projectTabs(state, PROJECT).tabs;
     const next = setActiveTab(state, PROJECT, t0.id);
     expect(projectTabs(next, PROJECT).activeTabId).toBe(t0.id);
-    void t1;
   });
 
   it("is a no-op for an unknown tab id", () => {

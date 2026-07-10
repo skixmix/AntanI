@@ -60,8 +60,8 @@ jobs:
         run: bun run rust:test
 
       - name: cargo llvm-cov (coverage, 90% gate)
-        # Scoped to state.rs: the rest of src-tauri is Tauri command handlers /
-        # OS process glue (IDE webview, PTY, code-server management), which is
-        # exempt from the pure-logic testing policy for the same reason api.ts
-        # is on the frontend side.
+        # Excludes Tauri command handlers / OS process glue (IDE webview, PTY,
+        # code-server management) from the gate, same reason api.ts is exempt
+        # on the frontend side. Currently resolves to state.rs, the only
+        # pure-logic module in src-tauri.
         run: bun run rust:coverage
