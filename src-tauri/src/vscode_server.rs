@@ -8,7 +8,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use serde_json;
 use tauri::{AppHandle, Emitter, Manager};
 
 /// Loopback host the embedded server binds to. Never exposed off-box.
@@ -677,7 +676,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
         if ft.is_dir() {
             copy_dir_recursive(&entry.path(), &target)?;
         } else {
-            std::fs::copy(&entry.path(), &target)?;
+            std::fs::copy(entry.path(), &target)?;
         }
     }
     Ok(())

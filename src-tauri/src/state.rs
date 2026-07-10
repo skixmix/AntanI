@@ -266,6 +266,50 @@ mod tests {
     }
 
     #[test]
+    fn set_active_none_clears_active() {
+        let mut d = with_three();
+        d.set_active(None);
+        assert_eq!(d.active_project_id, None);
+    }
+
+    #[test]
+    fn load_malformed_json_returns_default() {
+        let path =
+            std::env::temp_dir().join(format!("antani-malformed-{}.json", uuid::Uuid::new_v4()));
+        fs::write(&path, b"not json").unwrap();
+        assert_eq!(load::<AppData>(&path), AppData::default());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn app_state_new_loads_from_disk() {
+        let path =
+            std::env::temp_dir().join(format!("antani-appstate-{}.json", uuid::Uuid::new_v4()));
+        let d = with_three();
+        save(&path, &d).unwrap();
+        let state = AppState::new(path.clone());
+        assert_eq!(*state.data.lock().unwrap(), d);
+        assert_eq!(state.file_path, path);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn settings_state_new_loads_from_disk() {
+        let path = std::env::temp_dir().join(format!(
+            "antani-settingsstate-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let s = Settings {
+            claude_command: "custom".into(),
+            opencode_command: "oc".into(),
+        };
+        save(&path, &s).unwrap();
+        let state = SettingsState::new(path.clone());
+        assert_eq!(*state.data.lock().unwrap(), s);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
     fn save_then_load_round_trips() {
         let mut d = with_three();
         d.set_active(Some(d.projects[2].id.clone()));
