@@ -2,7 +2,7 @@
 
 /* Tailwind v4 @theme: each token auto-generates bg-/text-/border-/ring- utilities. */
 @theme {
-  --color-background: #1e2025;
+  --color-background: #252830;
   --color-foreground: #c8c5bc;
   --color-card: #252830;
   --color-popover: #252830;
@@ -12,12 +12,12 @@
   --color-muted: #2d3038;
   --color-muted-foreground: #8a8b90;
   --color-accent: #363a42;
-  --color-tertiary: #181a1e;
+  --color-tertiary: #1e2025;
   --color-destructive: #c94040;
   --color-border: #363a42;
-  --color-sidebar: #181a1e;
+  --color-sidebar: #252830;
   --color-sidebar-foreground: #b8b6ae;
-  --color-sidebar-accent: #252830;
+  --color-sidebar-accent: #2d3038;
   --color-sidebar-border: #2d3038;
   --color-ring: #d4622a;
 }
@@ -51,4 +51,21 @@ button,
 [role="button"],
 [tabindex]:not([tabindex="-1"]) {
   cursor: pointer;
+}
+
+.ai-spinner {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid rgba(200, 197, 188, 0.15);
+  border-top-color: rgba(200, 197, 188, 0.65);
+  border-radius: 50%;
+  animation: ai-spin 0.75s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

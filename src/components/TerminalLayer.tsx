@@ -1,4 +1,4 @@
-import { projectTabs, type TabsState } from "../lib/tabs";
+import { projectTabs, type TabStatus, type TabsState } from "../lib/tabs";
 import type { Project } from "../lib/types";
 import { TerminalView } from "./TerminalView";
 
@@ -6,6 +6,7 @@ interface TerminalLayerProps {
   projects: Project[];
   tabs: TabsState;
   activeProjectId: string | null;
+  onStatusChange: (tabId: string, status: TabStatus) => void;
 }
 
 /**
@@ -13,7 +14,12 @@ interface TerminalLayerProps {
  * so a terminal keeps running (and its xterm buffer stays intact) when the user
  * switches projects. Tabs are never unmounted on switch — only hidden.
  */
-export function TerminalLayer({ projects, tabs, activeProjectId }: TerminalLayerProps) {
+export function TerminalLayer({
+  projects,
+  tabs,
+  activeProjectId,
+  onStatusChange,
+}: TerminalLayerProps) {
   return (
     <>
       {projects.flatMap((project) => {
@@ -27,6 +33,8 @@ export function TerminalLayer({ projects, tabs, activeProjectId }: TerminalLayer
               cwd={project.path}
               startupCommand={tab.startupCommand}
               visible={project.id === activeProjectId && tab.id === activeTabId}
+              isAi={tab.kind === "claude" || tab.kind === "opencode"}
+              onStatusChange={onStatusChange}
             />
           ));
       })}

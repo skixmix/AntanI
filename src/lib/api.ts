@@ -150,6 +150,16 @@ export function closeIdeWebview(projectId: string): Promise<void> {
   return invoke("close_ide_webview", { projectId });
 }
 
+export function closeAllIdeWebviews(): Promise<void> {
+  return invoke("close_all_ide_webviews");
+}
+
+/** Copy extensions + settings from the user's desktop VS Code into the app's
+ *  own isolated directories. Returns a summary string. */
+export function importFromVscode(): Promise<string> {
+  return invoke<string>("import_from_vscode");
+}
+
 export interface IdeServerStatusEvent {
   status: IdeServerStatus;
   message: string | null;
@@ -160,4 +170,12 @@ export function onIdeServerStatus(
   handler: (event: IdeServerStatusEvent) => void,
 ): Promise<UnlistenFn> {
   return listen<IdeServerStatusEvent>("ide-server-status", (event) => handler(event.payload));
+}
+
+/**
+ * Total RSS in MB used by the serve-web process tree, or null if the server
+ * is not running. Intended for a status-bar display; poll at ~3s.
+ */
+export function getVscodeMemoryMb(): Promise<number | null> {
+  return invoke<number | null>("get_vscode_memory_mb");
 }

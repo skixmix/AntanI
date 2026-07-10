@@ -1,5 +1,7 @@
 # AntanI — Agent Guide (root)
 
+> **App name: AntanI.** Use this name in code, commits, and docs.
+
 ## What this is, and why
 
 AntanI is a **personal** macOS desktop app that orchestrates CLI coding agents
@@ -47,6 +49,10 @@ intentional, not a missing feature.
 - **Tooling is fixed.** `bun` is the package manager + runtime; Biome does both
   lint and format (Bun ships neither); `knip` guards against dead code. Don't add
   ESLint, Prettier, or a second formatter.
+- **No comments by default.** Write zero comments unless the *why* is non-obvious
+  to a future reader: a hidden constraint, a subtle invariant, a platform-specific
+  workaround. Never narrate what the code does, never add section headers, never
+  write docstrings that restate the function name.
 
 ## Testing philosophy: behavior, not brittle
 

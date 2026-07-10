@@ -1,5 +1,6 @@
-import { projectTabs, type TabKind, type TabsState } from "../lib/tabs";
+import { projectTabs, type TabKind, type TabStatus, type TabsState } from "../lib/tabs";
 import type { Project } from "../lib/types";
+import { EmptyPane } from "./EmptyPane";
 import { IdeLayer } from "./IdeLayer";
 import { TabStrip } from "./TabStrip";
 import { TerminalLayer } from "./TerminalLayer";
@@ -8,26 +9,38 @@ interface WorkspaceProps {
   project: Project | null;
   projects: Project[];
   tabs: TabsState;
+  tabStatuses: Record<string, TabStatus>;
   ideOpen: boolean;
+  ideEverOpenedByProject: Record<string, boolean>;
+  ideInstanceCount: number;
+  memMb: number | null;
   onOpenTab: (kind: TabKind) => void;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onRenameTab: (tabId: string, title: string) => void;
   onRecolorTab: (tabId: string, color: string) => void;
+  onReorderTab: (fromId: string, insertBeforeId: string | null) => void;
   onToggleIde: () => void;
+  onStatusChange: (tabId: string, status: TabStatus) => void;
 }
 
 export function Workspace({
   project,
   projects,
   tabs,
+  tabStatuses,
   ideOpen,
+  ideEverOpenedByProject,
+  ideInstanceCount,
+  memMb,
   onOpenTab,
   onSelectTab,
   onCloseTab,
   onRenameTab,
   onRecolorTab,
+  onReorderTab,
   onToggleIde,
+  onStatusChange,
 }: WorkspaceProps) {
   if (!project) {
     return (
@@ -38,56 +51,48 @@ export function Workspace({
   }
 
   const { tabs: projectTabList, activeTabId } = projectTabs(tabs, project.id);
+  const isEmpty = projectTabList.length === 0 && !ideOpen;
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden">
-      <header className="flex items-center gap-3 px-4 py-2.5 no-select border-b border-border">
-        <span
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-base font-semibold text-black/80"
-          style={{ backgroundColor: project.color }}
-        >
-          {project.name.charAt(0).toUpperCase()}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-foreground">{project.name}</div>
-          <div className="truncate text-xs text-muted-foreground">{project.path}</div>
-        </div>
-
-        <button
-          type="button"
-          onClick={onToggleIde}
-          title={ideOpen ? "Close IDE" : "Open embedded VS Code editor"}
-          className={`flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-            ideOpen
-              ? "border-accent bg-accent text-foreground"
-              : "border-border bg-transparent text-muted-foreground hover:border-primary/50 hover:bg-secondary hover:text-foreground"
-          }`}
-        >
-          <span className="font-mono text-[12px]">{"</>"}</span>
-          IDE
-        </button>
-      </header>
+      <div
+        className="w-full shrink-0"
+        style={{ height: 1, backgroundColor: project.color, opacity: 0.4 }}
+      />
 
       <TabStrip
         tabs={projectTabList}
         activeTabId={activeTabId}
+        tabStatuses={tabStatuses}
+        project={project}
+        ideOpen={ideOpen}
+        ideInstanceCount={ideInstanceCount}
+        memMb={memMb}
         onOpen={onOpenTab}
         onSelect={onSelectTab}
         onClose={onCloseTab}
         onRename={onRenameTab}
         onRecolor={onRecolorTab}
+        onReorder={onReorderTab}
+        onToggleIde={onToggleIde}
       />
 
       <div className="relative flex-1 overflow-hidden">
-        <TerminalLayer projects={projects} tabs={tabs} activeProjectId={project.id} />
+        <TerminalLayer
+          projects={projects}
+          tabs={tabs}
+          activeProjectId={project.id}
+          onStatusChange={onStatusChange}
+        />
         <IdeLayer
           projects={projects}
           activeProjectId={project.id}
           ideOpen={ideOpen}
+          ideEverOpenedByProject={ideEverOpenedByProject}
         />
-        {projectTabList.length === 0 && !ideOpen && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-muted-foreground no-select">
-            <p className="text-sm">Use the buttons above to open a Terminal, Claude, or opencode tab.</p>
+        {isEmpty && (
+          <div className="absolute inset-0">
+            <EmptyPane project={project} onOpen={onOpenTab} onToggleIde={onToggleIde} />
           </div>
         )}
       </div>

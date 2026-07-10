@@ -14,8 +14,15 @@ project. Built with Tauri v2 (system WebView, no Electron/Chromium) + React.
 - **macOS** (Apple Silicon or Intel)
 - **[Bun](https://bun.sh)** — package manager + runtime
 - **[Rust](https://rustup.rs)** (stable toolchain) — the Tauri backend
-- **VS Code `code` CLI** on your `PATH` — only needed for the embedded IDE tab
-  (a later phase)
+- **[code-server](https://coder.com/docs/code-server/install)** on your `PATH` —
+  required for the embedded VS Code tab. Install with:
+  ```sh
+  brew install code-server
+  ```
+  Settings and extensions are stored inside the app's data dir
+  (`~/Library/Application Support/com.antani.app/`) and persist across app
+  updates and VS Code uninstalls. The `code-server` binary itself is the only
+  external dependency — bundling it is planned for the first public release.
 
 ## Getting started
 

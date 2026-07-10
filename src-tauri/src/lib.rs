@@ -178,11 +178,14 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_kill,
             vscode_server::ensure_ide_server,
+            vscode_server::get_vscode_memory_mb,
+            vscode_server::import_from_vscode,
             ide_webview::create_ide_webview,
             ide_webview::set_ide_bounds,
             ide_webview::show_ide_webview,
             ide_webview::hide_ide_webview,
-            ide_webview::close_ide_webview
+            ide_webview::close_ide_webview,
+            ide_webview::close_all_ide_webviews
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

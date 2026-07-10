@@ -2,6 +2,9 @@ import type { Settings } from "./types";
 
 export type TabKind = "terminal" | "claude" | "opencode" | "ide";
 
+/** Runtime-only status for AI tabs (claude / opencode). Never persisted. */
+export type TabStatus = "idle" | "busy" | "ready" | "waiting";
+
 export interface Tab {
   id: string;
   kind: TabKind;
@@ -111,6 +114,22 @@ export function recolorTab(
       tabs: current.tabs.map((t) => (t.id === tabId ? { ...t, color } : t)),
     },
   };
+}
+
+export function reorderTabs(
+  state: TabsState,
+  projectId: string,
+  fromId: string,
+  insertBeforeId: string | null,
+): TabsState {
+  const current = projectTabs(state, projectId);
+  const tabs = current.tabs.filter((t) => t.id !== fromId);
+  const dragged = current.tabs.find((t) => t.id === fromId);
+  if (!dragged) return state;
+  const to = insertBeforeId === null ? tabs.length : tabs.findIndex((t) => t.id === insertBeforeId);
+  if (to === -1) return state;
+  tabs.splice(to, 0, dragged);
+  return { ...state, [projectId]: { ...current, tabs } };
 }
 
 /** Drop a project's tabs (called when the project is removed). */

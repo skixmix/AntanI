@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PROJECT_COLORS } from "../lib/constants";
 
@@ -13,6 +13,13 @@ export function ColorPicker({ anchorEl, selected, onPick, onClose }: ColorPicker
   const [hex, setHex] = useState(selected.startsWith("#") ? selected : "");
   const nativeRef = useRef<HTMLInputElement>(null);
 
+  // Park native webviews (VS Code) while the picker is open — they paint above
+  // all web content and would clip this overlay.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("antani:picker-open"));
+    return () => { window.dispatchEvent(new CustomEvent("antani:picker-close")); };
+  }, []);
+
   function commitHex(value: string) {
     const trimmed = value.trim();
     if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
@@ -21,11 +28,16 @@ export function ColorPicker({ anchorEl, selected, onPick, onClose }: ColorPicker
     }
   }
 
-  // Position below the anchor element, left-aligned
+  // Position above or below the anchor depending on available space.
+  // The picker is ~130px tall; if less than that remains below, open upward.
+  const PICKER_HEIGHT = 135;
   const rect = anchorEl?.getBoundingClientRect();
-  const style = rect
-    ? { position: "fixed" as const, top: rect.bottom + 6, left: rect.left }
-    : { position: "fixed" as const, top: 60, left: 60 };
+  const spaceBelow = rect ? window.innerHeight - rect.bottom : 0;
+  const style: React.CSSProperties = rect
+    ? spaceBelow >= PICKER_HEIGHT
+      ? { position: "fixed", top: rect.bottom + 6, left: rect.left }
+      : { position: "fixed", bottom: window.innerHeight - rect.top + 6, left: rect.left }
+    : { position: "fixed", top: 60, left: 60 };
 
   return createPortal(
     <>

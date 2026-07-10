@@ -1,53 +1,13 @@
 use std::collections::HashSet;
 use std::sync::Mutex;
 
-use tauri::webview::{PageLoadEvent, WebviewBuilder};
+use tauri::webview::WebviewBuilder;
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Position, Rect, Size, WebviewUrl};
 use url::Url;
 
 use crate::vscode_server::{VscodeServer, SERVE_WEB_HOST};
 
-/// Logical coordinate used to park a hidden webview far outside the window.
 const OFFSCREEN: f64 = 1_000_000.0;
-
-/// Disable VS Code's workspace-trust prompt for the embedded IDE. `serve-web`
-/// reads application-scoped settings (trust included) only from the *browser's*
-/// User settings, which live in an IndexedDB-backed virtual filesystem — not from
-/// any file on disk and not from the Machine settings we seed. So we write the
-/// setting straight into that store (`vscode-web-db` → `vscode-userdata-store` →
-/// `/User/settings.json`, values are UTF-8 `Uint8Array`s) and reload once so the
-/// workbench re-reads it. The script polls until VS Code has created the store,
-/// merges rather than clobbers any existing user settings, and is idempotent: once
-/// trust is already off it does nothing, so the post-reload run cannot loop.
-const TRUST_INJECT_SCRIPT: &str = r#"(function(){
-  var tries=0;
-  function attempt(){
-    tries++;
-    try{
-      var open=indexedDB.open('vscode-web-db');
-      open.onsuccess=function(){
-        var db=open.result;
-        if(!db.objectStoreNames.contains('vscode-userdata-store')){db.close();if(tries<60)setTimeout(attempt,500);return;}
-        var tx=db.transaction('vscode-userdata-store','readwrite');
-        var os=tx.objectStore('vscode-userdata-store');
-        var key='/User/settings.json';
-        var g=os.get(key);
-        g.onsuccess=function(){
-          var cur=g.result?new TextDecoder().decode(g.result):'';
-          var obj={};
-          try{obj=cur?JSON.parse(cur):{};}catch(e){obj={};}
-          if(obj['security.workspace.trust.enabled']===false)return;
-          obj['security.workspace.trust.enabled']=false;
-          os.put(new TextEncoder().encode(JSON.stringify(obj,null,2)),key);
-          tx.oncomplete=function(){location.reload();};
-        };
-        g.onerror=function(){if(tries<60)setTimeout(attempt,500);};
-      };
-      open.onerror=function(){if(tries<60)setTimeout(attempt,500);};
-    }catch(e){if(tries<60)setTimeout(attempt,500);}
-  }
-  attempt();
-})();"#;
 
 /// Managed Tauri state: the set of project ids that currently own a live IDE
 /// webview. One hidden child webview per project is created lazily and kept alive
@@ -117,13 +77,22 @@ pub fn create_ide_webview(
 
     let webview = window
         .add_child(
-            WebviewBuilder::new(&label, WebviewUrl::External(url)).on_page_load(
-                |webview, payload| {
-                    if matches!(payload.event(), PageLoadEvent::Finished) {
-                        let _ = webview.eval(TRUST_INJECT_SCRIPT);
-                    }
-                },
-            ),
+            WebviewBuilder::new(&label, WebviewUrl::External(url))
+                // Paint the webview dark before the first pixel, eliminating the
+                // white flash while VS Code's own theme stylesheet loads.
+                .initialization_script(
+                    "document.documentElement.style.background='#1e2025';\
+                     document.documentElement.style.colorScheme='dark';\
+                     (function(){\
+                       var z=1;\
+                       window.addEventListener('keydown',function(e){\
+                         if(!e.metaKey)return;\
+                         if(e.key==='='||e.key==='+'){e.preventDefault();z=Math.min(z+0.1,3);document.documentElement.style.zoom=z;}\
+                         else if(e.key==='-'){e.preventDefault();z=Math.max(z-0.1,0.3);document.documentElement.style.zoom=z;}\
+                         else if(e.key==='0'){e.preventDefault();z=1;document.documentElement.style.zoom=1;}\
+                       },true);\
+                     })();",
+                ),
             Position::Logical(LogicalPosition { x, y }),
             Size::Logical(LogicalSize { width, height }),
         )
@@ -213,5 +182,34 @@ pub fn close_ide_webview(app: AppHandle, project_id: String) -> Result<(), Strin
     if empty {
         app.state::<VscodeServer>().stop();
     }
+    Ok(())
+}
+
+/// Close every open IDE webview at once and stop the server, freeing all RAM.
+/// Called from the "free up RAM" action in the UI.
+#[tauri::command]
+pub fn close_all_ide_webviews(app: AppHandle) -> Result<(), String> {
+    let ids: Vec<String> = app
+        .state::<IdeWebviews>()
+        .open
+        .lock()
+        .map_err(|e| e.to_string())?
+        .iter()
+        .cloned()
+        .collect();
+
+    for id in &ids {
+        if let Some(webview) = app.get_webview(&label_for(id)) {
+            let _ = webview.close();
+        }
+    }
+
+    app.state::<IdeWebviews>()
+        .open
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clear();
+
+    app.state::<VscodeServer>().stop();
     Ok(())
 }

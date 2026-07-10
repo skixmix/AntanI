@@ -3,24 +3,30 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use serde_json;
 use tauri::{AppHandle, Emitter, Manager};
 
 /// Loopback host the embedded server binds to. Never exposed off-box.
 pub const SERVE_WEB_HOST: &str = "127.0.0.1";
 
-/// Fixed port for `code serve-web`. Pinned (not ephemeral) so every project's
-/// child webview shares one stable origin — VS Code keys its per-folder state by
-/// origin, so a stable port is what lets an editor tab survive app restarts.
+/// Fixed port for `code-server`. Pinned so every project's child webview shares
+/// one stable origin — VS Code keys its per-folder state by origin.
 pub const SERVE_WEB_PORT: u16 = 51851;
 
-/// Subfolder (under the app-data dir) for the server's own state, kept out of the
-/// user's projects so serve-web never writes into a project folder.
+/// Subfolder (under the app-data dir) for code-server's user data.
 const SERVER_DATA_DIR: &str = "vscode-server-data";
+
+/// Subfolder (under the app-data dir) for the isolated extensions store.
+const EXTENSIONS_DIR: &str = "extensions";
+
+/// Filename for user-imported VS Code settings, stored in the app-data dir and
+/// merged into User settings on every server start.
+const IMPORTED_SETTINGS_FILE: &str = "imported-user-settings.json";
 
 /// Crash-only fallback: the server's process-group id, so an orphan left by an
 /// app crash can be reclaimed on next launch. The normal teardown path is `stop`.
@@ -68,6 +74,8 @@ struct Inner {
     child: Option<Child>,
     /// Process-group id (== child pid, thanks to `setsid`) for group-kill.
     pgid: Option<i32>,
+    /// Rolling tail of stderr output — last N lines, used in failure messages.
+    stderr_tail: Arc<Mutex<Vec<String>>>,
 }
 
 /// Managed Tauri state for the lazily-started, shared `code serve-web` process.
@@ -83,6 +91,7 @@ impl VscodeServer {
                 phase: Phase::Stopped,
                 child: None,
                 pgid: None,
+                stderr_tail: Arc::new(Mutex::new(Vec::new())),
             }),
             app_data_dir,
         }
@@ -94,6 +103,14 @@ impl VscodeServer {
 
     fn data_dir(&self) -> PathBuf {
         self.app_data_dir.join(SERVER_DATA_DIR)
+    }
+
+    fn extensions_dir(&self) -> PathBuf {
+        self.app_data_dir.join(EXTENSIONS_DIR)
+    }
+
+    fn imported_settings_path(&self) -> PathBuf {
+        self.app_data_dir.join(IMPORTED_SETTINGS_FILE)
     }
 
     /// The port to load once the server is up, or `None` if it is not ready.
@@ -181,54 +198,49 @@ impl VscodeServer {
     }
 }
 
-/// Launch serve-web and poll until the port is up (or we time out / it dies).
+/// Launch code-server and poll until the port is up (or we time out / it dies).
 /// Runs on its own thread; stores the child into managed state and spawns the
 /// output-drain threads that also detect a crash.
 fn start_and_wait(app: AppHandle) {
     let server = app.state::<VscodeServer>();
 
     let path = login_path();
-    let code = match resolve_code(path.as_deref()) {
-        Some(code) => code,
+    let code_server = match resolve_code_server(path.as_deref()) {
+        Some(p) => p,
         None => {
             fail(
                 &app,
                 &server,
-                "VS Code `code` CLI not found on your PATH. In VS Code, run \
-                 “Shell Command: Install 'code' command in PATH”, then try again.",
+                "`code-server` not found on your PATH. Install it with:\n  brew install code-server\nor see https://coder.com/docs/code-server/install",
             );
             return;
         }
     };
 
     let data_dir = server.data_dir();
-    if let Err(err) = std::fs::create_dir_all(&data_dir) {
-        fail(
-            &app,
-            &server,
-            &format!("could not create server data dir: {err}"),
-        );
-        return;
-    }
-    seed_machine_settings(&data_dir);
+    let ext_dir = server.extensions_dir();
+    let imported_settings = server.imported_settings_path();
 
-    let mut cmd = Command::new(&code);
-    cmd.arg("serve-web")
-        .arg("--host")
-        .arg(SERVE_WEB_HOST)
-        .arg("--port")
-        .arg(SERVE_WEB_PORT.to_string())
-        .arg("--without-connection-token")
-        .arg("--accept-server-license-terms")
-        .arg("--server-data-dir")
-        .arg(&data_dir)
+    for dir in [&data_dir, &ext_dir] {
+        if let Err(err) = std::fs::create_dir_all(dir) {
+            fail(&app, &server, &format!("could not create dir {}: {err}", dir.display()));
+            return;
+        }
+    }
+    seed_user_settings(&data_dir, &imported_settings);
+
+    let mut cmd = Command::new(&code_server);
+    cmd.arg("--host").arg(SERVE_WEB_HOST)
+        .arg("--port").arg(SERVE_WEB_PORT.to_string())
+        .arg("--auth").arg("none")
+        .arg("--user-data-dir").arg(&data_dir)
+        .arg("--extensions-dir").arg(&ext_dir)
         .arg("--disable-telemetry")
+        .arg("--disable-update-check")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(path) = &path {
-        // GUI-launched apps inherit launchd's minimal PATH, so hand serve-web the
-        // login-shell PATH — its own Node subprocess resolution depends on it.
         cmd.env("PATH", path);
     }
     // New session => the child leads a fresh process group whose id equals its
@@ -274,12 +286,21 @@ fn start_and_wait(app: AppHandle) {
         inner.child = Some(child);
         inner.pgid = Some(pgid);
     }
+    // Reset the tail buffer for this fresh run (outside the lock above).
+    if let Ok(inner) = server.inner.lock() {
+        if let Ok(mut tail) = inner.stderr_tail.lock() {
+            tail.clear();
+        }
+    }
     write_pid_file(&server.pid_path(), pgid);
 
-    // Drain both pipes so a full buffer never blocks the server. stdout also
-    // detects an unexpected exit (crash) and marks the server dead.
-    if let Some(stderr) = stderr {
-        thread::spawn(move || drain(stderr));
+    // Capture stderr into a rolling tail so crash messages are visible in the UI.
+    let stderr_tail = {
+        server.inner.lock().ok()
+            .map(|g| Arc::clone(&g.stderr_tail))
+    };
+    if let (Some(stderr_pipe), Some(tail)) = (stderr, stderr_tail) {
+        thread::spawn(move || capture_stderr(stderr_pipe, tail));
     }
     if let Some(stdout) = stdout {
         let app = app.clone();
@@ -327,21 +348,29 @@ fn start_and_wait(app: AppHandle) {
     }
 }
 
-/// Consume a child pipe to EOF, discarding output (keeps the pipe from filling).
-fn drain<R: Read>(pipe: R) {
+/// Capture stderr into a rolling tail (last 20 lines), replacing the silent drain.
+fn capture_stderr<R: Read>(pipe: R, tail: Arc<Mutex<Vec<String>>>) {
+    const MAX_LINES: usize = 20;
     let reader = BufReader::new(pipe);
-    for _ in reader.lines().map_while(Result::ok) {}
+    for line in reader.lines().map_while(Result::ok) {
+        if let Ok(mut t) = tail.lock() {
+            t.push(line);
+            if t.len() > MAX_LINES {
+                t.remove(0);
+            }
+        }
+    }
 }
 
 /// Drain stdout to EOF; EOF means the process is exiting. Reap it and, if it died
 /// while we thought it was starting or ready, mark the server failed and tell the
-/// frontend so it can offer a restart.
+/// frontend so it can offer a restart, including the last stderr lines.
 fn watch_for_exit(app: AppHandle, stdout: ChildStdout) {
     let reader = BufReader::new(stdout);
     for _ in reader.lines().map_while(Result::ok) {}
 
     let server = app.state::<VscodeServer>();
-    let was = {
+    let (was, tail_lines) = {
         let mut inner = match server.inner.lock() {
             Ok(inner) => inner,
             Err(_) => return,
@@ -354,22 +383,30 @@ fn watch_for_exit(app: AppHandle, stdout: ChildStdout) {
             let _ = child.wait();
         }
         inner.pgid = None;
-        was
+        let tail = inner.stderr_tail.lock().ok()
+            .map(|t| t.join("\n"))
+            .unwrap_or_default();
+        (was, tail)
     };
     let _ = std::fs::remove_file(server.pid_path());
 
+    let detail = |prefix: &str| -> String {
+        if tail_lines.trim().is_empty() {
+            prefix.to_string()
+        } else {
+            format!("{prefix}\n\n{tail_lines}")
+        }
+    };
+
     match was {
         Phase::Ready => emit_status(
-            &app,
-            "failed",
-            Some("The VS Code server stopped unexpectedly.".to_string()),
+            &app, "failed",
+            Some(detail("The VS Code server stopped unexpectedly.")),
         ),
         Phase::Starting => emit_status(
-            &app,
-            "failed",
-            Some("The VS Code server exited before it was ready.".to_string()),
+            &app, "failed",
+            Some(detail("The VS Code server exited before it was ready.")),
         ),
-        // A clean stop() (or an already-recorded failure) needs no event.
         Phase::Stopped | Phase::Failed => {}
     }
 }
@@ -415,12 +452,11 @@ fn login_path() -> Option<String> {
     (!path.is_empty()).then_some(path)
 }
 
-/// Resolve the absolute path to the `code` CLI via a login shell (so aliases and
-/// PATH additions in the user's shell profile are honoured).
-fn resolve_code(path: Option<&str>) -> Option<String> {
+/// Resolve the absolute path to the `code-server` binary via a login shell.
+fn resolve_code_server(path: Option<&str>) -> Option<String> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| DEFAULT_SHELL.to_string());
     let mut cmd = Command::new(&shell);
-    cmd.args(["-l", "-c", "command -v code"]);
+    cmd.args(["-l", "-c", "command -v code-server"]);
     if let Some(path) = path {
         cmd.env("PATH", path);
     }
@@ -428,17 +464,16 @@ fn resolve_code(path: Option<&str>) -> Option<String> {
     if !output.status.success() {
         return None;
     }
-    let code = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!code.is_empty()).then_some(code)
+    let bin = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!bin.is_empty()).then_some(bin)
 }
 
-/// True if the process (group leader) with `pid` is still one of our serve-web
-/// processes — the PID-reuse guard before any group signal.
+/// True if the process with `pid` is our code-server — PID-reuse guard.
 fn process_is_serve_web(pid: i32) -> bool {
     Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "command="])
         .output()
-        .map(|out| String::from_utf8_lossy(&out.stdout).contains("serve-web"))
+        .map(|out| String::from_utf8_lossy(&out.stdout).contains("code-server"))
         .unwrap_or(false)
 }
 
@@ -449,33 +484,185 @@ fn write_pid_file(path: &Path, pgid: i32) {
     let _ = std::fs::write(path, pgid.to_string());
 }
 
-/// Machine-level defaults for the embedded editor, seeded before the server
-/// starts. `serve-web` reads these from `<server-data-dir>/data/Machine/settings.json`
-/// (user settings live in the browser and cannot be seeded from disk). They are
-/// only first-load defaults — anything the user changes in the editor is stored
-/// per-origin in the browser and overrides these, so re-writing them each launch
-/// is safe.
+/// Default user settings for the embedded editor. code-server reads these from
+/// `<user-data-dir>/User/settings.json` as a plain file — no browser store needed.
+/// Written once before the server starts; user changes made inside the editor are
+/// persisted to the same file and survive restarts.
 const MACHINE_SETTINGS: &str = r#"{
-  "workbench.colorTheme": "Default Dark Modern",
+  "workbench.colorTheme": "Default Dark+",
+  "workbench.iconTheme": "material-icon-theme",
+  "workbench.startupEditor": "none",
   "workbench.secondarySideBar.defaultVisibility": "hidden",
+  "window.commandCenter": false,
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "biomejs.biome",
+  "editor.accessibilitySupport": "off",
+  "editor.codeActionsOnSave": {
+    "source.organizeImports.biome": "explicit",
+    "source.removeUnusedImports": "explicit"
+  },
+  "[javascript]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[typescript]": { "editor.defaultFormatter": "biomejs.biome", "editor.formatOnSave": true },
+  "[typescriptreact]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[markdown]": { "editor.defaultFormatter": "DavidAnson.vscode-markdownlint" },
+  "diffEditor.ignoreTrimWhitespace": false,
+  "javascript.updateImportsOnFileMove.enabled": "always",
+  "typescript.updateImportsOnFileMove.enabled": "always",
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "typescript.preferences.quoteStyle": "single",
+  "git.suggestSmartCommit": false,
+  "explorer.fileNesting.patterns": {
+    "*.ts": "${capture}.js",
+    "*.js": "${capture}.js.map, ${capture}.min.js, ${capture}.d.ts",
+    "*.jsx": "${capture}.js",
+    "*.tsx": "${capture}.ts",
+    "tsconfig.json": "tsconfig.*.json",
+    "package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml, bun.lockb, bun.lock"
+  },
+  "makefile.configureOnOpen": false,
+  "redhat.telemetry.enabled": false,
+  "gitlens.codeLens.enabled": false,
+  "terminal.integrated.suggest.enabled": false,
   "chat.disableAIFeatures": true,
   "chat.commandCenter.enabled": false,
   "chat.agent.enabled": false,
   "github.copilot.enable": { "*": false },
-  "github.copilot.inlineSuggest.enable": false
+  "github.copilot.inlineSuggest.enable": false,
+  "security.workspace.trust.enabled": false
 }
 "#;
 
-/// Seed `<server-data-dir>/data/Machine/settings.json` so the embedded editor
-/// opens dark and has Copilot/Chat and its side panel disabled. Workspace trust is
-/// application-scoped and cannot be seeded here — it is disabled browser-side (see
-/// `ide_webview`).
-fn seed_machine_settings(data_dir: &Path) {
-    let machine_dir = data_dir.join("data").join("Machine");
-    if std::fs::create_dir_all(&machine_dir).is_ok() {
-        let _ = std::fs::write(machine_dir.join("settings.json"), MACHINE_SETTINGS);
+/// Write `<user-data-dir>/User/settings.json` for code-server (plain file,
+/// not a browser store). Only written once — if the file already exists the
+/// user may have customised it inside the editor, so we leave it alone.
+/// Imported settings (copied from desktop VS Code) are merged in on first write.
+fn seed_user_settings(data_dir: &Path, imported_settings_path: &Path) {
+    let user_dir = data_dir.join("User");
+    if std::fs::create_dir_all(&user_dir).is_err() {
+        return;
+    }
+    let settings_path = user_dir.join("settings.json");
+
+    let mut existing: serde_json::Value = if settings_path.exists() {
+        std::fs::read_to_string(&settings_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let defaults: serde_json::Value =
+        serde_json::from_str(MACHINE_SETTINGS).unwrap_or(serde_json::json!({}));
+
+    if settings_path.exists() {
+        // File already exists — only fix keys that are known-broken defaults.
+        // "Dark+" was the old name; code-server only ships "Default Dark+".
+        if existing.get("workbench.colorTheme").and_then(|v| v.as_str()) == Some("Dark+") {
+            if let Some(obj) = existing.as_object_mut() {
+                obj.insert(
+                    "workbench.colorTheme".to_string(),
+                    serde_json::json!("Default Dark+"),
+                );
+            }
+        }
+    } else {
+        // Fresh install: start from defaults, then layer imported settings on top.
+        existing = defaults;
+        if let Ok(text) = std::fs::read_to_string(imported_settings_path) {
+            if let Ok(user) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let (Some(base), Some(overrides)) =
+                    (existing.as_object_mut(), user.as_object())
+                {
+                    for (k, v) in overrides {
+                        base.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(text) = serde_json::to_string_pretty(&existing) {
+        let _ = std::fs::write(&settings_path, text);
     }
 }
+
+#[tauri::command]
+pub fn import_from_vscode(app: AppHandle) -> Result<String, String> {
+    let server = app.state::<VscodeServer>();
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+
+    let vscode_ext_dir = PathBuf::from(&home).join(".vscode").join("extensions");
+    let dest_ext_dir = server.extensions_dir();
+    if let Err(e) = std::fs::create_dir_all(&dest_ext_dir) {
+        return Err(format!("could not create extensions dir: {e}"));
+    }
+
+    let mut ext_copied = 0usize;
+    let mut ext_skipped = 0usize;
+    if vscode_ext_dir.is_dir() {
+        let entries = std::fs::read_dir(&vscode_ext_dir).map_err(|e| e.to_string())?;
+        for entry in entries.filter_map(|e| e.ok()) {
+            let src = entry.path();
+            if !src.is_dir() {
+                continue;
+            }
+            let dest = dest_ext_dir.join(entry.file_name());
+            if dest.exists() {
+                ext_skipped += 1;
+                continue;
+            }
+            copy_dir_recursive(&src, &dest).map_err(|e| format!("copy {}: {e}", src.display()))?;
+            ext_copied += 1;
+        }
+    }
+
+    let src_settings = PathBuf::from(&home)
+        .join("Library")
+        .join("Application Support")
+        .join("Code")
+        .join("User")
+        .join("settings.json");
+    let settings_imported = if src_settings.is_file() {
+        std::fs::copy(&src_settings, server.imported_settings_path())
+            .map_err(|e| e.to_string())?;
+        true
+    } else {
+        false
+    };
+
+    server.stop();
+
+    let mut parts = Vec::new();
+    if ext_copied > 0 || ext_skipped > 0 {
+        let mut s = format!("{ext_copied} extension{} copied", if ext_copied == 1 { "" } else { "s" });
+        if ext_skipped > 0 {
+            s.push_str(&format!(", {ext_skipped} already present"));
+        }
+        parts.push(s);
+    } else {
+        parts.push("no VS Code extensions found".to_string());
+    }
+    parts.push(if settings_imported { "settings imported".to_string() } else { "no settings.json found".to_string() });
+
+    Ok(parts.join("; "))
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dst.join(entry.file_name());
+        let ft = entry.file_type()?;
+        if ft.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(&entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
 
 /// Kick off (or join) the shared server. Returns the current status so a caller
 /// that finds it already `ready` can proceed without waiting for an event.
@@ -483,4 +670,49 @@ fn seed_machine_settings(data_dir: &Path) {
 pub fn ensure_ide_server(app: AppHandle) -> Result<String, String> {
     let server = app.state::<VscodeServer>();
     Ok(server.ensure_started(&app))
+}
+
+/// Return the total RSS (resident set size) in MB consumed by the serve-web
+/// process and all of its children, or `null` if the server is not running.
+/// Uses `sysinfo` so no shell subprocesses are needed.
+#[tauri::command]
+pub fn get_vscode_memory_mb(app: AppHandle) -> Option<u64> {
+    use sysinfo::{Pid, System};
+
+    let server = app.state::<VscodeServer>();
+    let pgid = {
+        let inner = server.inner.lock().ok()?;
+        if inner.phase != Phase::Ready {
+            return None;
+        }
+        inner.pgid? as u32
+    };
+
+    let root_pid = Pid::from_u32(pgid);
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    // Walk all processes: include the root and any process whose parent chain
+    // leads back to it (the Node worker children that serve-web spawns).
+    let total_bytes: u64 = sys
+        .processes()
+        .values()
+        .filter(|p| {
+            if p.pid() == root_pid {
+                return true;
+            }
+            // Walk up the parent chain.
+            let mut cur = p.parent();
+            while let Some(parent_pid) = cur {
+                if parent_pid == root_pid {
+                    return true;
+                }
+                cur = sys.process(parent_pid).and_then(|pp| pp.parent());
+            }
+            false
+        })
+        .map(|p| p.memory())
+        .sum();
+
+    Some(total_bytes / 1_048_576)
 }

@@ -165,10 +165,22 @@ export function IdeView({ projectId, folder, visible }: IdeViewProps) {
     };
     window.addEventListener("resize", onResize);
 
+    // Temporarily park the webview while any color picker is open so it doesn't
+    // paint over the picker (native webviews are always above web content).
+    const onPickerOpen = () => void hideIdeWebview(projectId);
+    const onPickerClose = () => {
+      const bounds = readBounds(el, offsetRef.current);
+      if (bounds) void showIdeWebview(projectId, bounds);
+    };
+    window.addEventListener("antani:picker-open", onPickerOpen);
+    window.addEventListener("antani:picker-close", onPickerClose);
+
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("antani:picker-open", onPickerOpen);
+      window.removeEventListener("antani:picker-close", onPickerClose);
     };
   }, [visible, phase, projectId]);
 
