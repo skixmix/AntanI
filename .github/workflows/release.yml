@@ -1,0 +1,67 @@
+name: release
+
+# Two ways to ship a release:
+#  1. Merge a PR titled "Release vX.Y.Z" into main (version bump lives in the
+#     PR diff, read from tauri.conf.json here). This is the normal path.
+#  2. Push a "v*" tag yourself (manual escape hatch, e.g. a hotfix).
+#
+# Both converge on the same job so a tag created by this workflow's own
+# GITHUB_TOKEN never needs to retrigger anything (GitHub doesn't retrigger
+# workflows from GITHUB_TOKEN-authored pushes, tags included).
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+jobs:
+  publish-tauri:
+    if: startsWith(github.ref, 'refs/tags/') || startsWith(github.event.head_commit.message, 'Release')
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            version=$(jq -r .version src-tauri/tauri.conf.json)
+            tag="v$version"
+            if git rev-parse "$tag" >/dev/null 2>&1; then
+              echo "::error::Tag $tag already exists — bump the version in tauri.conf.json."
+              exit 1
+            fi
+            git tag "$tag"
+            git push origin "$tag"
+            echo "name=$tag" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: bun install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ steps.tag.outputs.name }}
+          releaseName: "AntanI ${{ steps.tag.outputs.name }}"
+          releaseBody: "See the assets below to download and install this version."
+          releaseDraft: true
+          prerelease: false
+          # No auto-update plugin by design (see AGENTS.md) — no updater manifest to publish.
+          uploadUpdaterJson: false
+          args: --target universal-apple-darwin
