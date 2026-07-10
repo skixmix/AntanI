@@ -1,0 +1,74 @@
+name: bump-tap
+
+# Fires when a release moves from draft to published (or a non-draft release
+# is created directly) — i.e. the exact moment you click "Publish release".
+# Assets on a draft aren't publicly downloadable, so this can't run in the
+# same job that creates the draft (see release.yml).
+on:
+  release:
+    types: [published]
+
+jobs:
+  bump-cask:
+    runs-on: macos-latest
+    steps:
+      - name: Locate dmg asset on the published release
+        id: asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          assets=$(gh release view "${{ github.event.release.tag_name }}" --repo "${{ github.repository }}" \
+            --json assets -q '[.assets[] | select(.name | endswith(".dmg"))]')
+          count=$(jq 'length' <<<"$assets")
+          if [ "$count" -ne 1 ]; then
+            echo "::error::Expected exactly one .dmg asset on this release, found $count."
+            exit 1
+          fi
+          jq -r '.[0].name' <<<"$assets" | sed 's/^/name=/' >> "$GITHUB_OUTPUT"
+          jq -r '.[0].url' <<<"$assets" | sed 's/^/url=/' >> "$GITHUB_OUTPUT"
+          jq -r '.[0].browser_download_url' <<<"$assets" | sed 's/^/download_url=/' >> "$GITHUB_OUTPUT"
+
+      - name: Download asset and compute sha256
+        id: hash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Downloading ${{ steps.asset.outputs.name }}..."
+          curl -sL --fail -H "Accept: application/octet-stream" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "${{ steps.asset.outputs.url }}" -o asset.dmg
+
+          size_bytes=$(stat -f%z asset.dmg)
+          if [ "$size_bytes" -lt 102400 ]; then
+            echo "::error::Downloaded asset is only ${size_bytes} bytes — likely an error page, not a DMG."
+            exit 1
+          fi
+          if ! file asset.dmg | grep -qi "apple disk image"; then
+            echo "::error::Downloaded file is not a valid DMG:"
+            file asset.dmg
+            exit 1
+          fi
+
+          echo "sha256=$(shasum -a 256 asset.dmg | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Update the tap
+        env:
+          TAP_REPO_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ github.event.release.tag_name }}"
+          version="${version#v}"
+
+          git clone "https://x-access-token:${TAP_REPO_TOKEN}@github.com/skixmix/homebrew-antani.git" tap
+          cd tap
+
+          sed -i '' "s#version \".*\"#version \"$version\"#" Casks/antani.rb
+          sed -i '' "s#sha256 \".*\"#sha256 \"${{ steps.hash.outputs.sha256 }}\"#" Casks/antani.rb
+          sed -i '' "s#url \".*\"#url \"${{ steps.asset.outputs.download_url }}\"#" Casks/antani.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: bump antani to $version" || exit 0
+          git push
