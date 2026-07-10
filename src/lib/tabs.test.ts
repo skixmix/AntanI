@@ -5,7 +5,11 @@ import {
   createTab,
   defaultTitle,
   projectTabs,
+  recolorTab,
   removeProjectTabs,
+  renameTab,
+  reorderTabs,
+  setActiveTab,
   startupCommandForKind,
   type TabsState,
 } from "./tabs";
@@ -96,5 +100,83 @@ describe("removeProjectTabs", () => {
     const state = seed(["terminal", "claude"]);
     const pruned = removeProjectTabs(state, PROJECT);
     expect(projectTabs(pruned, PROJECT).tabs).toHaveLength(0);
+  });
+
+  it("is a no-op when the project has no tabs", () => {
+    const state = seed(["terminal"]);
+    const pruned = removeProjectTabs(state, "other-project");
+    expect(pruned).toBe(state);
+  });
+});
+
+describe("projectTabs", () => {
+  it("returns an empty shape for an unknown project", () => {
+    expect(projectTabs({}, PROJECT)).toEqual({ tabs: [], activeTabId: null });
+  });
+});
+
+describe("setActiveTab", () => {
+  it("switches the active tab", () => {
+    const state = seed(["terminal", "claude"]);
+    const [t0, t1] = projectTabs(state, PROJECT).tabs;
+    const next = setActiveTab(state, PROJECT, t0.id);
+    expect(projectTabs(next, PROJECT).activeTabId).toBe(t0.id);
+    void t1;
+  });
+
+  it("is a no-op for an unknown tab id", () => {
+    const state = seed(["terminal"]);
+    const next = setActiveTab(state, PROJECT, "missing");
+    expect(next).toBe(state);
+  });
+});
+
+describe("renameTab", () => {
+  it("renames the matching tab and leaves others untouched", () => {
+    const state = seed(["terminal", "claude"]);
+    const [t0, t1] = projectTabs(state, PROJECT).tabs;
+    const next = renameTab(state, PROJECT, t0.id, "My Terminal");
+    const pt = projectTabs(next, PROJECT);
+    expect(pt.tabs[0].title).toBe("My Terminal");
+    expect(pt.tabs[1].title).toBe(t1.title);
+  });
+});
+
+describe("recolorTab", () => {
+  it("recolors the matching tab", () => {
+    const state = seed(["terminal"]);
+    const [t0] = projectTabs(state, PROJECT).tabs;
+    const next = recolorTab(state, PROJECT, t0.id, "#ff0000");
+    expect(projectTabs(next, PROJECT).tabs[0].color).toBe("#ff0000");
+  });
+});
+
+describe("reorderTabs", () => {
+  it("moves a tab before another", () => {
+    const state = seed(["terminal", "claude", "opencode"]);
+    const [t0, t1, t2] = projectTabs(state, PROJECT).tabs;
+    const next = reorderTabs(state, PROJECT, t2.id, t0.id);
+    expect(projectTabs(next, PROJECT).tabs.map((t) => t.id)).toEqual([t2.id, t0.id, t1.id]);
+  });
+
+  it("moves a tab to the end when insertBeforeId is null", () => {
+    const state = seed(["terminal", "claude", "opencode"]);
+    const [t0, t1, t2] = projectTabs(state, PROJECT).tabs;
+    const next = reorderTabs(state, PROJECT, t0.id, null);
+    expect(projectTabs(next, PROJECT).tabs.map((t) => t.id)).toEqual([t1.id, t2.id, t0.id]);
+  });
+
+  it("is a no-op when the dragged tab is unknown", () => {
+    const state = seed(["terminal", "claude"]);
+    const [, t1] = projectTabs(state, PROJECT).tabs;
+    const next = reorderTabs(state, PROJECT, "missing", t1.id);
+    expect(next).toBe(state);
+  });
+
+  it("is a no-op when the insertion target is unknown", () => {
+    const state = seed(["terminal", "claude"]);
+    const [t0] = projectTabs(state, PROJECT).tabs;
+    const next = reorderTabs(state, PROJECT, t0.id, "missing");
+    expect(next).toBe(state);
   });
 });

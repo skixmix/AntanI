@@ -19,7 +19,8 @@
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "prepare": "husky"
+    "rust:coverage": "cargo llvm-cov --manifest-path src-tauri/Cargo.toml --ignore-filename-regex 'ide_webview\\.rs|lib\\.rs|main\\.rs|pty\\.rs|vscode_server\\.rs' --fail-under-lines 90",
+    "prepare": "husky && sh scripts/setup-rust-tools.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",

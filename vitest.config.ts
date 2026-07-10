@@ -12,7 +12,15 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "lcov"],
       include: ["src/lib/**/*.ts"],
-      exclude: ["src/**/*.{test,spec}.ts"],
+      // api.ts is pure Tauri invoke/listen wrappers, useDragReorder.ts is DOM-
+      // coupled; both are excluded from the pure-logic testing policy above.
+      exclude: ["src/**/*.{test,spec}.ts", "src/lib/api.ts", "src/lib/useDragReorder.ts"],
+      thresholds: {
+        lines: 90,
+        statements: 90,
+        functions: 90,
+        branches: 90,
+      },
     },
   },
 });

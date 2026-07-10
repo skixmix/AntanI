@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: biome (lint + format check)
+        run: bun run lint
+
+      - name: typecheck
+        run: bun run typecheck
+
+      - name: knip (unused files / exports / deps)
+        run: bun run knip
+
+      - name: vitest (coverage, 90% gate)
+        run: bun run test:coverage
+
+  rust:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: bun install --frozen-lockfile
+
+      - name: cargo fmt --check
+        run: bun run rust:fmt
+
+      - name: cargo clippy
+        run: bun run rust:clippy
+
+      - name: cargo test
+        run: bun run rust:test
+
+      - name: cargo llvm-cov (coverage, 90% gate)
+        # Scoped to state.rs: the rest of src-tauri is Tauri command handlers /
+        # OS process glue (IDE webview, PTY, code-server management), which is
+        # exempt from the pure-logic testing policy for the same reason api.ts
+        # is on the frontend side.
+        run: bun run rust:coverage
