@@ -223,18 +223,27 @@ fn start_and_wait(app: AppHandle) {
 
     for dir in [&data_dir, &ext_dir] {
         if let Err(err) = std::fs::create_dir_all(dir) {
-            fail(&app, &server, &format!("could not create dir {}: {err}", dir.display()));
+            fail(
+                &app,
+                &server,
+                &format!("could not create dir {}: {err}", dir.display()),
+            );
             return;
         }
     }
     seed_user_settings(&data_dir, &imported_settings);
 
     let mut cmd = Command::new(&code_server);
-    cmd.arg("--host").arg(SERVE_WEB_HOST)
-        .arg("--port").arg(SERVE_WEB_PORT.to_string())
-        .arg("--auth").arg("none")
-        .arg("--user-data-dir").arg(&data_dir)
-        .arg("--extensions-dir").arg(&ext_dir)
+    cmd.arg("--host")
+        .arg(SERVE_WEB_HOST)
+        .arg("--port")
+        .arg(SERVE_WEB_PORT.to_string())
+        .arg("--auth")
+        .arg("none")
+        .arg("--user-data-dir")
+        .arg(&data_dir)
+        .arg("--extensions-dir")
+        .arg(&ext_dir)
         .arg("--disable-telemetry")
         .arg("--disable-update-check")
         .stdin(Stdio::null())
@@ -295,10 +304,7 @@ fn start_and_wait(app: AppHandle) {
     write_pid_file(&server.pid_path(), pgid);
 
     // Capture stderr into a rolling tail so crash messages are visible in the UI.
-    let stderr_tail = {
-        server.inner.lock().ok()
-            .map(|g| Arc::clone(&g.stderr_tail))
-    };
+    let stderr_tail = { server.inner.lock().ok().map(|g| Arc::clone(&g.stderr_tail)) };
     if let (Some(stderr_pipe), Some(tail)) = (stderr, stderr_tail) {
         thread::spawn(move || capture_stderr(stderr_pipe, tail));
     }
@@ -383,7 +389,10 @@ fn watch_for_exit(app: AppHandle, stdout: ChildStdout) {
             let _ = child.wait();
         }
         inner.pgid = None;
-        let tail = inner.stderr_tail.lock().ok()
+        let tail = inner
+            .stderr_tail
+            .lock()
+            .ok()
             .map(|t| t.join("\n"))
             .unwrap_or_default();
         (was, tail)
@@ -400,11 +409,13 @@ fn watch_for_exit(app: AppHandle, stdout: ChildStdout) {
 
     match was {
         Phase::Ready => emit_status(
-            &app, "failed",
+            &app,
+            "failed",
             Some(detail("The VS Code server stopped unexpectedly.")),
         ),
         Phase::Starting => emit_status(
-            &app, "failed",
+            &app,
+            "failed",
             Some(detail("The VS Code server exited before it was ready.")),
         ),
         Phase::Stopped | Phase::Failed => {}
@@ -558,7 +569,11 @@ fn seed_user_settings(data_dir: &Path, imported_settings_path: &Path) {
     if settings_path.exists() {
         // File already exists — only fix keys that are known-broken defaults.
         // "Dark+" was the old name; code-server only ships "Default Dark+".
-        if existing.get("workbench.colorTheme").and_then(|v| v.as_str()) == Some("Dark+") {
+        if existing
+            .get("workbench.colorTheme")
+            .and_then(|v| v.as_str())
+            == Some("Dark+")
+        {
             if let Some(obj) = existing.as_object_mut() {
                 obj.insert(
                     "workbench.colorTheme".to_string(),
@@ -571,8 +586,7 @@ fn seed_user_settings(data_dir: &Path, imported_settings_path: &Path) {
         existing = defaults;
         if let Ok(text) = std::fs::read_to_string(imported_settings_path) {
             if let Ok(user) = serde_json::from_str::<serde_json::Value>(&text) {
-                if let (Some(base), Some(overrides)) =
-                    (existing.as_object_mut(), user.as_object())
+                if let (Some(base), Some(overrides)) = (existing.as_object_mut(), user.as_object())
                 {
                     for (k, v) in overrides {
                         base.insert(k.clone(), v.clone());
@@ -624,8 +638,7 @@ pub fn import_from_vscode(app: AppHandle) -> Result<String, String> {
         .join("User")
         .join("settings.json");
     let settings_imported = if src_settings.is_file() {
-        std::fs::copy(&src_settings, server.imported_settings_path())
-            .map_err(|e| e.to_string())?;
+        std::fs::copy(&src_settings, server.imported_settings_path()).map_err(|e| e.to_string())?;
         true
     } else {
         false
@@ -635,7 +648,10 @@ pub fn import_from_vscode(app: AppHandle) -> Result<String, String> {
 
     let mut parts = Vec::new();
     if ext_copied > 0 || ext_skipped > 0 {
-        let mut s = format!("{ext_copied} extension{} copied", if ext_copied == 1 { "" } else { "s" });
+        let mut s = format!(
+            "{ext_copied} extension{} copied",
+            if ext_copied == 1 { "" } else { "s" }
+        );
         if ext_skipped > 0 {
             s.push_str(&format!(", {ext_skipped} already present"));
         }
@@ -643,7 +659,11 @@ pub fn import_from_vscode(app: AppHandle) -> Result<String, String> {
     } else {
         parts.push("no VS Code extensions found".to_string());
     }
-    parts.push(if settings_imported { "settings imported".to_string() } else { "no settings.json found".to_string() });
+    parts.push(if settings_imported {
+        "settings imported".to_string()
+    } else {
+        "no settings.json found".to_string()
+    });
 
     Ok(parts.join("; "))
 }
@@ -662,7 +682,6 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
-
 
 /// Kick off (or join) the shared server. Returns the current status so a caller
 /// that finds it already `ready` can proceed without waiting for an event.
