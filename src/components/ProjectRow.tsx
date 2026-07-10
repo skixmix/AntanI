@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Project } from "../lib/types";
 import { ColorPicker } from "./ColorPicker";
 
@@ -32,7 +33,9 @@ export function ProjectRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(project.name);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const colorSwatchRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     if (editing) {
@@ -40,6 +43,17 @@ export function ProjectRow({
       inputRef.current?.select();
     }
   }, [editing]);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+    };
+  }, [ctxMenu]);
 
   function commitRename() {
     const next = draft.trim();
@@ -56,13 +70,21 @@ export function ProjectRow({
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
       onClick={onSelect}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setCtxMenu({ x: e.clientX, y: e.clientY });
+      }}
       title={project.path}
-      className={`group relative flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 no-select ${
-        active ? "bg-accent" : "hover:bg-secondary"
-      } ${isDragging ? "opacity-40" : ""} ${isDropTarget ? "ring-1 ring-primary" : ""}`}
+      className={`flex cursor-pointer items-center gap-2.5 px-3 py-2.5 no-select transition-colors border-b border-sidebar-border ${
+        active
+          ? "bg-sidebar-accent text-foreground"
+          : "text-sidebar-foreground hover:bg-sidebar-accent/60"
+      } ${isDragging ? "opacity-40" : ""} ${isDropTarget ? "ring-inset ring-1 ring-primary" : ""}`}
     >
       <span
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-semibold text-black/80"
+        ref={colorSwatchRef}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold text-black/80"
         style={{ backgroundColor: project.color }}
       >
         {project.name.charAt(0).toUpperCase()}
@@ -77,10 +99,7 @@ export function ProjectRow({
           onBlur={commitRename}
           onKeyDown={(e) => {
             if (e.key === "Enter") commitRename();
-            if (e.key === "Escape") {
-              setDraft(project.name);
-              setEditing(false);
-            }
+            if (e.key === "Escape") { setDraft(project.name); setEditing(false); }
           }}
           className="min-w-0 flex-1 rounded bg-tertiary px-1.5 py-0.5 text-sm outline-none ring-1 ring-border"
         />
@@ -91,47 +110,54 @@ export function ProjectRow({
             setDraft(project.name);
             setEditing(true);
           }}
-          className="min-w-0 flex-1 truncate text-sm text-foreground"
+          className="min-w-0 flex-1 truncate text-sm"
         >
           {project.name}
         </span>
       )}
 
-      {/* Status dot placeholder (wired up in Phase 4). */}
-      <span className="h-2 w-2 shrink-0 rounded-full bg-transparent" aria-hidden />
-
-      {!editing && (
-        <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
-          <button
-            type="button"
-            aria-label="Change color"
-            onClick={(e) => {
-              e.stopPropagation();
-              setPickerOpen((v) => !v);
-            }}
-            className="h-4 w-4 rounded-full ring-1 ring-border"
-            style={{ backgroundColor: project.color }}
-          />
-          <button
-            type="button"
-            aria-label="Remove project"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
-          >
-            ×
-          </button>
-        </div>
-      )}
-
       {pickerOpen && (
         <ColorPicker
+          anchorEl={colorSwatchRef.current}
           selected={project.color}
           onPick={onRecolor}
           onClose={() => setPickerOpen(false)}
         />
+      )}
+
+      {ctxMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setCtxMenu(null)} />
+          <div
+            className="fixed z-50 min-w-36 rounded-lg border border-border bg-popover p-1 shadow-xl text-sm"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-secondary"
+              onClick={() => { setDraft(project.name); setEditing(true); setCtxMenu(null); }}
+            >
+              Rename
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-secondary"
+              onClick={() => { setPickerOpen(true); setCtxMenu(null); }}
+            >
+              Change color
+            </button>
+            <div className="my-1 border-t border-border" />
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-destructive hover:bg-secondary"
+              onClick={() => { onRemove(); setCtxMenu(null); }}
+            >
+              Remove project
+            </button>
+          </div>
+        </>,
+        document.body,
       )}
     </div>
   );

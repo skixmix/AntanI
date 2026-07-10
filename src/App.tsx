@@ -20,6 +20,7 @@ function App() {
   const [data, setData] = useState<AppData | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [tabs, setTabs] = useState<TabsState>({});
+  const [ideOpenByProject, setIdeOpenByProject] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,7 +32,13 @@ function App() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  /** Run a mutating command and adopt its returned state (drift-free). */
+  // Suppress browser native context menu globally — tabs and project rows show their own.
+  useEffect(() => {
+    const block = (e: MouseEvent) => e.preventDefault();
+    window.addEventListener("contextmenu", block);
+    return () => window.removeEventListener("contextmenu", block);
+  }, []);
+
   const run = useCallback(async (op: () => Promise<AppData>) => {
     try {
       setData(await op());
@@ -64,10 +71,12 @@ function App() {
 
   const openTab = useCallback(
     (kind: TabKind) => {
-      if (activeId && settings) setTabs((t) => addTab(t, activeId, createTab(kind, settings)));
+      if (!activeId || !settings) return;
+      setTabs((t) => addTab(t, activeId, createTab(kind, settings)));
     },
     [activeId, settings],
   );
+
   const selectTab = useCallback(
     (tabId: string) => activeId && setTabs((t) => setActiveTab(t, activeId, tabId)),
     [activeId],
@@ -87,20 +96,20 @@ function App() {
     [activeId],
   );
 
-  // Cmd+1..9 switches to the Nth project.
+  const handleToggleIde = useCallback(() => {
+    if (!activeId) return;
+    setIdeOpenByProject((prev) => ({ ...prev, [activeId]: !prev[activeId] }));
+  }, [activeId]);
+
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
-      const n = Number(e.key);
+    function onQuickSwitch(e: Event) {
+      const n = (e as CustomEvent<number>).detail;
       if (!Number.isInteger(n) || n < 1 || n > MAX_QUICK_SWITCH) return;
       const project = data?.projects[n - 1];
-      if (project) {
-        e.preventDefault();
-        void run(() => api.setActiveProject(project.id));
-      }
+      if (project) void run(() => api.setActiveProject(project.id));
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("antani:quick-switch", onQuickSwitch);
+    return () => window.removeEventListener("antani:quick-switch", onQuickSwitch);
   }, [data, run]);
 
   if (!data || !settings) {
@@ -112,6 +121,7 @@ function App() {
   }
 
   const active = data.projects.find((p) => p.id === data.activeProjectId) ?? null;
+  const ideOpen = activeId ? (ideOpenByProject[activeId] ?? false) : false;
 
   return (
     <div className="flex h-full w-full bg-background">
@@ -129,11 +139,13 @@ function App() {
         project={active}
         projects={data.projects}
         tabs={tabs}
+        ideOpen={ideOpen}
         onOpenTab={openTab}
         onSelectTab={selectTab}
         onCloseTab={handleCloseTab}
         onRenameTab={handleRenameTab}
         onRecolorTab={handleRecolorTab}
+        onToggleIde={handleToggleIde}
       />
 
       {error && (

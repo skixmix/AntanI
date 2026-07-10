@@ -5,7 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
 import { killPty, onPtyExit, resizePty, spawnPty, writePty } from "../lib/api";
-import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_FONT_SIZE, TERMINAL_SCROLLBACK } from "../lib/constants";
+import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_SCROLLBACK } from "../lib/constants";
 
 interface TerminalViewProps {
   tabId: string;
@@ -13,32 +13,6 @@ interface TerminalViewProps {
   startupCommand: string | null;
   visible: boolean;
 }
-
-const TERMINAL_THEME = {
-  background: "#1e2025",
-  foreground: "#c8c5bc",
-  cursor: "#d4622a",
-  cursorAccent: "#181a1e",
-  selectionBackground: "rgba(54, 58, 66, 0.85)",
-  black: "#181a1e",
-  red: "#c94040",
-  green: "#8a9458",
-  yellow: "#c8a832",
-  blue: "#527e8e",
-  magenta: "#9a5235",
-  cyan: "#6e9198",
-  white: "#c8c5bc",
-  brightBlack: "#363a42",
-  brightRed: "#e06060",
-  brightGreen: "#a8b472",
-  brightYellow: "#e8c848",
-  brightBlue: "#6e98aa",
-  brightMagenta: "#b46848",
-  brightCyan: "#90b8be",
-  brightWhite: "#d8d5cc",
-} as const;
-
-const FONT_FAMILY = 'ui-monospace, "SF Mono", Menlo, Monaco, monospace';
 
 export function TerminalView({ tabId, cwd, startupCommand, visible }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -50,11 +24,8 @@ export function TerminalView({ tabId, cwd, startupCommand, visible }: TerminalVi
     if (!container) return;
 
     const term = new Terminal({
-      fontFamily: FONT_FAMILY,
-      fontSize: TERMINAL_FONT_SIZE,
       scrollback: TERMINAL_SCROLLBACK,
       cursorBlink: true,
-      theme: TERMINAL_THEME,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -126,7 +97,7 @@ export function TerminalView({ tabId, cwd, startupCommand, visible }: TerminalVi
     <div
       ref={containerRef}
       className="absolute inset-0 overflow-hidden p-1.5"
-      style={{ display: visible ? "block" : "none", backgroundColor: TERMINAL_THEME.background }}
+      style={{ display: visible ? "block" : "none" }}
     />
   );
 }

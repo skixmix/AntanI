@@ -1,5 +1,6 @@
 import { type Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { AppData, Settings } from "./types";
 
@@ -87,4 +88,76 @@ export interface PtyExit {
 /** Subscribe to the one-shot "process exited" signal for any PTY. */
 export function onPtyExit(handler: (event: PtyExit) => void): Promise<UnlistenFn> {
   return listen<PtyExit>("pty-exit", (event) => handler(event.payload));
+}
+
+/**
+ * Embedded VS Code (IDE tab). One shared `code serve-web` process backs a native
+ * child webview per project. The Rust side owns the webview lifecycle; the
+ * frontend only reports the content rect to keep the webview aligned, and toggles
+ * show/hide as tabs and projects switch.
+ */
+
+export type IdeServerStatus = "starting" | "ready" | "failed";
+
+/** Content-area rectangle in logical (CSS) pixels, relative to the window. */
+export interface IdeBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Start (or join) the shared server; resolves with its current status. */
+export function ensureIdeServer(): Promise<IdeServerStatus> {
+  return invoke<IdeServerStatus>("ensure_ide_server");
+}
+
+let cachedTitleBarOffset: number | null = null;
+
+/**
+ * Vertical gap (logical px) between the native window top and the DOM viewport
+ * top — the title bar. Tauri positions child webviews relative to the native
+ * window top, but getBoundingClientRect is relative to the DOM viewport (below the
+ * title bar), so this must be added to a measured Y before it becomes an IDE
+ * webview bound, or the webview sits too high and covers the tab strip. Constant
+ * per window, so it is cached after the first read.
+ */
+export async function titleBarOffset(): Promise<number> {
+  if (cachedTitleBarOffset !== null) return cachedTitleBarOffset;
+  const win = getCurrentWindow();
+  const [inner, scale] = await Promise.all([win.innerSize(), win.scaleFactor()]);
+  cachedTitleBarOffset = Math.max(0, Math.round(inner.height / scale - window.innerHeight));
+  return cachedTitleBarOffset;
+}
+
+export function createIdeWebview(projectId: string, folder: string, b: IdeBounds): Promise<void> {
+  return invoke("create_ide_webview", { projectId, folder, ...b });
+}
+
+export function setIdeBounds(projectId: string, b: IdeBounds): Promise<void> {
+  return invoke("set_ide_bounds", { projectId, ...b });
+}
+
+export function showIdeWebview(projectId: string, b: IdeBounds): Promise<void> {
+  return invoke("show_ide_webview", { projectId, ...b });
+}
+
+export function hideIdeWebview(projectId: string): Promise<void> {
+  return invoke("hide_ide_webview", { projectId });
+}
+
+export function closeIdeWebview(projectId: string): Promise<void> {
+  return invoke("close_ide_webview", { projectId });
+}
+
+export interface IdeServerStatusEvent {
+  status: IdeServerStatus;
+  message: string | null;
+}
+
+/** Subscribe to server lifecycle transitions (starting / ready / crashed). */
+export function onIdeServerStatus(
+  handler: (event: IdeServerStatusEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<IdeServerStatusEvent>("ide-server-status", (event) => handler(event.payload));
 }

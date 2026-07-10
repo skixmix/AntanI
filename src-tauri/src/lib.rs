@@ -1,8 +1,36 @@
+mod ide_webview;
 mod pty;
 mod state;
+mod vscode_server;
 
 use state::{AppData, AppState, Settings, SettingsState, PROJECTS_FILE, SETTINGS_FILE};
-use tauri::{Manager, RunEvent, State};
+use tauri::{Manager, RunEvent, State, WindowEvent};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use vscode_server::VscodeServer;
+
+/// Cmd+1..Cmd+9 → switch to the Nth project, paired with that 1-based index.
+///
+/// Registered as OS-level global shortcuts (only while our window is focused), not
+/// as a webview `keydown` listener: the embedded VS Code child webview swallows key
+/// events, so a JS listener never sees them. Tradeoff — while the IDE is focused,
+/// Cmd+1..9 switch projects, so VS Code's own "focus editor group N" is shadowed.
+fn quick_switch_shortcuts() -> Vec<(Shortcut, u32)> {
+    [
+        Code::Digit1,
+        Code::Digit2,
+        Code::Digit3,
+        Code::Digit4,
+        Code::Digit5,
+        Code::Digit6,
+        Code::Digit7,
+        Code::Digit8,
+        Code::Digit9,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, code)| (Shortcut::new(Some(Modifiers::SUPER), code), i as u32 + 1))
+    .collect()
+}
 
 /// Lock the state mutex, run a mutation, persist to disk, and return the new state.
 fn mutate<F>(state: &AppState, f: F) -> Result<AppData, String>
@@ -93,7 +121,47 @@ pub fn run() {
             app.manage(AppState::new(dir.join(PROJECTS_FILE)));
             app.manage(SettingsState::new(dir.join(SETTINGS_FILE)));
             app.manage(pty::PtyManager::default());
+
+            let server = VscodeServer::new(dir);
+            server.reclaim_orphan();
+            app.manage(server);
+            app.manage(ide_webview::IdeWebviews::default());
+
+            let shortcuts = quick_switch_shortcuts();
+            let handler_shortcuts = shortcuts.clone();
+            app.handle().plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(move |app, shortcut, event| {
+                        if event.state() != ShortcutState::Pressed {
+                            return;
+                        }
+                        if let Some((_, n)) = handler_shortcuts.iter().find(|(s, _)| s == shortcut) {
+                            if let Some(main) = app.get_webview_window("main") {
+                                let _ = main.eval(format!(
+                                    "window.dispatchEvent(new CustomEvent('antani:quick-switch',{{detail:{n}}}))"
+                                ));
+                            }
+                        }
+                    })
+                    .build(),
+            )?;
+            let global = app.global_shortcut();
+            for (shortcut, _) in &shortcuts {
+                let _ = global.register(*shortcut);
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::Focused(focused) = event {
+                let global = window.app_handle().global_shortcut();
+                if *focused {
+                    for (shortcut, _) in quick_switch_shortcuts() {
+                        let _ = global.register(shortcut);
+                    }
+                } else {
+                    let _ = global.unregister_all();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_app_state,
@@ -108,7 +176,13 @@ pub fn run() {
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
-            pty::pty_kill
+            pty::pty_kill,
+            vscode_server::ensure_ide_server,
+            ide_webview::create_ide_webview,
+            ide_webview::set_ide_bounds,
+            ide_webview::show_ide_webview,
+            ide_webview::hide_ide_webview,
+            ide_webview::close_ide_webview
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -116,6 +190,9 @@ pub fn run() {
             if let RunEvent::Exit = event {
                 if let Some(manager) = app_handle.try_state::<pty::PtyManager>() {
                     manager.kill_all();
+                }
+                if let Some(server) = app_handle.try_state::<VscodeServer>() {
+                    server.stop();
                 }
             }
         });

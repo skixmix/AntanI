@@ -17,6 +17,8 @@
   --color-border: #363a42;
   --color-sidebar: #181a1e;
   --color-sidebar-foreground: #b8b6ae;
+  --color-sidebar-accent: #252830;
+  --color-sidebar-border: #2d3038;
   --color-ring: #d4622a;
 }
 
@@ -43,4 +45,10 @@ body {
 .no-select {
   user-select: none;
   -webkit-user-select: none;
+}
+
+button,
+[role="button"],
+[tabindex]:not([tabindex="-1"]) {
+  cursor: pointer;
 }
