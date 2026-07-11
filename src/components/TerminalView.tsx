@@ -83,7 +83,25 @@ export function TerminalView({
 
     let silenceTimer: number | undefined;
     let seenBusy = false;
-    let lastUserInputAt = 0;
+    // True from the first keystroke of an unsent message until it's actually
+    // submitted (Enter, not Shift+Enter). While true, PTY output must not
+    // drive any status transition: the terminal's own echo of the draft is
+    // on screen the whole time the user is composing, no matter how long
+    // they pause, so a timing-based suppression window can't fully hide it —
+    // only "has this actually been sent yet" can.
+    let composing = false;
+    // Single gate for every status write below: onOutputArrived and
+    // onWriteFlushed both react to the same PTY chunk, and without a shared
+    // "what did we last actually send" check they can race each other (one
+    // sets busy, the other immediately re-asserts waiting) and re-fire the
+    // same status repeatedly, which App.tsx's notify-dedup reads as distinct
+    // new prompts.
+    let lastStatus: TabStatus = "idle";
+    function setStatus(next: TabStatus) {
+      if (next === lastStatus) return;
+      lastStatus = next;
+      onStatusChange?.(tabId, next);
+    }
     // Armed for the tab's initial boot (spawning the CLI counts as "busy"
     // until its startup settles), then cleared. From there on, only a real
     // keystroke re-arms it — otherwise incidental output (a background
@@ -91,7 +109,6 @@ export function TerminalView({
     // the user never touched. Also cleared whenever a turn genuinely
     // resolves to "ready", so idle-time redraws after that don't re-arm it.
     let armed = true;
-    const ECHO_SUPPRESS_MS = 400;
 
     // The actual rendered screen, not a rolling window of raw output bytes:
     // TUIs that redraw via cursor-addressed partial updates (Ink, blessed,
@@ -116,7 +133,7 @@ export function TerminalView({
       silenceTimer = window.setTimeout(() => {
         if (disposed || !seenBusy) return;
         const status: TabStatus = WAITING_RE.test(visibleScreenText()) ? "waiting" : "ready";
-        onStatusChange?.(tabId, status);
+        setStatus(status);
         if (status === "ready") {
           armed = false;
           seenBusy = false;
@@ -131,14 +148,16 @@ export function TerminalView({
     // accurate no matter which tab is currently visible.
     function onOutputArrived() {
       if (disposed || !isAi || !onStatusChange || !armed) return;
-      // Echo suppression only skips the *busy* flip (to avoid a flash from the
-      // user's own keystrokes); the ready-check timer must still (re)schedule
-      // here, otherwise output that lands inside the suppress window can leave
-      // the tab stuck on "busy" with no timer left to resolve it.
-      const now = performance.now();
-      if (now - lastUserInputAt >= ECHO_SUPPRESS_MS) {
+      // While composing, the ready-check timer must still (re)schedule here,
+      // otherwise output that lands mid-draft can leave the tab stuck on
+      // "busy" with no timer left to resolve it once the draft is sent.
+      // A still-visible waiting prompt must not be bumped to "busy" just
+      // because unrelated output arrived (e.g. a background spinner
+      // redrawing) — only onWriteFlushed, which actually re-checks the
+      // screen, is allowed to move the tab off "waiting".
+      if (!composing && lastStatus !== "waiting") {
         seenBusy = true;
-        onStatusChange(tabId, "busy");
+        setStatus("busy");
       }
       scheduleReadyCheck();
     }
@@ -151,11 +170,20 @@ export function TerminalView({
     // than immediately — a bit of lag here (vs. onOutputArrived above) only
     // delays waiting-prompt detection slightly, it doesn't cause flicker.
     function onWriteFlushed() {
-      if (disposed || !isAi || !onStatusChange || !armed) return;
+      if (disposed || !isAi || !onStatusChange || !armed || composing) return;
+      // This is the path that scans the *whole* visible screen, so without
+      // the composing check above, the terminal's own echo of the user's
+      // still-being-typed message (e.g. containing "confirm" or "continue?")
+      // can trip WAITING_RE before anything was ever sent.
       if (WAITING_RE.test(visibleScreenText())) {
         seenBusy = true;
         window.clearTimeout(silenceTimer);
-        onStatusChange(tabId, "waiting");
+        setStatus("waiting");
+      } else if (lastStatus === "waiting") {
+        // The prompt text has left the screen — fall back to busy so the
+        // silence timer (already scheduled by onOutputArrived) can resolve
+        // it to "ready" normally instead of staying stuck on "waiting".
+        setStatus("busy");
       }
     }
 
@@ -166,16 +194,18 @@ export function TerminalView({
       onOutputArrived();
     };
     term.onData((data) => {
-      lastUserInputAt = performance.now();
       void writePty(tabId, data);
     });
     // onData also fires for mouse-tracking escape sequences (a click to
     // focus the terminal is enough, if the CLI has mouse reporting on) and
     // programmatic writes/paste — none of which are the user "interacting
-    // with the AI". onKey only fires for real keyboard events, so arming is
-    // gated on that instead.
-    term.onKey(() => {
+    // with the AI". onKey only fires for real keyboard events, so arming
+    // (and composing) is gated on that instead.
+    term.onKey(({ domEvent }) => {
       armed = true;
+      // Enter (not Shift+Enter, which inserts a newline rather than
+      // submitting) is the one keystroke that ends a draft.
+      composing = !(domEvent.key === "Enter" && !domEvent.shiftKey);
     });
     // xterm.js sends the same "\r" for Enter and Shift+Enter, so CLIs that
     // distinguish them (e.g. Claude Code, which uses Shift+Enter to insert a
@@ -195,8 +225,8 @@ export function TerminalView({
         // default "insert newline in the hidden textarea" action still
         // fires and leaks through xterm's input-sync path as an extra key.
         event.preventDefault();
-        lastUserInputAt = performance.now();
         armed = true;
+        composing = true;
         void writePty(tabId, isAi ? "\x1b[13;2u" : "\x16\n");
         return false;
       }
@@ -222,7 +252,7 @@ export function TerminalView({
         window.clearTimeout(silenceTimer);
         seenBusy = false;
         armed = false;
-        onStatusChange?.(tabId, "idle");
+        setStatus("idle");
       }
     }).then((fn) => {
       if (disposed) fn();

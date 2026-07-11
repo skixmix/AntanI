@@ -8,6 +8,7 @@ interface ProjectRowProps {
   project: Project;
   active: boolean;
   status?: "busy" | "waiting";
+  needsAttention?: boolean;
   rowRef?: React.Ref<HTMLDivElement>;
   onSelect: () => void;
   onRename: (name: string) => void;
@@ -22,6 +23,7 @@ export function ProjectRow({
   project,
   active,
   status,
+  needsAttention,
   rowRef,
   onSelect,
   onRename,
@@ -76,11 +78,16 @@ export function ProjectRow({
         setCtxMenu({ x: e.clientX, y: e.clientY });
       }}
       title={project.path}
-      className={`relative flex cursor-pointer items-center gap-2.5 px-3 py-2.5 no-select transition-opacity border-b border-sidebar-border ${
+      className={`relative flex cursor-pointer items-center gap-2.5 border-b border-l-[3px] border-sidebar-border px-3 py-2.5 no-select transition-colors ${
         active
-          ? "bg-sidebar-accent text-white"
-          : "text-white/75 hover:bg-sidebar-accent/60 hover:text-white"
-      } ${isDragging ? "opacity-30" : ""}`}
+          ? "text-white"
+          : "border-l-transparent text-white/75 hover:bg-sidebar-accent/60 hover:text-white"
+      } ${isDragging ? "opacity-30" : ""} ${needsAttention ? "needs-attention-glow" : ""}`}
+      style={
+        active
+          ? { borderLeftColor: project.color, backgroundColor: `${project.color}26` }
+          : undefined
+      }
     >
       {showInsertBefore && (
         <div className="absolute top-0 left-2 right-2 h-0.5 rounded-full bg-primary" />

@@ -8,6 +8,7 @@ interface TabChipProps {
   tab: Tab;
   active: boolean;
   status?: TabStatus;
+  needsAttention?: boolean;
   isDragging?: boolean;
   showInsertBefore?: boolean;
   onSelect: () => void;
@@ -37,6 +38,7 @@ export function TabChip({
   tab,
   active,
   status,
+  needsAttention,
   isDragging,
   showInsertBefore,
   onSelect,
@@ -95,7 +97,7 @@ export function TabChip({
         active
           ? "bg-accent text-foreground"
           : "bg-transparent text-muted-foreground hover:bg-secondary"
-      } ${isDragging ? "opacity-30 scale-95" : ""}`}
+      } ${isDragging ? "opacity-30 scale-95" : ""} ${needsAttention ? "needs-attention-glow" : ""}`}
       style={{ borderBottomColor: accentColor ?? "transparent" }}
     >
       {showInsertBefore && (

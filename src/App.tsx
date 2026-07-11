@@ -72,6 +72,10 @@ function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [tabs, setTabs] = useState<TabsState>({});
   const [tabStatuses, setTabStatuses] = useState<Record<string, TabStatus>>({});
+  // Tabs/projects with an unresolved "ready"/"waiting" event the user hasn't
+  // looked at yet — drives the sidebar/tab-chip attention glow. Distinct from
+  // tabStatuses: a tab can be "waiting" but no longer need a glow once viewed.
+  const [needsAttention, setNeedsAttention] = useState<Record<string, true>>({});
   const [ideOpenByProject, setIdeOpenByProject] = useState<Record<string, boolean>>({});
   const [ideEverOpenedByProject, setIdeEverOpenedByProject] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
@@ -199,6 +203,12 @@ function App() {
         delete next[tabId];
         return next;
       });
+      setNeedsAttention((s) => {
+        if (!(tabId in s)) return s;
+        const next = { ...s };
+        delete next[tabId];
+        return next;
+      });
     },
     [activeId],
   );
@@ -230,10 +240,18 @@ function App() {
         owner &&
         activeProjectIdRef.current === owner.projectId &&
         tabsRef.current[owner.projectId]?.activeTabId === tabId;
-      const notificationsEnabled = settingsRef.current?.notificationsEnabled ?? true;
-      if (notificationsEnabled && owner && project && !(isOpenTab && document.hasFocus())) {
-        const notifyFn = status === "ready" ? notifyAgentReady : notifyAgentWaiting;
-        notifyFn(project.name, owner.tab.title, owner.projectId, tabId);
+      // Already looking right at this tab with the window focused — no glow,
+      // no system notification needed.
+      if (owner && project && !(isOpenTab && document.hasFocus())) {
+        setNeedsAttention((s) => (s[tabId] ? s : { ...s, [tabId]: true }));
+        // System notifications are for when the user isn't looking at the app
+        // at all — while it's focused, the glow above is the "look at me"
+        // signal instead, even for a background tab/project.
+        const notificationsEnabled = settingsRef.current?.notificationsEnabled ?? true;
+        if (notificationsEnabled && !document.hasFocus()) {
+          const notifyFn = status === "ready" ? notifyAgentReady : notifyAgentWaiting;
+          notifyFn(project.name, owner.tab.title, owner.projectId, tabId);
+        }
       }
     }
     setTabStatuses(tabStatusesRef.current);
@@ -348,6 +366,25 @@ function App() {
     return () => window.removeEventListener("antani:quick-switch", onQuickSwitch);
   }, [data, run]);
 
+  // Clear a tab's attention glow as soon as the user is actually looking at
+  // it (visible tab + window focused) — on mount, whenever the visible tab
+  // changes, and when the window regains focus while already parked on it.
+  const visibleTabId = activeId ? (tabs[activeId]?.activeTabId ?? null) : null;
+  useEffect(() => {
+    function clearIfFocused() {
+      if (!visibleTabId || !document.hasFocus()) return;
+      setNeedsAttention((s) => {
+        if (!s[visibleTabId]) return s;
+        const next = { ...s };
+        delete next[visibleTabId];
+        return next;
+      });
+    }
+    clearIfFocused();
+    window.addEventListener("focus", clearIfFocused);
+    return () => window.removeEventListener("focus", clearIfFocused);
+  }, [visibleTabId]);
+
   // "ready" (green, at-prompt) doesn't count as activity here — only an
   // in-flight response ("busy") or a blocked permission prompt ("waiting")
   // should surface at the project level, same as the per-tab dot.
@@ -364,6 +401,14 @@ function App() {
     }
     return statuses;
   }, [tabs, tabStatuses]);
+
+  const projectNeedsAttention = useMemo(() => {
+    const result: Record<string, boolean> = {};
+    for (const projectId of Object.keys(tabs)) {
+      result[projectId] = projectTabs(tabs, projectId).tabs.some((tab) => needsAttention[tab.id]);
+    }
+    return result;
+  }, [tabs, needsAttention]);
 
   if (!data || !settings) {
     return (
@@ -390,6 +435,7 @@ function App() {
           projects={data.projects}
           activeProjectId={data.activeProjectId}
           projectStatuses={projectStatuses}
+          projectNeedsAttention={projectNeedsAttention}
           onAdd={handleAdd}
           onSelect={handleSelectProject}
           onRename={(id, name) => run(() => api.renameProject(id, name))}
@@ -405,6 +451,7 @@ function App() {
           projects={data.projects}
           tabs={tabs}
           tabStatuses={tabStatuses}
+          needsAttention={needsAttention}
           ideOpen={ideOpen}
           ideEverOpenedByProject={ideEverOpenedByProject}
           ideInstanceCount={ideInstanceCount}

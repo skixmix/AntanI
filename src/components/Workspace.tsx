@@ -11,6 +11,7 @@ interface WorkspaceProps {
   projects: Project[];
   tabs: TabsState;
   tabStatuses: Record<string, TabStatus>;
+  needsAttention: Record<string, true>;
   ideOpen: boolean;
   ideEverOpenedByProject: Record<string, boolean>;
   ideInstanceCount: number;
@@ -31,6 +32,7 @@ export function Workspace({
   projects,
   tabs,
   tabStatuses,
+  needsAttention,
   ideOpen,
   ideEverOpenedByProject,
   ideInstanceCount,
@@ -64,13 +66,14 @@ export function Workspace({
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div
           className="w-full shrink-0"
-          style={{ height: 1, backgroundColor: project.color, opacity: 0.4 }}
+          style={{ height: 3, backgroundColor: project.color, opacity: 0.5 }}
         />
 
         <TabStrip
           tabs={projectTabList}
           activeTabId={activeTabId}
           tabStatuses={tabStatuses}
+          needsAttention={needsAttention}
           project={project}
           ideOpen={ideOpen}
           ideInstanceCount={ideInstanceCount}
