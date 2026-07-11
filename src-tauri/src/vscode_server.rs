@@ -547,43 +547,33 @@ const MACHINE_SETTINGS: &str = r#"{
 /// user may have customised it inside the editor, so we leave it alone.
 /// Imported settings (copied from desktop VS Code) are merged in on first write.
 fn seed_user_settings(data_dir: &Path, imported_settings_path: &Path) {
-    let user_dir = data_dir.join("User");
-    if std::fs::create_dir_all(&user_dir).is_err() {
+    let settings_path = data_dir.join("User").join("settings.json");
+
+    if !settings_path.exists() {
+        // Fresh install: start from defaults, then layer imported settings on top.
+        merge_imported_settings(data_dir, imported_settings_path);
         return;
     }
-    let settings_path = user_dir.join("settings.json");
 
-    let mut existing: serde_json::Value = if settings_path.exists() {
-        std::fs::read_to_string(&settings_path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or(serde_json::json!({}))
-    } else {
-        serde_json::json!({})
+    // File already exists — only fix keys that are known-broken defaults.
+    // "Dark+" was the old name; code-server only ships "Default Dark+".
+    let Some(mut existing) = std::fs::read_to_string(&settings_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+    else {
+        return;
     };
-
-    let defaults: serde_json::Value =
-        serde_json::from_str(MACHINE_SETTINGS).unwrap_or(serde_json::json!({}));
-
-    if settings_path.exists() {
-        // File already exists — only fix keys that are known-broken defaults.
-        // "Dark+" was the old name; code-server only ships "Default Dark+".
-        if existing
-            .get("workbench.colorTheme")
-            .and_then(|v| v.as_str())
-            == Some("Dark+")
-        {
-            if let Some(obj) = existing.as_object_mut() {
-                obj.insert(
-                    "workbench.colorTheme".to_string(),
-                    serde_json::json!("Default Dark+"),
-                );
-            }
+    if existing
+        .get("workbench.colorTheme")
+        .and_then(|v| v.as_str())
+        == Some("Dark+")
+    {
+        if let Some(obj) = existing.as_object_mut() {
+            obj.insert(
+                "workbench.colorTheme".to_string(),
+                serde_json::json!("Default Dark+"),
+            );
         }
-    } else {
-        // Fresh install: start from defaults, then layer imported settings on top.
-        existing = defaults;
-        merge_overrides_from_file(&mut existing, imported_settings_path);
     }
 
     if let Ok(text) = serde_json::to_string_pretty(&existing) {
@@ -640,10 +630,19 @@ fn merge_imported_settings(data_dir: &Path, imported_settings_path: &Path) {
 /// uninstalled regardless of whether it's on disk — so a bare folder copy
 /// shows up as "0 installed" in the Extensions view.
 fn sync_extensions_manifest(vscode_ext_dir: &Path, dest_ext_dir: &Path) {
-    let Ok(src_text) = std::fs::read_to_string(vscode_ext_dir.join("extensions.json")) else {
+    let src_manifest_path = vscode_ext_dir.join("extensions.json");
+    let Ok(src_text) = std::fs::read_to_string(&src_manifest_path) else {
+        eprintln!(
+            "antani: no extensions.json at {}, skipping manifest sync",
+            src_manifest_path.display()
+        );
         return;
     };
     let Ok(serde_json::Value::Array(src_entries)) = serde_json::from_str(&src_text) else {
+        eprintln!(
+            "antani: failed to parse {} as a JSON array, skipping manifest sync",
+            src_manifest_path.display()
+        );
         return;
     };
 
@@ -682,7 +681,7 @@ fn sync_extensions_manifest(vscode_ext_dir: &Path, dest_ext_dir: &Path) {
         if let Some(location) = entry.get_mut("location").and_then(|l| l.as_object_mut()) {
             location.insert(
                 "path".to_string(),
-                serde_json::json!(dest_ext_dir.join(&rel).display().to_string()),
+                serde_json::json!(dest_ext_dir.join(&rel).to_string_lossy()),
             );
         }
         dest_entries.push(entry);
