@@ -3,9 +3,9 @@ import { FreeRamModal } from "./components/FreeRamModal";
 import { ImportVscodeModal } from "./components/ImportVscodeModal";
 import { Sidebar } from "./components/Sidebar";
 import { Workspace } from "./components/Workspace";
-import * as api from "./lib/api";
+import * as api from "./lib/api.ipc";
 import { basename, defaultColorForIndex, MAX_QUICK_SWITCH } from "./lib/constants";
-import { initNotifications, notifyAgentReady, notifyAgentWaiting } from "./lib/notifications";
+import { initNotifications, notifyAgentReady, notifyAgentWaiting } from "./lib/notifications.ipc";
 import {
   addTab,
   closeTab,
@@ -88,7 +88,8 @@ function App() {
   const activeProjectIdRef = useRef(data?.activeProjectId ?? null);
   activeProjectIdRef.current = data?.activeProjectId ?? null;
   // Tabs already notified for their current unresolved "waiting" prompt —
-  // cleared only on a genuine resolution (ready/idle), not on a busy blip.
+  // cleared as soon as the tab leaves "waiting" for any reason, so a later,
+  // distinct prompt (e.g. the next tool call's permission check) notifies again.
   const notifiedWaitingRef = useRef(new Set<string>());
   const tabStatusesRef = useRef(tabStatuses);
   tabStatusesRef.current = tabStatuses;
@@ -212,7 +213,7 @@ function App() {
       notify = !notifiedWaitingRef.current.has(tabId);
       notifiedWaitingRef.current.add(tabId);
     }
-    if (status === "ready" || status === "idle") {
+    if (status !== "waiting") {
       notifiedWaitingRef.current.delete(tabId);
     }
     if (notify) {
