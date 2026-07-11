@@ -16,7 +16,7 @@ interface SidebarProps {
   onReorder: (orderedIds: string[]) => void;
   showFreeRamButton: boolean;
   onFreeRam: () => void;
-  onImportVscode: () => void;
+  onOpenSettings: () => void;
 }
 
 const MIN_WIDTH = 160;
@@ -47,7 +47,7 @@ export function Sidebar({
   onReorder,
   showFreeRamButton,
   onFreeRam,
-  onImportVscode,
+  onOpenSettings,
 }: SidebarProps) {
   const { draggingId, insertBeforeId, startDrag } = useDragReorder(
     "projects",
@@ -224,7 +224,7 @@ export function Sidebar({
         </button>
         <button
           type="button"
-          onClick={onImportVscode}
+          onClick={onOpenSettings}
           className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors no-select"
           style={{ borderTop: "1px solid var(--color-sidebar-border)" }}
         >
@@ -237,20 +237,14 @@ export function Sidebar({
             className="shrink-0 opacity-60"
           >
             <path
-              d="M2 11v2a1 1 0 001 1h10a1 1 0 001-1v-2"
+              d="M11.3 2.3a3 3 0 0 0-4.1 3.6L2.6 10.5a1.4 1.4 0 0 0 2 2l4.6-4.6a3 3 0 0 0 3.6-4.1l-2 2-1.4-.4-.4-1.4 2-2z"
               stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-            />
-            <path
-              d="M8 2v8M5 7l3 3 3-3"
-              stroke="currentColor"
-              strokeWidth="1.4"
+              strokeWidth="1.3"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
           </svg>
-          Import settings from VS Code
+          Settings
         </button>
         {showFreeRamButton && (
           <button

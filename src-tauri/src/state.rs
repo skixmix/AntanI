@@ -143,15 +143,22 @@ impl AppState {
     }
 }
 
-/// User-configurable settings, persisted to `settings.json`. Currently just the
-/// launch commands for the Claude and opencode tab types (for users with aliases
-/// or wrappers). `#[serde(default)]` fills any missing field from `Default`, so a
-/// partially hand-edited or older file still loads with sane values.
+/// User-configurable settings, persisted to `settings.json`. `#[serde(default)]`
+/// fills any missing field from `Default`, so a partially hand-edited or older
+/// file still loads with sane values — this is also how a fresh field (like
+/// `vscode_import_prompted`) rolls out to existing users across an app update:
+/// it's simply absent from their file until first written, and defaults to
+/// `false` until then.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub claude_command: String,
     pub opencode_command: String,
+    pub notifications_enabled: bool,
+    /// Whether the one-time "import your VS Code setup?" prompt has already
+    /// been shown (regardless of the user's answer). Must only ever flip
+    /// false -> true, exactly once per install, so the prompt never repeats.
+    pub vscode_import_prompted: bool,
 }
 
 impl Default for Settings {
@@ -159,6 +166,8 @@ impl Default for Settings {
         Self {
             claude_command: DEFAULT_CLAUDE_COMMAND.to_string(),
             opencode_command: DEFAULT_OPENCODE_COMMAND.to_string(),
+            notifications_enabled: true,
+            vscode_import_prompted: false,
         }
     }
 }
@@ -302,6 +311,8 @@ mod tests {
         let s = Settings {
             claude_command: "custom".into(),
             opencode_command: "oc".into(),
+            notifications_enabled: false,
+            vscode_import_prompted: true,
         };
         save(&path, &s).unwrap();
         let state = SettingsState::new(path.clone());
@@ -332,6 +343,8 @@ mod tests {
         let s = Settings::default();
         assert_eq!(s.claude_command, "claude");
         assert_eq!(s.opencode_command, "opencode");
+        assert!(s.notifications_enabled);
+        assert!(!s.vscode_import_prompted);
     }
 
     #[test]
@@ -339,6 +352,8 @@ mod tests {
         let s = Settings {
             claude_command: "my-claude --flag".into(),
             opencode_command: "oc".into(),
+            notifications_enabled: false,
+            vscode_import_prompted: true,
         };
         let path =
             std::env::temp_dir().join(format!("antani-settings-{}.json", uuid::Uuid::new_v4()));
@@ -356,6 +371,25 @@ mod tests {
         let loaded: Settings = load(&path);
         assert_eq!(loaded.claude_command, "oc-claude");
         assert_eq!(loaded.opencode_command, "opencode");
+        assert!(loaded.notifications_enabled);
+        assert!(!loaded.vscode_import_prompted);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn settings_upgrade_from_file_without_import_prompt_field_defaults_unprompted() {
+        // Simulates an existing user's settings.json from before this field
+        // existed — it must load as "not yet prompted", not error or panic.
+        let path =
+            std::env::temp_dir().join(format!("antani-upgrade-{}.json", uuid::Uuid::new_v4()));
+        fs::write(
+            &path,
+            br#"{"claudeCommand":"claude","opencodeCommand":"opencode"}"#,
+        )
+        .unwrap();
+        let loaded: Settings = load(&path);
+        assert!(!loaded.vscode_import_prompted);
+        assert!(loaded.notifications_enabled);
         let _ = fs::remove_file(&path);
     }
 }

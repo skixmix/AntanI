@@ -16,7 +16,12 @@ import {
 } from "./tabs";
 import type { Settings } from "./types";
 
-const SETTINGS: Settings = { claudeCommand: "claude --resume", opencodeCommand: "oc" };
+const SETTINGS: Settings = {
+  claudeCommand: "claude --resume",
+  opencodeCommand: "oc",
+  notificationsEnabled: true,
+  vscodeImportPrompted: true,
+};
 const PROJECT = "proj-1";
 
 function seed(kinds: Parameters<typeof createTab>[0][]): TabsState {

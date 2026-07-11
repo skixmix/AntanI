@@ -16,6 +16,8 @@ export interface AppData {
 export interface Settings {
   claudeCommand: string;
   opencodeCommand: string;
+  notificationsEnabled: boolean;
+  vscodeImportPrompted: boolean;
 }
 
 export type FileChangeKind = "added" | "modified" | "deleted";
