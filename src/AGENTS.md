@@ -50,3 +50,11 @@ assert behavior (inputs → outputs), not internals.
 Do **not** add React component render tests, DOM-interaction tests, or Tauri
 `invoke` mocks. They are brittle, break on harmless markup changes, and cost more
 to maintain than they catch in a one-person tool. Verify the UI by running the app.
+
+The coverage gate is global (90%), so a thin Tauri wrapper file with no logic
+worth testing drags the whole ratio down instead of just sitting at 0%. Name
+any `src/lib` file that's purely `invoke`/`listen`/plugin-API wrapping with an
+`.ipc.ts` suffix (e.g. `api.ipc.ts`, `notifications.ipc.ts`) — `vitest.config.ts`
+excludes `src/lib/**/*.ipc.ts` from coverage by that pattern, so new wrapper
+files are excluded automatically and can't silently break CI the way an
+unlisted file would.

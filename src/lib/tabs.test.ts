@@ -4,6 +4,7 @@ import {
   closeTab,
   createTab,
   defaultTitle,
+  findTabOwner,
   projectTabs,
   recolorTab,
   removeProjectTabs,
@@ -112,6 +113,19 @@ describe("removeProjectTabs", () => {
 describe("projectTabs", () => {
   it("returns an empty shape for an unknown project", () => {
     expect(projectTabs({}, PROJECT)).toEqual({ tabs: [], activeTabId: null });
+  });
+});
+
+describe("findTabOwner", () => {
+  it("finds the project and tab for a known tab id", () => {
+    const state = seed(["terminal", "claude"]);
+    const [, t1] = projectTabs(state, PROJECT).tabs;
+    expect(findTabOwner(state, t1.id)).toEqual({ projectId: PROJECT, tab: t1 });
+  });
+
+  it("returns null for an unknown tab id", () => {
+    const state = seed(["terminal"]);
+    expect(findTabOwner(state, "missing")).toBeNull();
   });
 });
 

@@ -7,7 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
-import { killPty, onPtyExit, resizePty, spawnPty, writePty } from "../lib/api";
+import { killPty, onPtyExit, resizePty, spawnPty, writePty } from "../lib/api.ipc";
 import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_SCROLLBACK } from "../lib/constants";
 import type { TabStatus } from "../lib/tabs";
 

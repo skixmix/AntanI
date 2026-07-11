@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { importFromVscode } from "../lib/api";
+import { importFromVscode } from "../lib/api.ipc";
 
 interface ImportVscodeModalProps {
   onClose: () => void;
