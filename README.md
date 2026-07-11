@@ -43,7 +43,7 @@ If you really would like to fork/improve/adjust it for your needs, you'll need:
   updates. The `code-server` binary itself is the only
   external dependency.
 
-## Getting started
+### Getting started
 
 ```sh
 bun install          # install JS deps (also wires the git hooks)
