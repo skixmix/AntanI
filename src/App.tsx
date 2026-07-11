@@ -300,9 +300,12 @@ function App() {
   const markVscodeImportPrompted = useCallback(async () => {
     if (!settings || settings.vscodeImportPrompted) return;
     const updated = { ...settings, vscodeImportPrompted: true };
-    setSettings(updated);
+    // Persist before flipping local state — if the save fails, the flag must
+    // stay false so the prompt is offered again next launch instead of
+    // silently never persisting and never re-prompting either.
     try {
       await api.updateSettings(updated);
+      setSettings(updated);
     } catch (e) {
       setError(String(e));
     }
