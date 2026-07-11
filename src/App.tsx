@@ -316,10 +316,10 @@ function App() {
     if (id) openIdeNow(id);
   }, [markVscodeImportPrompted, pendingIdeOpenProjectId, openIdeNow]);
 
-  const handleToggleNotifications = useCallback(
-    (enabled: boolean) => {
+  const handleUpdateSettings = useCallback(
+    (patch: Partial<Settings>) => {
       if (!settings) return;
-      const updated = { ...settings, notificationsEnabled: enabled };
+      const updated = { ...settings, ...patch };
       setSettings(updated);
       void api.updateSettings(updated).catch((e) => setError(String(e)));
     },
@@ -423,7 +423,7 @@ function App() {
           settings={settings}
           onClose={() => setShowSettingsPage(false)}
           onImportVscode={() => setShowImportModal(true)}
-          onToggleNotifications={handleToggleNotifications}
+          onUpdateSettings={handleUpdateSettings}
         />
       )}
 
