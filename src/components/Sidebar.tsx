@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
+import { ProjectsIcon } from "./Icons";
 import { ProjectRow } from "./ProjectRow";
 
 interface SidebarProps {
@@ -137,7 +138,7 @@ export function Sidebar({
       style={{
         width,
         background: "var(--color-sidebar)",
-        borderRight: "1px solid var(--color-sidebar-border)",
+        borderRight: "1px solid var(--color-panel-divider)",
       }}
     >
       {/* L-shaped accent line: vertical strip on the right edge down to the active row */}
@@ -146,15 +147,19 @@ export function Sidebar({
           className="absolute right-0 top-0 z-20 pointer-events-none"
           style={{
             height: accentLineHeight,
-            width: 1,
+            width: 2,
             backgroundColor: activeProject.color,
-            opacity: 0.4,
           }}
         />
       )}
 
-      {/* Projects header */}
-      <div className="px-3 pt-5 pb-3 text-xs font-semibold uppercase tracking-widest text-white/40 no-select">
+      {/* Projects header — height matches the top tab row (color line + tab
+          strip) in the center view, so the bottom border lines up there */}
+      <div
+        className="flex shrink-0 items-center gap-1.5 px-3 text-xs font-semibold uppercase tracking-widest text-white/40 no-select"
+        style={{ height: 53, borderBottom: "1px solid var(--color-sidebar-border)" }}
+      >
+        <ProjectsIcon size={13} />
         Projects
       </div>
 

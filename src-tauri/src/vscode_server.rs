@@ -1,5 +1,6 @@
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
@@ -30,6 +31,19 @@ const IMPORTED_SETTINGS_FILE: &str = "imported-user-settings.json";
 /// Crash-only fallback: the server's process-group id, so an orphan left by an
 /// app crash can be reclaimed on next launch. The normal teardown path is `stop`.
 const PID_FILE: &str = "vscode-server.pid";
+
+/// Subfolder (under the app-data dir) holding one Unix socket per open project,
+/// each listened on by the bundled `antani-diff-bridge` extension inside that
+/// project's own extension-host process. code-server spawns a separate
+/// extension host per open workspace folder, so a single shared socket path
+/// would race between them (only one host could bind it); keying the socket
+/// name off a hash of the project path lets Rust and the extension agree on
+/// the right one independently, with no IPC needed to hand out the name.
+const BRIDGE_SOCKET_DIR: &str = "diff-bridge-sockets";
+
+/// Bundled VS Code extension (see `vscode-extension/`) reinstalled with
+/// `--force` on every server launch, so it self-heals if the user removes it.
+const BRIDGE_EXTENSION_VSIX: &str = "antani-diff-bridge.vsix";
 
 /// How long to wait for the port to accept connections. Generous because the very
 /// first `serve-web` run downloads and extracts the server before it listens.
@@ -112,6 +126,17 @@ impl VscodeServer {
         self.app_data_dir.join(IMPORTED_SETTINGS_FILE)
     }
 
+    fn bridge_socket_dir(&self) -> PathBuf {
+        self.app_data_dir.join(BRIDGE_SOCKET_DIR)
+    }
+
+    /// Same hash the extension computes from its workspace folder path
+    /// (`vscode-extension/extension.js`) — see `BRIDGE_SOCKET_DIR`.
+    fn bridge_socket_path_for(&self, project_path: &str) -> PathBuf {
+        self.bridge_socket_dir()
+            .join(format!("{:08x}.sock", fnv1a(project_path.as_bytes())))
+    }
+
     /// The port to load once the server is up, or `None` if it is not ready.
     pub fn ready_port(&self) -> Option<u16> {
         let inner = self.inner.lock().ok()?;
@@ -178,6 +203,7 @@ impl VscodeServer {
             let _ = child.wait();
         }
         let _ = std::fs::remove_file(self.pid_path());
+        let _ = std::fs::remove_dir_all(self.bridge_socket_dir());
     }
 
     /// Crash-only recovery: if a PID file survives from a previous run, an app
@@ -219,8 +245,9 @@ fn start_and_wait(app: AppHandle) {
     let data_dir = server.data_dir();
     let ext_dir = server.extensions_dir();
     let imported_settings = server.imported_settings_path();
+    let bridge_socket_dir = server.bridge_socket_dir();
 
-    for dir in [&data_dir, &ext_dir] {
+    for dir in [&data_dir, &ext_dir, &bridge_socket_dir] {
         if let Err(err) = std::fs::create_dir_all(dir) {
             fail(
                 &app,
@@ -231,6 +258,7 @@ fn start_and_wait(app: AppHandle) {
         }
     }
     seed_user_settings(&data_dir, &imported_settings);
+    install_bridge_extension(&app, &code_server, &data_dir, &ext_dir, path.as_deref());
 
     let mut cmd = Command::new(&code_server);
     cmd.arg("--host")
@@ -245,6 +273,7 @@ fn start_and_wait(app: AppHandle) {
         .arg(&ext_dir)
         .arg("--disable-telemetry")
         .arg("--disable-update-check")
+        .env("ANTANI_BRIDGE_SOCKET_DIR", &bridge_socket_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -440,6 +469,69 @@ fn emit_status(app: &AppHandle, status: &str, message: Option<String>) {
             message,
         },
     );
+}
+
+/// Reinstall the bundled diff-bridge extension via code-server's own
+/// `--install-extension --force`, rather than hand-writing its internal
+/// `extensions.json`/`.obsolete` bookkeeping (see `sync_extensions_manifest`,
+/// which already shows how fragile that format is to reproduce by hand).
+/// Runs before every server launch so it self-heals if the user deletes the
+/// extension — a short-lived subprocess, not part of the running server.
+fn install_bridge_extension(
+    app: &AppHandle,
+    code_server: &str,
+    data_dir: &Path,
+    ext_dir: &Path,
+    path_env: Option<&str>,
+) {
+    let Ok(resource_dir) = app.path().resource_dir() else {
+        eprintln!("antani: could not resolve resource dir, skipping diff-bridge install");
+        return;
+    };
+    let vsix = resource_dir
+        .join("vscode-extension")
+        .join(BRIDGE_EXTENSION_VSIX);
+    if !vsix.is_file() {
+        eprintln!(
+            "antani: bundled diff-bridge extension not found at {}",
+            vsix.display()
+        );
+        return;
+    }
+
+    let mut cmd = Command::new(code_server);
+    cmd.arg("--user-data-dir")
+        .arg(data_dir)
+        .arg("--extensions-dir")
+        .arg(ext_dir)
+        .arg("--install-extension")
+        .arg(&vsix)
+        .arg("--force")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    if let Some(path) = path_env {
+        cmd.env("PATH", path);
+    }
+    match cmd.output() {
+        Ok(out) if !out.status.success() => eprintln!(
+            "antani: failed to install diff-bridge extension: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ),
+        Err(err) => eprintln!("antani: failed to run code-server --install-extension: {err}"),
+        _ => {}
+    }
+}
+
+/// FNV-1a, 32-bit. Deterministic, dependency-free, and mirrored byte-for-byte
+/// in `vscode-extension/extension.js` — see `BRIDGE_SOCKET_DIR`.
+fn fnv1a(bytes: &[u8]) -> u32 {
+    let mut hash: u32 = 0x811c9dc5;
+    for &b in bytes {
+        hash ^= b as u32;
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    hash
 }
 
 fn tcp_ready() -> bool {
@@ -794,6 +886,28 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
 pub fn ensure_ide_server(app: AppHandle) -> Result<String, String> {
     let server = app.state::<VscodeServer>();
     Ok(server.ensure_started(&app))
+}
+
+/// Ask the bundled diff-bridge extension running inside `project_path`'s own
+/// extension-host process to open its native diff view for `file_path`, over
+/// the Unix socket set up in `install_bridge_extension`/`start_and_wait`. No
+/// supported code-server URL or CLI mechanism does this directly (see
+/// `AGENTS.md` in this crate). Fails fast if that project's IDE webview isn't
+/// open yet or the extension hasn't activated — the frontend retries.
+#[tauri::command]
+pub fn open_diff_in_ide(
+    app: AppHandle,
+    project_path: String,
+    file_path: String,
+) -> Result<(), String> {
+    let server = app.state::<VscodeServer>();
+    let socket = server.bridge_socket_path_for(&project_path);
+    let mut conn = UnixStream::connect(&socket).map_err(|e| format!("IDE not ready yet: {e}"))?;
+    conn.write_all(file_path.as_bytes())
+        .map_err(|e| e.to_string())?;
+    conn.shutdown(std::net::Shutdown::Write)
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Return the total RSS (resident set size) in MB consumed by the serve-web

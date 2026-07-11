@@ -17,3 +17,15 @@ export interface Settings {
   claudeCommand: string;
   opencodeCommand: string;
 }
+
+export type FileChangeKind = "added" | "modified" | "deleted";
+
+export interface GitFileEntry {
+  path: string;
+  kind: FileChangeKind;
+}
+
+export interface GitStatus {
+  staged: GitFileEntry[];
+  unstaged: GitFileEntry[];
+}

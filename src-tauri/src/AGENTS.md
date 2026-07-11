@@ -40,6 +40,43 @@ belongs here.
   foreground process group, so a shell's children (e.g. `htop`) die with it — don't
   downgrade this to killing only the shell pid.
 
+## Embedded VS Code: the `antani-diff-bridge` extension
+
+code-server has no supported URL or CLI mechanism to deep-link straight into
+VS Code's native SCM diff editor (`--diff` isn't in code-server's CLI; the
+`payload` query param some `openFile` deep links rely on is undocumented and
+confirmed unreliable for this in upstream `coder/code-server` discussions). So
+`open_diff_in_ide` (`vscode_server.rs`) reaches a small bundled VS Code
+extension — `src-tauri/vscode-extension/` — that runs *inside* the running
+code-server process and calls `vscode.commands.executeCommand('git.openChange', uri)`
+itself.
+
+- **Self-healing install, not hand-rolled bookkeeping.** The extension is
+  reinstalled via code-server's own `--install-extension --force` CLI flag on
+  every server launch (`install_bridge_extension`), not by writing to
+  code-server's internal `extensions.json`/`.obsolete` format directly (that
+  format is undocumented and already fragile enough to need
+  `sync_extensions_manifest`'s workarounds for the *legitimate*
+  `import_from_vscode` case). This means the extension requires zero user
+  action and comes back automatically even if the user deletes it — there is
+  no separate "is it installed" check; it's just reinstalled, cheaply, before
+  every server start.
+- **One socket per project, not one shared socket.** code-server spawns a
+  separate extension-host process per open workspace folder, so a single
+  shared socket path would race between them (only one host could bind it).
+  Instead, both Rust (`bridge_socket_path_for`) and the extension
+  (`extension.js`) independently compute the same socket filename by hashing
+  the project's folder path with a small dependency-free FNV-1a (mirrored
+  byte-for-byte in both places) — no IPC is needed to hand out the name, and
+  each project's extension host binds only the socket it derives for itself.
+- **The `.vsix` is a committed prebuilt binary**, not a build-time artifact —
+  there's no vsix packaging step in the app's normal dev/build flow. If
+  `extension.js` or `package.json` changes, rebuild and commit it (see
+  `vscode-extension/README.md` for the one-line command).
+- The frontend retries `open_diff_in_ide` for a few seconds after asking to
+  open the IDE tab (`SourceControlSidebar.tsx`), since the server/webview/
+  extension may still be starting up the first time a project's IDE tab opens.
+
 ## Testing: behavior, not brittle
 
 Unit-test the **state and merge logic** by asserting observable outcomes: which
