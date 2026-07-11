@@ -1,7 +1,9 @@
 import { Channel } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { CanvasAddon } from "@xterm/addon-canvas";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
@@ -66,6 +68,14 @@ export function TerminalView({
     } catch {
       /* fallback to default renderer */
     }
+    // Cmd+click only, matching iTerm2/VS Code, so a plain click can still
+    // select link text instead of always navigating away.
+    term.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        if (!event.metaKey) return;
+        void openUrl(uri);
+      }),
+    );
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
