@@ -1,19 +1,7 @@
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
-
-/// How often the background watcher re-checks `git status` for a watched project.
-const POLL_INTERVAL: Duration = Duration::from_secs(2);
-
-/// Frontend event fired whenever a watched project's git status changes.
-const GIT_STATUS_CHANGED_EVENT: &str = "git-status-changed";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -97,7 +85,7 @@ pub fn parse_porcelain_status(text: &str) -> GitStatus {
     GitStatus { staged, unstaged }
 }
 
-fn run_git(project_path: &str, args: &[&str]) -> Result<String, String> {
+pub(crate) fn run_git(project_path: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .args(args)
         .current_dir(project_path)
@@ -109,7 +97,7 @@ fn run_git(project_path: &str, args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn status_args() -> &'static [&'static str] {
+pub(crate) fn status_args() -> &'static [&'static str] {
     &["status", "--porcelain=v1", "--untracked-files=all", "-z"]
 }
 
@@ -171,87 +159,6 @@ pub fn git_revert_file(
         run_git(&project_path, &["restore", "--", &path])?;
         Ok(())
     }
-}
-
-struct WatcherHandle {
-    stop: Arc<AtomicBool>,
-}
-
-/// Managed Tauri state: one background poller per watched project, keyed by
-/// project id. Mirrors `PtyManager`'s per-key lifecycle (start on demand, stop
-/// removes and signals the thread, `stop_all` sweeps everything on app exit).
-#[derive(Default)]
-pub struct GitWatcherManager {
-    watchers: Mutex<HashMap<String, WatcherHandle>>,
-}
-
-impl GitWatcherManager {
-    pub fn stop_all(&self) {
-        if let Ok(mut watchers) = self.watchers.lock() {
-            for (_, handle) in watchers.drain() {
-                handle.stop.store(true, Ordering::Relaxed);
-            }
-        }
-    }
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct GitStatusChanged {
-    project_id: String,
-    status: GitStatus,
-}
-
-#[tauri::command]
-pub fn git_watch_start(
-    manager: State<GitWatcherManager>,
-    app: AppHandle,
-    project_id: String,
-    project_path: String,
-) -> Result<(), String> {
-    let mut watchers = manager.watchers.lock().map_err(|e| e.to_string())?;
-    if watchers.contains_key(&project_id) {
-        return Ok(());
-    }
-
-    let stop = Arc::new(AtomicBool::new(false));
-    let thread_stop = stop.clone();
-    let thread_project_id = project_id.clone();
-    thread::spawn(move || {
-        let mut last: Option<String> = None;
-        while !thread_stop.load(Ordering::Relaxed) {
-            if let Ok(out) = run_git(&project_path, status_args()) {
-                if last.as_deref() != Some(out.as_str()) {
-                    let status = parse_porcelain_status(&out);
-                    let _ = app.emit(
-                        GIT_STATUS_CHANGED_EVENT,
-                        GitStatusChanged {
-                            project_id: thread_project_id.clone(),
-                            status,
-                        },
-                    );
-                    last = Some(out);
-                }
-            }
-            thread::sleep(POLL_INTERVAL);
-        }
-    });
-
-    watchers.insert(project_id, WatcherHandle { stop });
-    Ok(())
-}
-
-#[tauri::command]
-pub fn git_watch_stop(manager: State<GitWatcherManager>, project_id: String) -> Result<(), String> {
-    if let Some(handle) = manager
-        .watchers
-        .lock()
-        .map_err(|e| e.to_string())?
-        .remove(&project_id)
-    {
-        handle.stop.store(true, Ordering::Relaxed);
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -372,5 +279,132 @@ mod tests {
         assert_eq!(status.unstaged[0].path, "a.txt");
         assert_eq!(status.unstaged[1].path, "z.txt");
         assert_eq!(status.staged[0].path, "m.txt");
+    }
+
+    /// Creates a throwaway git repo under the OS temp dir with one committed
+    /// file, so the `git_*` command wrappers can be exercised against real git.
+    fn init_repo() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("antani-git-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.to_str().unwrap();
+        run_git(path, &["init", "-q"]).unwrap();
+        run_git(path, &["config", "user.email", "test@example.com"]).unwrap();
+        run_git(path, &["config", "user.name", "Test"]).unwrap();
+        std::fs::write(dir.join("tracked.txt"), "original\n").unwrap();
+        run_git(path, &["add", "tracked.txt"]).unwrap();
+        run_git(path, &["commit", "-q", "-m", "init"]).unwrap();
+        dir
+    }
+
+    #[test]
+    fn git_status_reports_untracked_and_modified_files() {
+        let dir = init_repo();
+        let path = dir.to_str().unwrap().to_string();
+        std::fs::write(dir.join("tracked.txt"), "changed\n").unwrap();
+        std::fs::write(dir.join("new.txt"), "new\n").unwrap();
+
+        let status = git_status(path).unwrap();
+        assert_eq!(status.unstaged.len(), 2);
+        assert!(status.staged.is_empty());
+    }
+
+    #[test]
+    fn git_stage_moves_paths_into_index() {
+        let dir = init_repo();
+        let path = dir.to_str().unwrap().to_string();
+        std::fs::write(dir.join("new.txt"), "new\n").unwrap();
+
+        git_stage(path.clone(), vec!["new.txt".into()]).unwrap();
+
+        let status = git_status(path).unwrap();
+        assert_eq!(
+            status.staged,
+            vec![GitFileEntry {
+                path: "new.txt".into(),
+                kind: FileChangeKind::Added
+            }]
+        );
+        assert!(status.unstaged.is_empty());
+    }
+
+    #[test]
+    fn git_stage_with_no_paths_is_a_noop() {
+        let dir = init_repo();
+        let path = dir.to_str().unwrap().to_string();
+        git_stage(path, vec![]).unwrap();
+    }
+
+    #[test]
+    fn git_unstage_moves_paths_back_out_of_index() {
+        let dir = init_repo();
+        let path = dir.to_str().unwrap().to_string();
+        std::fs::write(dir.join("new.txt"), "new\n").unwrap();
+        git_stage(path.clone(), vec!["new.txt".into()]).unwrap();
+
+        git_unstage(path.clone(), vec!["new.txt".into()]).unwrap();
+
+        let status = git_status(path).unwrap();
+        assert!(status.staged.is_empty());
+        assert_eq!(status.unstaged[0].path, "new.txt");
+    }
+
+    #[test]
+    fn git_unstage_with_no_paths_is_a_noop() {
+        let dir = init_repo();
+        let path = dir.to_str().unwrap().to_string();
+        git_unstage(path, vec![]).unwrap();
+    }
+
+    #[test]
+    fn git_stage_all_stages_every_pending_change() {
+        let dir = init_repo();
+        let path = dir.to_str().unwrap().to_string();
+        std::fs::write(dir.join("tracked.txt"), "changed\n").unwrap();
+        std::fs::write(dir.join("new.txt"), "new\n").unwrap();
+
+        git_stage_all(path.clone()).unwrap();
+
+        let status = git_status(path).unwrap();
+        assert_eq!(status.staged.len(), 2);
+        assert!(status.unstaged.is_empty());
+    }
+
+    #[test]
+    fn git_unstage_all_clears_the_index() {
+        let dir = init_repo();
+        let path = dir.to_str().unwrap().to_string();
+        std::fs::write(dir.join("tracked.txt"), "changed\n").unwrap();
+        git_stage_all(path.clone()).unwrap();
+
+        git_unstage_all(path.clone()).unwrap();
+
+        let status = git_status(path).unwrap();
+        assert!(status.staged.is_empty());
+        assert_eq!(status.unstaged[0].path, "tracked.txt");
+    }
+
+    #[test]
+    fn git_revert_file_deletes_added_files() {
+        let dir = init_repo();
+        let path = dir.to_str().unwrap().to_string();
+        std::fs::write(dir.join("new.txt"), "new\n").unwrap();
+
+        git_revert_file(path, "new.txt".into(), FileChangeKind::Added).unwrap();
+
+        assert!(!dir.join("new.txt").exists());
+    }
+
+    #[test]
+    fn git_revert_file_restores_modified_tracked_files() {
+        let dir = init_repo();
+        let path = dir.to_str().unwrap().to_string();
+        std::fs::write(dir.join("tracked.txt"), "changed\n").unwrap();
+
+        git_revert_file(path, "tracked.txt".into(), FileChangeKind::Modified).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("tracked.txt")).unwrap(),
+            "original\n"
+        );
     }
 }

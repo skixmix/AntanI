@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { openDiffInIde } from "../lib/api.ipc";
 import { buildFileTree, type TreeNode } from "../lib/fileTree";
 import * as git from "../lib/git.ipc";
@@ -57,6 +57,13 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
   const resizingRef = useRef(false);
   const startXRef = useRef(0);
   const startWRef = useRef(0);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      resizeCleanupRef.current?.();
+    };
+  }, []);
 
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,13 +77,13 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
   }, [width]);
 
   const onResizeStart = useCallback(
-    (e: React.MouseEvent) => {
+    (e: MouseEvent) => {
       e.preventDefault();
       resizingRef.current = true;
       startXRef.current = e.clientX;
       startWRef.current = width;
 
-      function onMove(ev: MouseEvent) {
+      function onMove(ev: globalThis.MouseEvent) {
         if (!resizingRef.current) return;
         // This handle sits on the sidebar's left edge, so dragging left (negative
         // delta) must grow the panel — the sign is flipped vs. a left-side sidebar.
@@ -90,9 +97,15 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
         resizingRef.current = false;
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
+        resizeCleanupRef.current = null;
       }
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
+      resizeCleanupRef.current = () => {
+        resizingRef.current = false;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
     },
     [width],
   );
