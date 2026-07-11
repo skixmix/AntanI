@@ -1,7 +1,9 @@
 import { Channel } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { CanvasAddon } from "@xterm/addon-canvas";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
@@ -66,6 +68,14 @@ export function TerminalView({
     } catch {
       /* fallback to default renderer */
     }
+    // Cmd+click only, matching iTerm2/VS Code, so a plain click can still
+    // select link text instead of always navigating away.
+    term.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        if (!event.metaKey) return;
+        void openUrl(uri);
+      }),
+    );
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
@@ -106,6 +116,30 @@ export function TerminalView({
     term.onData((data) => {
       lastUserInputAt = performance.now();
       void writePty(tabId, data);
+    });
+    // xterm.js sends the same "\r" for Enter and Shift+Enter, so CLIs that
+    // distinguish them (e.g. Claude Code, which uses Shift+Enter to insert a
+    // newline instead of submitting) never see the difference. AI CLI tabs
+    // opt into the CSI u extended-key sequence for Shift+Enter, the same way
+    // iTerm2/Kitty report it. Plain shells don't parse CSI u (it would just
+    // echo back as text), so instead we send Ctrl-V + Ctrl-J there: readline's
+    // default "quoted-insert" binding in bash/zsh inserts the following key
+    // literally, turning a would-be Enter into a real newline in the line
+    // buffer instead of submitting it. It must be Ctrl-J (line feed), not
+    // Ctrl-M (carriage return) — a literal \r isn't treated as a line break,
+    // it just renders as the "^M" control-character notation.
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type === "keydown" && event.key === "Enter" && event.shiftKey) {
+        // Returning false only tells xterm to skip its own handling — it
+        // won't call preventDefault() for us, so without this the browser's
+        // default "insert newline in the hidden textarea" action still
+        // fires and leaks through xterm's input-sync path as an extra key.
+        event.preventDefault();
+        lastUserInputAt = performance.now();
+        void writePty(tabId, isAi ? "\x1b[13;2u" : "\x16\n");
+        return false;
+      }
+      return true;
     });
 
     let resizeTimer: number | undefined;
