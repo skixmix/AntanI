@@ -12,15 +12,14 @@ import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_SCROLLBACK } from "../lib/constants";
 import type { TabStatus } from "../lib/tabs";
 
 const WAITING_RE =
-  /(\[y\/n\]|\(y\/n\)|\(Y\/n\)|\(N\/y\)|yes\/no|Do you want|Allow|Trust|Proceed\?|Continue\?|confirm|Press enter|press any key)/i;
+  /(\[y\/n\]|\(y\/n\)|\(Y\/n\)|\(N\/y\)|yes\/no|Do you want|Allow once|Allow always|Permission required|Trust|Proceed\?|Continue\?|confirm|Press enter|press any key|Esc to cancel)/i;
 
-function stripAnsi(s: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI strip
-  return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/\x1b\][^\x07]*\x07/g, "");
-}
-
-const SILENCE_MS = 1200;
-const TAIL_LEN = 800;
+// Long enough that a mid-response pause (waiting on a tool call, network
+// latency between streamed chunks, ...) doesn't get misread as "done" —
+// each such false "ready" flips the tab-chip spinner to the green dot and
+// back, restarting its CSS animation and making it look like it never
+// settles into a smooth spin.
+const SILENCE_MS = 3000;
 const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 32;
@@ -83,39 +82,100 @@ export function TerminalView({
     let disposed = false;
 
     let silenceTimer: number | undefined;
-    let tail = "";
     let seenBusy = false;
     let lastUserInputAt = 0;
+    // Armed for the tab's initial boot (spawning the CLI counts as "busy"
+    // until its startup settles), then cleared. From there on, only a real
+    // keystroke re-arms it — otherwise incidental output (a background
+    // clock/spinner the CLI redraws on its own) would flip a tab to "busy"
+    // the user never touched. Also cleared whenever a turn genuinely
+    // resolves to "ready", so idle-time redraws after that don't re-arm it.
+    let armed = true;
     const ECHO_SUPPRESS_MS = 400;
-    const decoder = new TextDecoder();
+
+    // The actual rendered screen, not a rolling window of raw output bytes:
+    // TUIs that redraw via cursor-addressed partial updates (Ink, blessed,
+    // opencode's UI, ...) can leave a prompt sitting on screen indefinitely
+    // without ever re-emitting its text, so a raw-byte tail eventually loses
+    // it — even though it's still visible — as soon as enough unrelated
+    // redraw traffic (an animated spinner elsewhere, say) scrolls it out of
+    // the window. Reading xterm's own buffer sidesteps that entirely: it's
+    // always exactly what's on screen right now.
+    function visibleScreenText(): string {
+      const buf = term.buffer.active;
+      const lines: string[] = [];
+      for (let y = 0; y < term.rows; y++) {
+        const line = buf.getLine(buf.viewportY + y);
+        if (line) lines.push(line.translateToString(true));
+      }
+      return lines.join("\n");
+    }
 
     function scheduleReadyCheck() {
       window.clearTimeout(silenceTimer);
       silenceTimer = window.setTimeout(() => {
         if (disposed || !seenBusy) return;
-        const plain = stripAnsi(tail);
-        const status: TabStatus = WAITING_RE.test(plain) ? "waiting" : "ready";
+        const status: TabStatus = WAITING_RE.test(visibleScreenText()) ? "waiting" : "ready";
         onStatusChange?.(tabId, status);
+        if (status === "ready") {
+          armed = false;
+          seenBusy = false;
+        }
       }, SILENCE_MS);
+    }
+
+    // Fires as soon as bytes arrive over IPC — independent of xterm's own
+    // render/parse loop, which can lag or batch for a hidden (display:none)
+    // background tab. Driving the silence timer from here, rather than from
+    // term.write()'s completion callback, keeps the busy/ready cadence
+    // accurate no matter which tab is currently visible.
+    function onOutputArrived() {
+      if (disposed || !isAi || !onStatusChange || !armed) return;
+      // Echo suppression only skips the *busy* flip (to avoid a flash from the
+      // user's own keystrokes); the ready-check timer must still (re)schedule
+      // here, otherwise output that lands inside the suppress window can leave
+      // the tab stuck on "busy" with no timer left to resolve it.
+      const now = performance.now();
+      if (now - lastUserInputAt >= ECHO_SUPPRESS_MS) {
+        seenBusy = true;
+        onStatusChange(tabId, "busy");
+      }
+      scheduleReadyCheck();
+    }
+
+    // Checked on every write, not just after a silence window: a TUI that
+    // keeps animating an unrelated spinner (e.g. a background task) never
+    // goes quiet, so a silence-only check would never notice a permission
+    // prompt sitting on screen underneath it. This needs the buffer actually
+    // updated, so it runs from term.write()'s completion callback rather
+    // than immediately — a bit of lag here (vs. onOutputArrived above) only
+    // delays waiting-prompt detection slightly, it doesn't cause flicker.
+    function onWriteFlushed() {
+      if (disposed || !isAi || !onStatusChange || !armed) return;
+      if (WAITING_RE.test(visibleScreenText())) {
+        seenBusy = true;
+        window.clearTimeout(silenceTimer);
+        onStatusChange(tabId, "waiting");
+      }
     }
 
     const output = new Channel<ArrayBuffer>();
     output.onmessage = (bytes) => {
       if (disposed) return;
-      term.write(new Uint8Array(bytes));
-      if (isAi && onStatusChange) {
-        const now = performance.now();
-        if (now - lastUserInputAt < ECHO_SUPPRESS_MS) return;
-        const chunk = decoder.decode(bytes, { stream: true });
-        tail = (tail + chunk).slice(-TAIL_LEN);
-        seenBusy = true;
-        onStatusChange(tabId, "busy");
-        scheduleReadyCheck();
-      }
+      term.write(new Uint8Array(bytes), onWriteFlushed);
+      onOutputArrived();
     };
     term.onData((data) => {
       lastUserInputAt = performance.now();
       void writePty(tabId, data);
+    });
+    // onData also fires for mouse-tracking escape sequences (a click to
+    // focus the terminal is enough, if the CLI has mouse reporting on) and
+    // programmatic writes/paste — none of which are the user "interacting
+    // with the AI". onKey only fires for real keyboard events, so arming is
+    // gated on that instead.
+    term.onKey(() => {
+      armed = true;
     });
     // xterm.js sends the same "\r" for Enter and Shift+Enter, so CLIs that
     // distinguish them (e.g. Claude Code, which uses Shift+Enter to insert a
@@ -136,6 +196,7 @@ export function TerminalView({
         // fires and leaks through xterm's input-sync path as an extra key.
         event.preventDefault();
         lastUserInputAt = performance.now();
+        armed = true;
         void writePty(tabId, isAi ? "\x1b[13;2u" : "\x16\n");
         return false;
       }
@@ -158,6 +219,10 @@ export function TerminalView({
     void onPtyExit((event) => {
       if (!disposed && event.tabId === tabId) {
         term.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n");
+        window.clearTimeout(silenceTimer);
+        seenBusy = false;
+        armed = false;
+        onStatusChange?.(tabId, "idle");
       }
     }).then((fn) => {
       if (disposed) fn();

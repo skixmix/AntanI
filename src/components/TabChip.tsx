@@ -25,7 +25,7 @@ const KIND_ICON: Record<string, ReactNode> = {
 };
 
 function AiStatusDot({ status }: { status: TabStatus }) {
-  if (status === "busy") return <span className="ai-spinner shrink-0" />;
+  if (status === "busy") return <span className="ai-busy-dot shrink-0" title="Working" />;
   if (status === "ready")
     return <span className="h-2 w-2 shrink-0 rounded-full bg-green-400" title="Ready" />;
   if (status === "waiting")

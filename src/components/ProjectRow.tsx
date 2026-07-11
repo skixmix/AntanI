@@ -7,6 +7,7 @@ import { ColorPicker } from "./ColorPicker";
 interface ProjectRowProps {
   project: Project;
   active: boolean;
+  status?: "busy" | "waiting";
   rowRef?: React.Ref<HTMLDivElement>;
   onSelect: () => void;
   onRename: (name: string) => void;
@@ -20,6 +21,7 @@ interface ProjectRowProps {
 export function ProjectRow({
   project,
   active,
+  status,
   rowRef,
   onSelect,
   onRename,
@@ -117,6 +119,16 @@ export function ProjectRow({
           className="min-w-0 flex-1 truncate text-sm font-medium"
         >
           {project.name}
+        </span>
+      )}
+
+      {status && !editing && (
+        <span className="flex shrink-0 items-center justify-center">
+          {status === "busy" ? (
+            <span className="ai-busy-dot shrink-0" title="Activity in progress" />
+          ) : (
+            <span className="h-2 w-2 shrink-0 rounded-full bg-red-400" title="Waiting for input" />
+          )}
         </span>
       )}
 
