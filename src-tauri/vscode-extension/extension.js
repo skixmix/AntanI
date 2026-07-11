@@ -1,7 +1,7 @@
 const vscode = require("vscode");
-const net = require("net");
-const fs = require("fs");
-const path = require("path");
+const net = require("node:net");
+const fs = require("node:fs");
+const path = require("node:path");
 
 // Mirrored byte-for-byte in `src-tauri/src/vscode_server.rs::fnv1a`.
 function fnv1a(str) {
