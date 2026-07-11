@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FreeRamModal } from "./components/FreeRamModal";
 import { ImportVscodeModal } from "./components/ImportVscodeModal";
 import { Sidebar } from "./components/Sidebar";
 import { Workspace } from "./components/Workspace";
-import * as api from "./lib/api";
+import * as api from "./lib/api.ipc";
 import { basename, defaultColorForIndex, MAX_QUICK_SWITCH } from "./lib/constants";
+import { initNotifications, notifyAgentReady, notifyAgentWaiting } from "./lib/notifications.ipc";
 import {
   addTab,
   closeTab,
   createTab,
+  findTabOwner,
+  projectTabs,
   recolorTab,
   removeProjectTabs,
   renameTab,
@@ -75,6 +78,22 @@ function App() {
 
   const { memMb, refreshMem } = useVscodeMemory();
 
+  // Latest-value refs so handleStatusChange (below) can stay referentially
+  // stable — it's a TerminalView effect dependency, and a new identity on
+  // every tabs/data change would respawn every AI tab's pty.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const projectsRef = useRef(data?.projects ?? []);
+  projectsRef.current = data?.projects ?? [];
+  const activeProjectIdRef = useRef(data?.activeProjectId ?? null);
+  activeProjectIdRef.current = data?.activeProjectId ?? null;
+  // Tabs already notified for their current unresolved "waiting" prompt —
+  // cleared as soon as the tab leaves "waiting" for any reason, so a later,
+  // distinct prompt (e.g. the next tool call's permission check) notifies again.
+  const notifiedWaitingRef = useRef(new Set<string>());
+  const tabStatusesRef = useRef(tabStatuses);
+  tabStatusesRef.current = tabStatuses;
+
   useEffect(() => {
     Promise.all([api.getAppState(), api.getSettings()])
       .then(([appData, appSettings]) => {
@@ -99,6 +118,14 @@ function App() {
       setError(String(e));
     }
   }, []);
+
+  useEffect(() => {
+    void initNotifications((projectId, tabId) => {
+      const owner = findTabOwner(tabsRef.current, tabId);
+      if (owner) setTabs((t) => setActiveTab(t, projectId, owner.tab.id));
+      void run(() => api.setActiveProject(projectId));
+    });
+  }, [run]);
 
   const handleAdd = useCallback(async () => {
     try {
@@ -143,6 +170,19 @@ function App() {
     [activeId],
   );
 
+  const handleSelectProject = useCallback(
+    (id: string) => {
+      if (data?.activeProjectId !== id) {
+        const waitingTab = projectTabs(tabs, id).tabs.find(
+          (tab) => tabStatuses[tab.id] === "waiting",
+        );
+        if (waitingTab) setTabs((t) => setActiveTab(t, id, waitingTab.id));
+      }
+      void run(() => api.setActiveProject(id));
+    },
+    [data?.activeProjectId, tabs, tabStatuses, run],
+  );
+
   const handleCloseTab = useCallback(
     (tabId: string) => {
       if (!activeId) return;
@@ -157,7 +197,38 @@ function App() {
   );
 
   const handleStatusChange = useCallback((tabId: string, status: TabStatus) => {
-    setTabStatuses((s) => (s[tabId] === status ? s : { ...s, [tabId]: status }));
+    const prevStatus = tabStatusesRef.current[tabId];
+    // Dedupe against the ref (updated synchronously right here), not React
+    // state: TerminalView can fire two "waiting" calls back-to-back — e.g. a
+    // permission prompt that redraws across two write flushes — faster than
+    // a render can land, so a state-only check would see the same stale
+    // prevStatus twice and double-notify.
+    if (prevStatus === status) return;
+    tabStatusesRef.current = { ...tabStatusesRef.current, [tabId]: status };
+
+    let notify = false;
+    if (status === "ready" && prevStatus === "busy") {
+      notify = true;
+    } else if (status === "waiting") {
+      notify = !notifiedWaitingRef.current.has(tabId);
+      notifiedWaitingRef.current.add(tabId);
+    }
+    if (status !== "waiting") {
+      notifiedWaitingRef.current.delete(tabId);
+    }
+    if (notify) {
+      const owner = findTabOwner(tabsRef.current, tabId);
+      const project = projectsRef.current.find((p) => p.id === owner?.projectId);
+      const isOpenTab =
+        owner &&
+        activeProjectIdRef.current === owner.projectId &&
+        tabsRef.current[owner.projectId]?.activeTabId === tabId;
+      if (owner && project && !(isOpenTab && document.hasFocus())) {
+        const notifyFn = status === "ready" ? notifyAgentReady : notifyAgentWaiting;
+        notifyFn(project.name, owner.tab.title, owner.projectId, tabId);
+      }
+    }
+    setTabStatuses(tabStatusesRef.current);
   }, []);
   const handleRenameTab = useCallback(
     (tabId: string, title: string) =>
@@ -208,6 +279,23 @@ function App() {
     return () => window.removeEventListener("antani:quick-switch", onQuickSwitch);
   }, [data, run]);
 
+  // "ready" (green, at-prompt) doesn't count as activity here — only an
+  // in-flight response ("busy") or a blocked permission prompt ("waiting")
+  // should surface at the project level, same as the per-tab dot.
+  const projectStatuses = useMemo(() => {
+    const statuses: Record<string, "busy" | "waiting"> = {};
+    for (const projectId of Object.keys(tabs)) {
+      let status: "busy" | "waiting" | undefined;
+      for (const tab of projectTabs(tabs, projectId).tabs) {
+        const tabStatus = tabStatuses[tab.id];
+        if (tabStatus === "waiting") status = "waiting";
+        else if (tabStatus === "busy" && status !== "waiting") status = "busy";
+      }
+      if (status) statuses[projectId] = status;
+    }
+    return statuses;
+  }, [tabs, tabStatuses]);
+
   if (!data || !settings) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -232,8 +320,9 @@ function App() {
         <Sidebar
           projects={data.projects}
           activeProjectId={data.activeProjectId}
+          projectStatuses={projectStatuses}
           onAdd={handleAdd}
-          onSelect={(id) => run(() => api.setActiveProject(id))}
+          onSelect={handleSelectProject}
           onRename={(id, name) => run(() => api.renameProject(id, name))}
           onRecolor={(id, color) => run(() => api.setProjectColor(id, color))}
           onRemove={handleRemove}

@@ -9,7 +9,7 @@ import {
   setIdeBounds,
   showIdeWebview,
   titleBarOffset,
-} from "../lib/api";
+} from "../lib/api.ipc";
 
 interface IdeViewProps {
   projectId: string;

@@ -57,6 +57,18 @@ export function projectTabs(state: TabsState, projectId: string): ProjectTabs {
   return state[projectId] ?? EMPTY_PROJECT_TABS;
 }
 
+/** Find which project owns a tab id, and the tab itself. */
+export function findTabOwner(
+  state: TabsState,
+  tabId: string,
+): { projectId: string; tab: Tab } | null {
+  for (const [projectId, project] of Object.entries(state)) {
+    const tab = project.tabs.find((t) => t.id === tabId);
+    if (tab) return { projectId, tab };
+  }
+  return null;
+}
+
 export function addTab(state: TabsState, projectId: string, tab: Tab): TabsState {
   const current = projectTabs(state, projectId);
   return {

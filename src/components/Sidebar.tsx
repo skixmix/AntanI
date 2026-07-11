@@ -6,6 +6,7 @@ import { ProjectRow } from "./ProjectRow";
 interface SidebarProps {
   projects: Project[];
   activeProjectId: string | null;
+  projectStatuses: Record<string, "busy" | "waiting">;
   onAdd: () => void;
   onSelect: (id: string) => void;
   onRename: (id: string, name: string) => void;
@@ -36,6 +37,7 @@ function readPersistedWidth(): number {
 export function Sidebar({
   projects,
   activeProjectId,
+  projectStatuses,
   onAdd,
   onSelect,
   onRename,
@@ -169,6 +171,7 @@ export function Sidebar({
                 key={project.id}
                 project={project}
                 active={project.id === activeProjectId}
+                status={projectStatuses[project.id]}
                 rowRef={project.id === activeProjectId ? activeRowRef : undefined}
                 onSelect={() => onSelect(project.id)}
                 onRename={(name) => onRename(project.id, name)}
