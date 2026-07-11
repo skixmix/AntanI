@@ -17,28 +17,12 @@ Built with Tauri v2 + React. And AI.
 AntanI ships as an unsigned macOS app via a personal [Homebrew](https://brew.sh) tap:
 
 ```sh
+brew trust --cask skixmix/antani/antani
 brew tap skixmix/antani
 brew install --cask antani
 ```
 
-The first time, Homebrew will refuse with `Refusing to load cask
-skixmix/antani/antani from untrusted tap skixmix/antani` — that's expected
-for any personal/third-party tap, not specific to AntanI. Run:
-
-```sh
-brew trust --cask skixmix/antani/antani
-```
-
-then re-run the install command above.
-
-The app is unsigned (no Apple Developer account — this is a personal, free
-tool), but the Cask clears the quarantine flag automatically on install, so
-macOS won't show an "unidentified developer" warning when you open it.
-[code-server](https://coder.com/docs/code-server/install) installs
-automatically as a dependency, since it's required for the embedded VS Code
-tab.
-
-To update later: `brew upgrade --cask antani`.
+That's it! To update later: `brew upgrade --cask antani`.
 
 ## Prerequisites
 
