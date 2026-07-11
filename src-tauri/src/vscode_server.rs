@@ -547,6 +547,60 @@ const MACHINE_SETTINGS: &str = r#"{
 /// user may have customised it inside the editor, so we leave it alone.
 /// Imported settings (copied from desktop VS Code) are merged in on first write.
 fn seed_user_settings(data_dir: &Path, imported_settings_path: &Path) {
+    let settings_path = data_dir.join("User").join("settings.json");
+
+    if !settings_path.exists() {
+        // Fresh install: start from defaults, then layer imported settings on top.
+        merge_imported_settings(data_dir, imported_settings_path);
+        return;
+    }
+
+    // File already exists — only fix keys that are known-broken defaults.
+    // "Dark+" was the old name; code-server only ships "Default Dark+".
+    let Some(mut existing) = std::fs::read_to_string(&settings_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+    else {
+        return;
+    };
+    if existing
+        .get("workbench.colorTheme")
+        .and_then(|v| v.as_str())
+        == Some("Dark+")
+    {
+        if let Some(obj) = existing.as_object_mut() {
+            obj.insert(
+                "workbench.colorTheme".to_string(),
+                serde_json::json!("Default Dark+"),
+            );
+        }
+    }
+
+    if let Ok(text) = serde_json::to_string_pretty(&existing) {
+        let _ = std::fs::write(&settings_path, text);
+    }
+}
+
+fn merge_overrides_from_file(base: &mut serde_json::Value, overrides_path: &Path) {
+    if let Ok(text) = std::fs::read_to_string(overrides_path) {
+        if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let (Some(base_obj), Some(overrides_obj)) =
+                (base.as_object_mut(), overrides.as_object())
+            {
+                for (k, v) in overrides_obj {
+                    base_obj.insert(k.clone(), v.clone());
+                }
+            }
+        }
+    }
+}
+
+/// Merge freshly-imported desktop VS Code settings into the live
+/// `User/settings.json`, even if that file already exists (e.g. the embedded
+/// IDE was opened before the user ran Import). Without this, imported
+/// settings only ever land in the fresh-install path handled above and are
+/// silently orphaned otherwise.
+fn merge_imported_settings(data_dir: &Path, imported_settings_path: &Path) {
     let user_dir = data_dir.join("User");
     if std::fs::create_dir_all(&user_dir).is_err() {
         return;
@@ -559,44 +613,94 @@ fn seed_user_settings(data_dir: &Path, imported_settings_path: &Path) {
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or(serde_json::json!({}))
     } else {
-        serde_json::json!({})
+        serde_json::from_str(MACHINE_SETTINGS).unwrap_or(serde_json::json!({}))
     };
 
-    let defaults: serde_json::Value =
-        serde_json::from_str(MACHINE_SETTINGS).unwrap_or(serde_json::json!({}));
-
-    if settings_path.exists() {
-        // File already exists — only fix keys that are known-broken defaults.
-        // "Dark+" was the old name; code-server only ships "Default Dark+".
-        if existing
-            .get("workbench.colorTheme")
-            .and_then(|v| v.as_str())
-            == Some("Dark+")
-        {
-            if let Some(obj) = existing.as_object_mut() {
-                obj.insert(
-                    "workbench.colorTheme".to_string(),
-                    serde_json::json!("Default Dark+"),
-                );
-            }
-        }
-    } else {
-        // Fresh install: start from defaults, then layer imported settings on top.
-        existing = defaults;
-        if let Ok(text) = std::fs::read_to_string(imported_settings_path) {
-            if let Ok(user) = serde_json::from_str::<serde_json::Value>(&text) {
-                if let (Some(base), Some(overrides)) = (existing.as_object_mut(), user.as_object())
-                {
-                    for (k, v) in overrides {
-                        base.insert(k.clone(), v.clone());
-                    }
-                }
-            }
-        }
-    }
+    merge_overrides_from_file(&mut existing, imported_settings_path);
 
     if let Ok(text) = serde_json::to_string_pretty(&existing) {
         let _ = std::fs::write(&settings_path, text);
+    }
+}
+
+/// Register copied extension folders in the embedded server's own
+/// `extensions.json`/`.obsolete` bookkeeping. Copying the folders alone isn't
+/// enough: code-server's extension scanner only lists what's recorded in
+/// `extensions.json`, and treats any folder named in `.obsolete` as
+/// uninstalled regardless of whether it's on disk — so a bare folder copy
+/// shows up as "0 installed" in the Extensions view.
+fn sync_extensions_manifest(vscode_ext_dir: &Path, dest_ext_dir: &Path) {
+    let src_manifest_path = vscode_ext_dir.join("extensions.json");
+    let Ok(src_text) = std::fs::read_to_string(&src_manifest_path) else {
+        eprintln!(
+            "antani: no extensions.json at {}, skipping manifest sync",
+            src_manifest_path.display()
+        );
+        return;
+    };
+    let Ok(serde_json::Value::Array(src_entries)) = serde_json::from_str(&src_text) else {
+        eprintln!(
+            "antani: failed to parse {} as a JSON array, skipping manifest sync",
+            src_manifest_path.display()
+        );
+        return;
+    };
+
+    let dest_manifest_path = dest_ext_dir.join("extensions.json");
+    let mut dest_entries: Vec<serde_json::Value> = std::fs::read_to_string(&dest_manifest_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    let existing_ids: std::collections::HashSet<String> = dest_entries
+        .iter()
+        .filter_map(|e| e.get("identifier")?.get("id")?.as_str().map(String::from))
+        .collect();
+
+    let mut installed_rel_locations = Vec::new();
+    for mut entry in src_entries {
+        let Some(rel) = entry
+            .get("relativeLocation")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+        else {
+            continue;
+        };
+        if !dest_ext_dir.join(&rel).is_dir() {
+            continue;
+        }
+        installed_rel_locations.push(rel.clone());
+
+        let id = entry
+            .get("identifier")
+            .and_then(|i| i.get("id"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        if id.is_some_and(|id| existing_ids.contains(&id)) {
+            continue;
+        }
+        if let Some(location) = entry.get_mut("location").and_then(|l| l.as_object_mut()) {
+            location.insert(
+                "path".to_string(),
+                serde_json::json!(dest_ext_dir.join(&rel).to_string_lossy()),
+            );
+        }
+        dest_entries.push(entry);
+    }
+
+    if let Ok(text) = serde_json::to_string(&dest_entries) {
+        let _ = std::fs::write(&dest_manifest_path, text);
+    }
+
+    let obsolete_path = dest_ext_dir.join(".obsolete");
+    if let Ok(text) = std::fs::read_to_string(&obsolete_path) {
+        if let Ok(serde_json::Value::Object(mut obj)) = serde_json::from_str(&text) {
+            for rel in &installed_rel_locations {
+                obj.remove(rel);
+            }
+            if let Ok(text) = serde_json::to_string(&serde_json::Value::Object(obj)) {
+                let _ = std::fs::write(&obsolete_path, text);
+            }
+        }
     }
 }
 
@@ -628,6 +732,7 @@ pub fn import_from_vscode(app: AppHandle) -> Result<String, String> {
             copy_dir_recursive(&src, &dest).map_err(|e| format!("copy {}: {e}", src.display()))?;
             ext_copied += 1;
         }
+        sync_extensions_manifest(&vscode_ext_dir, &dest_ext_dir);
     }
 
     let src_settings = PathBuf::from(&home)
@@ -638,6 +743,7 @@ pub fn import_from_vscode(app: AppHandle) -> Result<String, String> {
         .join("settings.json");
     let settings_imported = if src_settings.is_file() {
         std::fs::copy(&src_settings, server.imported_settings_path()).map_err(|e| e.to_string())?;
+        merge_imported_settings(&server.data_dir(), &server.imported_settings_path());
         true
     } else {
         false
