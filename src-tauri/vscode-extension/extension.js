@@ -40,10 +40,7 @@ function activate(context) {
       }
       try {
         await vscode.commands.executeCommand("workbench.view.scm");
-        await vscode.commands.executeCommand(
-          "git.openChange",
-          vscode.Uri.file(file),
-        );
+        await vscode.commands.executeCommand("git.openChange", vscode.Uri.file(file));
       } catch (err) {
         console.error("antani-diff-bridge:", err);
       }
