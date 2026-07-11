@@ -24,7 +24,9 @@ brew install --cask antani
 
 That's it! To update later: `brew upgrade --cask antani`.
 
-## Prerequisites
+## Development
+
+### Prerequisites
 
 If you really would like to fork/improve/adjust it for your needs, you'll need:
 
@@ -53,7 +55,7 @@ launches are fast. Projects and settings persist to the OS app-data dir
 (`~/Library/Application Support/com.antani.app/`); tabs are session-only.
 
 
-## AI and Vibe Coding
+### AI and Vibe Coding
 
 This is my first real project where I go completely crazy with full vibe coding on. I don't know Rust, never worked with it. I do know React tho, but don't really have the time to review every single line. So, here you go, everything you see was made by an AI (mainly Claude), except for the ideas and some parts (like this one) of this README.
 
