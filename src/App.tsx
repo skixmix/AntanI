@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FirstRunVscodeModal } from "./components/FirstRunVscodeModal";
 import { FreeRamModal } from "./components/FreeRamModal";
 import { ImportVscodeModal } from "./components/ImportVscodeModal";
+import { SettingsPage } from "./components/SettingsPage";
 import { Sidebar } from "./components/Sidebar";
 import { Workspace } from "./components/Workspace";
 import * as api from "./lib/api.ipc";
@@ -75,6 +77,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showFreeRamModal, setShowFreeRamModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showSettingsPage, setShowSettingsPage] = useState(false);
+  const [showFirstRunImportModal, setShowFirstRunImportModal] = useState(false);
+  const [pendingIdeOpenProjectId, setPendingIdeOpenProjectId] = useState<string | null>(null);
 
   const { memMb, refreshMem } = useVscodeMemory();
 
@@ -93,6 +98,8 @@ function App() {
   const notifiedWaitingRef = useRef(new Set<string>());
   const tabStatusesRef = useRef(tabStatuses);
   tabStatusesRef.current = tabStatuses;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   useEffect(() => {
     Promise.all([api.getAppState(), api.getSettings()])
@@ -223,7 +230,8 @@ function App() {
         owner &&
         activeProjectIdRef.current === owner.projectId &&
         tabsRef.current[owner.projectId]?.activeTabId === tabId;
-      if (owner && project && !(isOpenTab && document.hasFocus())) {
+      const notificationsEnabled = settingsRef.current?.notificationsEnabled ?? true;
+      if (notificationsEnabled && owner && project && !(isOpenTab && document.hasFocus())) {
         const notifyFn = status === "ready" ? notifyAgentReady : notifyAgentWaiting;
         notifyFn(project.name, owner.tab.title, owner.projectId, tabId);
       }
@@ -246,28 +254,77 @@ function App() {
     [activeId],
   );
 
+  const openIdeNow = useCallback(
+    (id: string) => {
+      setIdeEverOpenedByProject((prev) => ({ ...prev, [id]: true }));
+      setIdeOpenByProject((prev) => ({ ...prev, [id]: true }));
+      void refreshMem();
+    },
+    [refreshMem],
+  );
+
+  // The very first time ever (across the whole app history, not per-project)
+  // that the user opens the embedded VS Code, park the open and show the
+  // one-time import prompt instead — actual opening resumes once it's answered.
+  const requestOpenIde = useCallback(
+    (id: string) => {
+      if (settings && !settings.vscodeImportPrompted) {
+        setPendingIdeOpenProjectId(id);
+        setShowFirstRunImportModal(true);
+        return;
+      }
+      openIdeNow(id);
+    },
+    [settings, openIdeNow],
+  );
+
   const handleToggleIde = useCallback(() => {
     if (!activeId) return;
     const isOpen = ideOpenByProject[activeId] ?? false;
     if (isOpen) {
       setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
       setIdeEverOpenedByProject((prev) => ({ ...prev, [activeId]: false }));
+      void refreshMem();
     } else {
-      setIdeEverOpenedByProject((prev) => ({ ...prev, [activeId]: true }));
-      setIdeOpenByProject((prev) => ({ ...prev, [activeId]: true }));
+      requestOpenIde(activeId);
     }
-    // Refresh mem immediately after toggle
-    void refreshMem();
-  }, [activeId, ideOpenByProject, refreshMem]);
+  }, [activeId, ideOpenByProject, requestOpenIde, refreshMem]);
 
   // Unlike handleToggleIde, always ends in "open" — used when an action (e.g.
   // viewing a diff) needs the IDE tab visible, regardless of its prior state.
   const handleOpenIde = useCallback(() => {
     if (!activeId) return;
-    setIdeEverOpenedByProject((prev) => ({ ...prev, [activeId]: true }));
-    setIdeOpenByProject((prev) => ({ ...prev, [activeId]: true }));
-    void refreshMem();
-  }, [activeId, refreshMem]);
+    requestOpenIde(activeId);
+  }, [activeId, requestOpenIde]);
+
+  const markVscodeImportPrompted = useCallback(async () => {
+    if (!settings || settings.vscodeImportPrompted) return;
+    const updated = { ...settings, vscodeImportPrompted: true };
+    setSettings(updated);
+    try {
+      await api.updateSettings(updated);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [settings]);
+
+  const handleFirstRunFinish = useCallback(() => {
+    setShowFirstRunImportModal(false);
+    void markVscodeImportPrompted();
+    const id = pendingIdeOpenProjectId;
+    setPendingIdeOpenProjectId(null);
+    if (id) openIdeNow(id);
+  }, [markVscodeImportPrompted, pendingIdeOpenProjectId, openIdeNow]);
+
+  const handleToggleNotifications = useCallback(
+    (enabled: boolean) => {
+      if (!settings) return;
+      const updated = { ...settings, notificationsEnabled: enabled };
+      setSettings(updated);
+      void api.updateSettings(updated).catch((e) => setError(String(e)));
+    },
+    [settings],
+  );
 
   const handleKillAllIde = useCallback(async () => {
     await api.closeAllIdeWebviews();
@@ -338,7 +395,7 @@ function App() {
           onReorder={(ids) => run(() => api.reorderProjects(ids))}
           showFreeRamButton={showFreeRamButton}
           onFreeRam={() => setShowFreeRamModal(true)}
-          onImportVscode={() => setShowImportModal(true)}
+          onOpenSettings={() => setShowSettingsPage(true)}
         />
         <Workspace
           project={active}
@@ -361,6 +418,15 @@ function App() {
         />
       </div>
 
+      {showSettingsPage && (
+        <SettingsPage
+          settings={settings}
+          onClose={() => setShowSettingsPage(false)}
+          onImportVscode={() => setShowImportModal(true)}
+          onToggleNotifications={handleToggleNotifications}
+        />
+      )}
+
       {showImportModal && (
         <ImportVscodeModal
           onClose={() => {
@@ -372,6 +438,8 @@ function App() {
           }}
         />
       )}
+
+      {showFirstRunImportModal && <FirstRunVscodeModal onFinish={handleFirstRunFinish} />}
 
       {showFreeRamModal && memMb !== null && (
         <FreeRamModal

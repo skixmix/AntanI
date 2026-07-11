@@ -101,15 +101,10 @@ fn get_settings(settings: State<SettingsState>) -> Result<Settings, String> {
 }
 
 #[tauri::command]
-fn update_settings(
-    settings: State<SettingsState>,
-    claude_command: String,
-    opencode_command: String,
-) -> Result<Settings, String> {
-    let mut data = settings.data.lock().map_err(|e| e.to_string())?;
-    data.claude_command = claude_command;
-    data.opencode_command = opencode_command;
-    state::save(&settings.file_path, &*data).map_err(|e| e.to_string())?;
+fn update_settings(state: State<SettingsState>, settings: Settings) -> Result<Settings, String> {
+    let mut data = state.data.lock().map_err(|e| e.to_string())?;
+    *data = settings;
+    state::save(&state.file_path, &*data).map_err(|e| e.to_string())?;
     Ok(data.clone())
 }
 

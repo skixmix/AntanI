@@ -44,6 +44,10 @@ export function getSettings(): Promise<Settings> {
   return invoke<Settings>("get_settings");
 }
 
+export function updateSettings(settings: Settings): Promise<Settings> {
+  return invoke<Settings>("update_settings", { settings });
+}
+
 /** Open the native folder picker. Returns the chosen absolute path, or null if cancelled. */
 export async function pickFolder(): Promise<string | null> {
   const selected = await open({ directory: true, multiple: false });
