@@ -9,6 +9,7 @@ interface TabStripProps {
   tabs: Tab[];
   activeTabId: string | null;
   tabStatuses: Record<string, TabStatus>;
+  needsAttention: Record<string, true>;
   project: Project;
   ideOpen: boolean;
   ideInstanceCount: number;
@@ -32,6 +33,7 @@ export function TabStrip({
   tabs,
   activeTabId,
   tabStatuses,
+  needsAttention,
   project,
   ideOpen,
   ideInstanceCount,
@@ -86,6 +88,7 @@ export function TabStrip({
             tab={tab}
             active={!ideOpen && tab.id === activeTabId}
             status={tabStatuses[tab.id]}
+            needsAttention={!!needsAttention[tab.id]}
             isDragging={draggingId === tab.id}
             showInsertBefore={insertBeforeId === tab.id && draggingId !== tab.id}
             onSelect={() => onSelect(tab.id)}

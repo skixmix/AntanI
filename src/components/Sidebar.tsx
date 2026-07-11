@@ -8,6 +8,7 @@ interface SidebarProps {
   projects: Project[];
   activeProjectId: string | null;
   projectStatuses: Record<string, "busy" | "waiting">;
+  projectNeedsAttention: Record<string, boolean>;
   onAdd: () => void;
   onSelect: (id: string) => void;
   onRename: (id: string, name: string) => void;
@@ -39,6 +40,7 @@ export function Sidebar({
   projects,
   activeProjectId,
   projectStatuses,
+  projectNeedsAttention,
   onAdd,
   onSelect,
   onRename,
@@ -177,6 +179,7 @@ export function Sidebar({
                 project={project}
                 active={project.id === activeProjectId}
                 status={projectStatuses[project.id]}
+                needsAttention={projectNeedsAttention[project.id]}
                 rowRef={project.id === activeProjectId ? activeRowRef : undefined}
                 onSelect={() => onSelect(project.id)}
                 onRename={(name) => onRename(project.id, name)}
