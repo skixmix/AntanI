@@ -22,7 +22,13 @@ brew tap skixmix/antani
 brew install --cask antani
 ```
 
-That's it! To update later: `brew upgrade --cask antani`.
+That's it! 
+
+To update later: 
+```sh
+brew update
+brew upgrade --cask antani
+```
 
 ## Development
 
