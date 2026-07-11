@@ -1,6 +1,6 @@
 ---
 name: adding-tauri-command
-description: Add a new Tauri IPC command end-to-end in AntanI (Rust command, registration, capability, TS wrapper, types). Use when the user asks to add/expose a new backend command, wire up a new IPC call, or add a Tauri command.
+description: Add a new Tauri IPC command end-to-end in AntanI (Rust command, registration, capability, TS wrapper, types). TRIGGER — read BEFORE writing any `#[tauri::command]` fn, any new `src-tauri/src/*.rs` module with commands, any `tauri::generate_handler!` edit, or any new/edited `src/lib/*.ipc.ts` file — even if the change looks like "just one function" or you already know the pattern from reading existing modules (pty.rs, api.ipc.ts, etc.) firsthand in this session. Trigger on requests like "add a command", "expose X to the frontend", "wire up IPC for Y", "new backend endpoint", or when a plan you're implementing includes a new Rust command + TS wrapper pair. Re-check this skill even mid-implementation if you notice you're about to hand-roll the same steps from memory instead of following the checklist.
 ---
 
 # Add a Tauri IPC command

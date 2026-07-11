@@ -58,6 +58,147 @@ export function TerminalIcon({ size = 14, className = "" }: IconProps) {
   );
 }
 
+/** Generic file icon, tinted via currentColor for git status coloring */
+export function FileIcon({ size = 13, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M4 1.5h5.5L13 5v9a.5.5 0 0 1-.5.5h-8A.5.5 0 0 1 4 14V2a.5.5 0 0 1 0-.5Z" />
+      <path d="M9.5 1.5V5H13" />
+    </svg>
+  );
+}
+
+/** Folder-tree expand/collapse chevron; rotate via className for expanded state */
+export function ChevronRightIcon({ size = 12, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <polyline points="6 3 11 8 6 13" />
+    </svg>
+  );
+}
+
+export function PlusIcon({ size = 12, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M8 3v10M3 8h10" />
+    </svg>
+  );
+}
+
+export function MinusIcon({ size = 12, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M3 8h10" />
+    </svg>
+  );
+}
+
+/** Discard/revert — a counter-clockwise "undo" arrow */
+export function DiscardIcon({ size = 12, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M3 8a5 5 0 1 1 1.6 3.7" />
+      <path d="M3 4v4h4" />
+    </svg>
+  );
+}
+
+/** Source control toggle — a simplified git-branch glyph */
+export function SourceControlIcon({ size = 14, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <circle cx="4" cy="3" r="1.6" />
+      <circle cx="4" cy="13" r="1.6" />
+      <circle cx="12" cy="8" r="1.6" />
+      <path d="M4 4.6V11.4M4 7a5 5 0 0 0 5 3.6h1.4" />
+    </svg>
+  );
+}
+
+/** Folder glyph for the "Projects" sidebar header */
+export function ProjectsIcon({ size = 13, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M1.5 4.2c0-.7.6-1.2 1.2-1.2h3l1.2 1.5h6.4c.7 0 1.2.6 1.2 1.2v6.1c0 .7-.6 1.2-1.2 1.2H2.7c-.7 0-1.2-.6-1.2-1.2V4.2Z" />
+    </svg>
+  );
+}
+
 /** OpenCode — PNG raster logo */
 export function OpenCodeIcon({ size = 14, className = "" }: IconProps) {
   return (

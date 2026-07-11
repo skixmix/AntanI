@@ -1,0 +1,15 @@
+{
+  "name": "antani-diff-bridge",
+  "displayName": "AntanI Diff Bridge",
+  "description": "Internal bridge letting the AntanI shell open the native diff view.",
+  "version": "0.1.0",
+  "publisher": "antani",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {}
+}

@@ -260,6 +260,15 @@ function App() {
     void refreshMem();
   }, [activeId, ideOpenByProject, refreshMem]);
 
+  // Unlike handleToggleIde, always ends in "open" — used when an action (e.g.
+  // viewing a diff) needs the IDE tab visible, regardless of its prior state.
+  const handleOpenIde = useCallback(() => {
+    if (!activeId) return;
+    setIdeEverOpenedByProject((prev) => ({ ...prev, [activeId]: true }));
+    setIdeOpenByProject((prev) => ({ ...prev, [activeId]: true }));
+    void refreshMem();
+  }, [activeId, refreshMem]);
+
   const handleKillAllIde = useCallback(async () => {
     await api.closeAllIdeWebviews();
     setIdeOpenByProject({});
@@ -347,6 +356,7 @@ function App() {
           onRecolorTab={handleRecolorTab}
           onReorderTab={handleReorderTab}
           onToggleIde={handleToggleIde}
+          onOpenIde={handleOpenIde}
           onStatusChange={handleStatusChange}
         />
       </div>

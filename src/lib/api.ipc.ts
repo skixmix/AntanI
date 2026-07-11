@@ -160,6 +160,14 @@ export function importFromVscode(): Promise<string> {
   return invoke<string>("import_from_vscode");
 }
 
+/** Open the native diff view for `filePath` inside the embedded IDE, via the
+ *  bundled `antani-diff-bridge` extension running in `projectPath`'s IDE
+ *  webview. Both must be absolute; rejects if that project's IDE webview
+ *  isn't open yet (or the extension hasn't activated) — callers should retry. */
+export function openDiffInIde(projectPath: string, filePath: string): Promise<void> {
+  return invoke("open_diff_in_ide", { projectPath, filePath });
+}
+
 export interface IdeServerStatusEvent {
   status: IdeServerStatus;
   message: string | null;

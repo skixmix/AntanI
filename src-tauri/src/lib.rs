@@ -1,3 +1,4 @@
+mod git;
 mod ide_webview;
 mod pty;
 mod state;
@@ -123,6 +124,7 @@ pub fn run() {
             app.manage(AppState::new(dir.join(PROJECTS_FILE)));
             app.manage(SettingsState::new(dir.join(SETTINGS_FILE)));
             app.manage(pty::PtyManager::default());
+            app.manage(git::GitWatcherManager::default());
 
             let server = VscodeServer::new(dir);
             server.reclaim_orphan();
@@ -179,9 +181,18 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
+            git::git_status,
+            git::git_stage,
+            git::git_unstage,
+            git::git_stage_all,
+            git::git_unstage_all,
+            git::git_revert_file,
+            git::git_watch_start,
+            git::git_watch_stop,
             vscode_server::ensure_ide_server,
             vscode_server::get_vscode_memory_mb,
             vscode_server::import_from_vscode,
+            vscode_server::open_diff_in_ide,
             ide_webview::create_ide_webview,
             ide_webview::set_ide_bounds,
             ide_webview::show_ide_webview,
@@ -195,6 +206,9 @@ pub fn run() {
             if let RunEvent::Exit = event {
                 if let Some(manager) = app_handle.try_state::<pty::PtyManager>() {
                     manager.kill_all();
+                }
+                if let Some(manager) = app_handle.try_state::<git::GitWatcherManager>() {
+                    manager.stop_all();
                 }
                 if let Some(server) = app_handle.try_state::<VscodeServer>() {
                     server.stop();
