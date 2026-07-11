@@ -222,38 +222,45 @@ function App() {
   const showFreeRamButton = ideInstanceCount > 0 && memMb !== null && memMb >= 1024;
 
   return (
-    <div className="flex h-full w-full bg-background">
-      <Sidebar
-        projects={data.projects}
-        activeProjectId={data.activeProjectId}
-        onAdd={handleAdd}
-        onSelect={(id) => run(() => api.setActiveProject(id))}
-        onRename={(id, name) => run(() => api.renameProject(id, name))}
-        onRecolor={(id, color) => run(() => api.setProjectColor(id, color))}
-        onRemove={handleRemove}
-        onReorder={(ids) => run(() => api.reorderProjects(ids))}
-        showFreeRamButton={showFreeRamButton}
-        onFreeRam={() => setShowFreeRamModal(true)}
-        onImportVscode={() => setShowImportModal(true)}
-      />
-      <Workspace
-        project={active}
-        projects={data.projects}
-        tabs={tabs}
-        tabStatuses={tabStatuses}
-        ideOpen={ideOpen}
-        ideEverOpenedByProject={ideEverOpenedByProject}
-        ideInstanceCount={ideInstanceCount}
-        memMb={memMb}
-        onOpenTab={openTab}
-        onSelectTab={selectTab}
-        onCloseTab={handleCloseTab}
-        onRenameTab={handleRenameTab}
-        onRecolorTab={handleRecolorTab}
-        onReorderTab={handleReorderTab}
-        onToggleIde={handleToggleIde}
-        onStatusChange={handleStatusChange}
-      />
+    <div className="flex h-full w-full flex-col bg-background">
+      {import.meta.env.DEV && (
+        <div className="flex h-5 shrink-0 items-center justify-center bg-primary text-[10px] font-semibold tracking-wide text-primary-foreground">
+          DEV BUILD
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1">
+        <Sidebar
+          projects={data.projects}
+          activeProjectId={data.activeProjectId}
+          onAdd={handleAdd}
+          onSelect={(id) => run(() => api.setActiveProject(id))}
+          onRename={(id, name) => run(() => api.renameProject(id, name))}
+          onRecolor={(id, color) => run(() => api.setProjectColor(id, color))}
+          onRemove={handleRemove}
+          onReorder={(ids) => run(() => api.reorderProjects(ids))}
+          showFreeRamButton={showFreeRamButton}
+          onFreeRam={() => setShowFreeRamModal(true)}
+          onImportVscode={() => setShowImportModal(true)}
+        />
+        <Workspace
+          project={active}
+          projects={data.projects}
+          tabs={tabs}
+          tabStatuses={tabStatuses}
+          ideOpen={ideOpen}
+          ideEverOpenedByProject={ideEverOpenedByProject}
+          ideInstanceCount={ideInstanceCount}
+          memMb={memMb}
+          onOpenTab={openTab}
+          onSelectTab={selectTab}
+          onCloseTab={handleCloseTab}
+          onRenameTab={handleRenameTab}
+          onRecolorTab={handleRecolorTab}
+          onReorderTab={handleReorderTab}
+          onToggleIde={handleToggleIde}
+          onStatusChange={handleStatusChange}
+        />
+      </div>
 
       {showImportModal && (
         <ImportVscodeModal
