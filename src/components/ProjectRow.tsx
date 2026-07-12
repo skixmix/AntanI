@@ -1,9 +1,11 @@
+import { openPath } from "@tauri-apps/plugin-opener";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { projectInitials } from "../lib/constants";
 import type { Project } from "../lib/types";
 import { ColorPicker } from "./ColorPicker";
+import { ContextMenu } from "./ContextMenu";
+import { PaletteIcon, PencilIcon, ProjectsIcon, TrashIcon } from "./Icons";
 
 interface ProjectRowProps {
   project: Project;
@@ -47,17 +49,6 @@ export function ProjectRow({
       inputRef.current?.select();
     }
   }, [editing]);
-
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const close = () => setCtxMenu(null);
-    window.addEventListener("click", close);
-    window.addEventListener("contextmenu", close);
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("contextmenu", close);
-    };
-  }, [ctxMenu]);
 
   function commitRename() {
     const next = draft.trim();
@@ -151,51 +142,40 @@ export function ProjectRow({
         />
       )}
 
-      {ctxMenu &&
-        createPortal(
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setCtxMenu(null)} />
-            <div
-              className="fixed z-50 min-w-36 rounded-lg border border-border bg-popover p-1 shadow-xl text-sm"
-              style={{ left: ctxMenu.x, top: ctxMenu.y }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-secondary"
-                onClick={() => {
-                  setDraft(project.name);
-                  setEditing(true);
-                  setCtxMenu(null);
-                }}
-              >
-                Rename
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-secondary"
-                onClick={() => {
-                  setPickerOpen(true);
-                  setCtxMenu(null);
-                }}
-              >
-                Change color
-              </button>
-              <div className="my-1 border-t border-border" />
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-destructive hover:bg-secondary"
-                onClick={() => {
-                  onRemove();
-                  setCtxMenu(null);
-                }}
-              >
-                Remove project
-              </button>
-            </div>
-          </>,
-          document.body,
-        )}
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+          items={[
+            {
+              label: "Rename",
+              icon: <PencilIcon size={13} />,
+              onSelect: () => {
+                setDraft(project.name);
+                setEditing(true);
+              },
+            },
+            {
+              label: "Change color",
+              icon: <PaletteIcon size={13} />,
+              onSelect: () => setPickerOpen(true),
+            },
+            {
+              label: "Open in Finder",
+              icon: <ProjectsIcon size={13} />,
+              onSelect: () => void openPath(project.path),
+            },
+            {
+              label: "Remove project",
+              icon: <TrashIcon size={13} />,
+              destructive: true,
+              separatorBefore: true,
+              onSelect: onRemove,
+            },
+          ]}
+        />
+      )}
     </div>
   );
 }

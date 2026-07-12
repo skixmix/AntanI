@@ -280,6 +280,73 @@ export function CustomCommandIcon({ size = 13, className = "" }: IconProps) {
   );
 }
 
+/** Pencil glyph — used for "Rename" menu entries */
+export function PencilIcon({ size = 13, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M10.8 2.3a1.4 1.4 0 0 1 2 2L4.5 12.6l-2.8.7.7-2.8 8.4-8.2Z" />
+      <path d="M9.3 3.8 12.2 6.7" />
+    </svg>
+  );
+}
+
+/** Paint palette glyph — used for "Change color" menu entries */
+export function PaletteIcon({ size = 13, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M8 1.5a6.3 6.3 0 1 0 0 12.6c1 0 1.5-.6 1.5-1.4 0-.4-.2-.7-.4-1-.2-.3-.4-.6-.4-1 0-.7.6-1.2 1.3-1.2h1.2c1.6 0 2.8-1.2 2.8-2.8 0-3-2.8-5.2-6-5.2Z" />
+      <circle cx="4.7" cy="7" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="6.5" cy="4.3" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="9.8" cy="4.6" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/** Trash-can glyph — used for destructive "Remove"/"Delete" menu entries */
+export function TrashIcon({ size = 13, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M2.5 4.2h11" />
+      <path d="M5.3 4.2V3a1 1 0 0 1 1-1h3.4a1 1 0 0 1 1 1v1.2" />
+      <path d="M4.2 4.2 5 13a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.8-8.8" />
+      <path d="M6.7 6.8v4.4M9.3 6.8v4.4" />
+    </svg>
+  );
+}
+
 /** OpenCode — PNG raster logo */
 export function OpenCodeIcon({ size = 14, className = "" }: IconProps) {
   return (

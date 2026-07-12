@@ -70,7 +70,7 @@ export function Workspace({
   return (
     <>
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="w-full shrink-0" style={{ height: 3, backgroundColor: project.color }} />
+        <div className="w-full shrink-0" style={{ height: 2, backgroundColor: project.color }} />
 
         <TabStrip
           tabs={projectTabList}
