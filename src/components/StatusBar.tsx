@@ -10,14 +10,16 @@ interface StatusBarProps {
 
 export function StatusBar({ project, version }: StatusBarProps) {
   const [branch, setBranch] = useState<string | null>(null);
+  const [notGitRepo, setNotGitRepo] = useState(false);
 
   useEffect(() => {
     setBranch(null);
+    setNotGitRepo(false);
     if (!project) return;
     void git
       .gitStatus(project.path)
       .then((s) => setBranch(s.branch))
-      .catch(() => setBranch(null));
+      .catch((e) => setNotGitRepo(git.isNotGitRepoError(String(e))));
   }, [project]);
 
   useEffect(() => {
@@ -32,7 +34,13 @@ export function StatusBar({ project, version }: StatusBarProps) {
     return () => unlisten?.();
   }, [project]);
 
-  const branchLabel = branch ? branch : project ? "Not a git repository" : "No project selected";
+  const branchLabel = branch
+    ? branch
+    : !project
+      ? "No project selected"
+      : notGitRepo
+        ? "Not a git repository"
+        : "Git status unavailable";
 
   return (
     <div

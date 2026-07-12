@@ -2,6 +2,7 @@ import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useSta
 import { openDiffInIde } from "../lib/api.ipc";
 import { buildFileTree, type TreeNode } from "../lib/fileTree";
 import * as git from "../lib/git.ipc";
+import { isNotGitRepoError } from "../lib/git.ipc";
 import type { FileChangeKind, GitFileEntry, GitStatus, Project } from "../lib/types";
 import {
   ChevronRightIcon,
@@ -61,10 +62,6 @@ const STATUS_LETTER: Record<FileChangeKind, string> = {
   modified: "M",
   deleted: "D",
 };
-
-function isNotGitRepoError(error: string): boolean {
-  return error.toLowerCase().includes("not a git repository");
-}
 
 /** Merge staged + unstaged into unique per-path counts, for the collapsed
  *  rail's quick-glance added/modified/deleted summary. */

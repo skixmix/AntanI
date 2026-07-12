@@ -50,4 +50,13 @@ describe("buildFileTree", () => {
   it("returns an empty array for no entries", () => {
     expect(buildFileTree([])).toEqual([]);
   });
+
+  it("skips entries whose path has no segments", () => {
+    expect(buildFileTree([entry("/")])).toEqual([]);
+  });
+
+  it("sorts a file before a folder does not happen: folder always wins", () => {
+    const tree = buildFileTree([entry("b.ts"), entry("a/file.ts")]);
+    expect(tree.map((n) => n.name)).toEqual(["a", "b.ts"]);
+  });
 });

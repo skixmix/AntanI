@@ -114,6 +114,12 @@ describe("closeTab", () => {
     expect(pt.activeTabId).toBe(t2.id);
     expect(pt.tabs.map((t) => t.id)).toEqual([t1.id, t2.id]);
   });
+
+  it("is a no-op for an unknown tab id", () => {
+    const state = seed(["terminal"]);
+    const next = closeTab(state, PROJECT, "missing");
+    expect(next).toBe(state);
+  });
 });
 
 describe("removeProjectTabs", () => {
@@ -176,11 +182,13 @@ describe("renameTab", () => {
 });
 
 describe("recolorTab", () => {
-  it("recolors the matching tab", () => {
-    const state = seed(["terminal"]);
-    const [t0] = projectTabs(state, PROJECT).tabs;
+  it("recolors the matching tab and leaves others untouched", () => {
+    const state = seed(["terminal", "claude"]);
+    const [t0, t1] = projectTabs(state, PROJECT).tabs;
     const next = recolorTab(state, PROJECT, t0.id, "#ff0000");
-    expect(projectTabs(next, PROJECT).tabs[0].color).toBe("#ff0000");
+    const pt = projectTabs(next, PROJECT);
+    expect(pt.tabs[0].color).toBe("#ff0000");
+    expect(pt.tabs[1].color).toBe(t1.color);
   });
 });
 

@@ -318,7 +318,7 @@ export function TerminalView({
     const unlisten = getCurrentWebview().onDragDropEvent((event) => {
       if (event.payload.type !== "drop") return;
       const text = event.payload.paths.map(shellEscapePath).join(" ");
-      void writePty(tabId, text);
+      void writePty(tabId, `${text} `);
     });
     return () => {
       void unlisten.then((fn) => fn());
