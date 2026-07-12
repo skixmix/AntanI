@@ -61,8 +61,8 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         style={{ left: pos.left, top: pos.top, visibility: pos.visible ? "visible" : "hidden" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {items.map((item, i) => (
-          <div key={`${item.label}-${i}`}>
+        {items.map((item) => (
+          <div key={item.label}>
             {item.separatorBefore && <div className="my-1 border-t border-border" />}
             <button
               type="button"
