@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addTab,
   closeTab,
+  createCustomTab,
   createTab,
   defaultTitle,
   findTabOwner,
@@ -14,13 +15,16 @@ import {
   startupCommandForKind,
   type TabsState,
 } from "./tabs";
-import type { Settings } from "./types";
+import type { CustomCommand, Settings } from "./types";
 
 const SETTINGS: Settings = {
   claudeCommand: "claude --resume",
   opencodeCommand: "oc",
   notificationsEnabled: true,
   vscodeImportPrompted: true,
+  soundEnabled: true,
+  soundReady: "Glass",
+  soundWaiting: "Ping",
 };
 const PROJECT = "proj-1";
 
@@ -47,6 +51,17 @@ describe("defaultTitle", () => {
     expect(defaultTitle("claude")).toBe("Claude");
     expect(defaultTitle("opencode")).toBe("opencode");
     expect(defaultTitle("ide")).toBe("IDE");
+  });
+});
+
+describe("createCustomTab", () => {
+  it("builds a terminal-kind tab from a custom command", () => {
+    const cmd: CustomCommand = { id: "c1", name: "Build", command: "make build", color: "#3b82f6" };
+    const tab = createCustomTab(cmd);
+    expect(tab.kind).toBe("terminal");
+    expect(tab.title).toBe("Build");
+    expect(tab.color).toBe("#3b82f6");
+    expect(tab.startupCommand).toBe("make build");
   });
 });
 

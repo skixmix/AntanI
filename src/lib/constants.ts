@@ -28,6 +28,20 @@ export function basename(path: string): string {
   return parts[parts.length - 1] || trimmed || "Untitled";
 }
 
+/** Derive a 1-2 letter monogram for a project's color swatch: the first
+ *  letter of the first two words if the name has multiple words (e.g.
+ *  "My Project" -> "MP"), otherwise the name's first two letters. */
+export function projectInitials(name: string): string {
+  const words = name
+    .trim()
+    .split(/[\s_-]+/)
+    .filter(Boolean);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return (words[0] ?? "").slice(0, 2).toUpperCase();
+}
+
 /** Number of projects reachable via Cmd+1..9. */
 export const MAX_QUICK_SWITCH = 9;
 

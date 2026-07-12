@@ -1,4 +1,4 @@
-import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { openDiffInIde } from "../lib/api.ipc";
 import { buildFileTree, type TreeNode } from "../lib/fileTree";
 import * as git from "../lib/git.ipc";
@@ -27,7 +27,9 @@ const OPEN_DIFF_RETRY_INTERVAL_MS = 300;
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 520;
 const DEFAULT_WIDTH = 280;
+const COLLAPSED_WIDTH = 56;
 const LS_KEY = "git-sidebar-width";
+const LS_COLLAPSED_KEY = "git-sidebar-collapsed";
 
 function readPersistedWidth(): number {
   try {
@@ -38,6 +40,14 @@ function readPersistedWidth(): number {
     }
   } catch {}
   return DEFAULT_WIDTH;
+}
+
+function readPersistedCollapsed(): boolean {
+  try {
+    return localStorage.getItem(LS_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 const STATUS_COLOR: Record<FileChangeKind, string> = {
@@ -52,8 +62,26 @@ const STATUS_LETTER: Record<FileChangeKind, string> = {
   deleted: "D",
 };
 
+function isNotGitRepoError(error: string): boolean {
+  return error.toLowerCase().includes("not a git repository");
+}
+
+/** Merge staged + unstaged into unique per-path counts, for the collapsed
+ *  rail's quick-glance added/modified/deleted summary. */
+function summarizeCounts(status: GitStatus | null): Record<FileChangeKind, number> {
+  const counts: Record<FileChangeKind, number> = { added: 0, modified: 0, deleted: 0 };
+  if (!status) return counts;
+  const kindByPath = new Map<string, FileChangeKind>();
+  for (const entry of status.staged) kindByPath.set(entry.path, entry.kind);
+  for (const entry of status.unstaged) kindByPath.set(entry.path, entry.kind);
+  for (const kind of kindByPath.values()) counts[kind]++;
+  return counts;
+}
+
 export function SourceControlSidebar({ project, onOpenIde }: SourceControlSidebarProps) {
   const [width, setWidth] = useState(readPersistedWidth);
+  const [collapsed, setCollapsed] = useState(readPersistedCollapsed);
+  const [isResizing, setIsResizing] = useState(false);
   const resizingRef = useRef(false);
   const startXRef = useRef(0);
   const startWRef = useRef(0);
@@ -67,8 +95,12 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
 
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Folders default to expanded, except staged folders which default to
+  // collapsed. This set tracks keys the user has toggled *away* from that
+  // default, so an empty set means every section is in its default state.
+  const [toggledFolders, setToggledFolders] = useState<Set<string>>(new Set());
   const [revertTarget, setRevertTarget] = useState<GitFileEntry | null>(null);
+  const [revertAllPending, setRevertAllPending] = useState(false);
 
   useEffect(() => {
     try {
@@ -76,10 +108,25 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
     } catch {}
   }, [width]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_COLLAPSED_KEY, collapsed ? "1" : "0");
+    } catch {}
+  }, [collapsed]);
+
+  const effectiveWidth = collapsed ? COLLAPSED_WIDTH : width;
+
+  // Exposed as a CSS var so the bottom status bar can mirror this width to
+  // keep its centered content in sync as this sidebar is resized.
+  useEffect(() => {
+    document.documentElement.style.setProperty("--git-sidebar-width", `${effectiveWidth}px`);
+  }, [effectiveWidth]);
+
   const onResizeStart = useCallback(
     (e: MouseEvent) => {
       e.preventDefault();
       resizingRef.current = true;
+      setIsResizing(true);
       startXRef.current = e.clientX;
       startWRef.current = width;
 
@@ -95,6 +142,7 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
       }
       function onUp() {
         resizingRef.current = false;
+        setIsResizing(false);
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
         resizeCleanupRef.current = null;
@@ -103,6 +151,7 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
       window.addEventListener("mouseup", onUp);
       resizeCleanupRef.current = () => {
         resizingRef.current = false;
+        setIsResizing(false);
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
       };
@@ -124,7 +173,7 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
   useEffect(() => {
     setStatus(null);
     setError(null);
-    setExpanded(new Set());
+    setToggledFolders(new Set());
     if (!project) return;
     refresh();
     void git.gitWatchStart(project.id, project.path);
@@ -151,7 +200,7 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
   }, [project]);
 
   const toggleFolder = useCallback((key: string) => {
-    setExpanded((prev) => {
+    setToggledFolders((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -188,6 +237,13 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
       refresh();
     });
   }, [project, revertTarget, refresh]);
+  const confirmRevertAll = useCallback(() => {
+    if (!project) return;
+    void git.gitRevertAll(project.path).then(() => {
+      setRevertAllPending(false);
+      refresh();
+    });
+  }, [project, refresh]);
   const openDiff = useCallback(
     (path: string) => {
       if (!project) return;
@@ -208,10 +264,23 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
   if (!project) {
     return (
       <aside
-        className="flex h-full shrink-0 flex-col items-center justify-center px-4 text-center text-xs text-muted-foreground no-select"
-        style={{ width, borderLeft: "1px solid var(--color-panel-divider)" }}
+        className="relative flex h-full shrink-0 flex-col items-center justify-center px-4 text-center text-xs text-muted-foreground no-select"
+        style={{
+          width: effectiveWidth,
+          borderLeft: "1px solid var(--color-panel-divider)",
+          transition: isResizing ? undefined : "width 180ms ease",
+        }}
       >
-        Select a project to see its source control status.
+        <button
+          type="button"
+          title={collapsed ? "Expand source control panel" : "Collapse source control panel"}
+          onClick={() => setCollapsed((c) => !c)}
+          className="absolute z-30 flex h-6 w-6 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
+          style={{ left: -12, top: 20 }}
+        >
+          <ChevronRightIcon size={11} className={collapsed ? "rotate-180" : ""} />
+        </button>
+        {!collapsed && "Select a project to see its source control status."}
       </aside>
     );
   }
@@ -220,22 +289,29 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
   const unstaged = status ? buildFileTree(status.unstaged) : [];
   const hasChanges = status && (status.staged.length > 0 || status.unstaged.length > 0);
 
+  const counts = summarizeCounts(status);
+  const totalChanges = counts.added + counts.modified + counts.deleted;
+
   return (
     <aside
       className="relative flex h-full shrink-0 flex-col"
       style={{
-        width,
+        width: effectiveWidth,
         background: "var(--color-sidebar)",
         borderLeft: "1px solid var(--color-panel-divider)",
+        transition: isResizing ? undefined : "width 180ms ease",
       }}
     >
-      <div
-        className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/40 transition-colors z-10"
-        onMouseDown={onResizeStart}
-      />
+      {!collapsed && (
+        <div
+          className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/40 transition-colors z-10"
+          onMouseDown={onResizeStart}
+        />
+      )}
 
       {/* Active-project accent, matching the stripe in the projects sidebar,
-          so which project this panel belongs to is visible at a glance */}
+          so which project this panel belongs to is visible at a glance —
+          shown whether expanded or collapsed */}
       <div
         className="absolute left-0 top-0 z-20 pointer-events-none"
         style={{ height: 53, width: 2, backgroundColor: project.color }}
@@ -244,76 +320,136 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
       {/* Header height matches the top tab row (color line + tab strip) in
           the center view, so the bottom border lines up there */}
       <div
-        className="flex shrink-0 items-center gap-1.5 px-3 text-xs font-semibold uppercase tracking-widest text-white/40 no-select"
+        className={`flex shrink-0 items-center justify-center text-xs font-semibold uppercase tracking-widest text-white/40 no-select ${
+          collapsed ? "" : "gap-1.5"
+        }`}
         style={{ height: 53, borderBottom: "1px solid var(--color-sidebar-border)" }}
       >
-        <SourceControlIcon size={13} />
-        Source Control
+        <SourceControlIcon size={13} className="shrink-0" />
+        {!collapsed && "Source Control"}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {error && (
-          <div className="mx-3 mb-2 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-[11px] leading-relaxed text-destructive">
-            {error}
-          </div>
-        )}
+      {/* Collapse toggle — anchored to the sidebar's outer edge so it stays
+          in the same spot whether expanded or collapsed, instead of
+          competing for space in the (very narrow, when collapsed) header. */}
+      <button
+        type="button"
+        title={collapsed ? "Expand source control panel" : "Collapse source control panel"}
+        onClick={() => setCollapsed((c) => !c)}
+        className="absolute z-30 flex h-6 w-6 items-center justify-center rounded-full border bg-sidebar text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
+        style={{ left: -12, top: 20, borderColor: project.color }}
+      >
+        <ChevronRightIcon size={11} className={collapsed ? "rotate-180" : ""} />
+      </button>
 
-        {!error && status && !hasChanges && (
-          <div className="mt-6 px-4 text-center text-xs leading-relaxed text-muted-foreground no-select">
-            No changes.
-          </div>
-        )}
+      {collapsed && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 text-[11px] font-semibold no-select">
+          {counts.added > 0 && <span className="text-emerald-500">+{counts.added}</span>}
+          {counts.modified > 0 && <span className="text-amber-400">~{counts.modified}</span>}
+          {counts.deleted > 0 && <span className="text-destructive">-{counts.deleted}</span>}
+          {!error && totalChanges === 0 && <span className="text-muted-foreground">—</span>}
+          {error && <span className="px-1 text-center text-muted-foreground">!</span>}
+        </div>
+      )}
 
-        {!error && status && status.staged.length > 0 && (
-          <Section
-            title="Staged Changes"
-            count={status.staged.length}
-            actionIcon={<MinusIcon size={11} />}
-            actionTitle="Unstage all"
-            onAction={unstageAll}
-          >
-            <Tree
-              nodes={staged}
-              depth={0}
-              staged
-              expanded={expanded}
-              onToggleFolder={toggleFolder}
-              onStage={stageOne}
-              onUnstage={unstageOne}
-              onRevert={setRevertTarget}
-              onOpenDiff={openDiff}
-            />
-          </Section>
-        )}
+      {!collapsed && (
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          {error && isNotGitRepoError(error) && (
+            <div className="flex flex-1 items-center justify-center px-4 text-center text-xs leading-relaxed text-muted-foreground no-select">
+              Not a git repository
+            </div>
+          )}
 
-        {!error && status && status.unstaged.length > 0 && (
-          <Section
-            title="Unstaged Changes"
-            count={status.unstaged.length}
-            actionIcon={<PlusIcon size={11} />}
-            actionTitle="Stage all"
-            onAction={stageAll}
-          >
-            <Tree
-              nodes={unstaged}
-              depth={0}
-              staged={false}
-              expanded={expanded}
-              onToggleFolder={toggleFolder}
-              onStage={stageOne}
-              onUnstage={unstageOne}
-              onRevert={setRevertTarget}
-              onOpenDiff={openDiff}
-            />
-          </Section>
-        )}
-      </div>
+          {error && !isNotGitRepoError(error) && (
+            <div className="mx-3 mb-2 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-[11px] leading-relaxed text-destructive">
+              {error}
+            </div>
+          )}
+
+          {!error && status && !hasChanges && (
+            <div className="flex flex-1 items-center justify-center px-4 text-center text-xs leading-relaxed text-muted-foreground no-select">
+              No changes.
+            </div>
+          )}
+
+          {!error && status && status.staged.length > 0 && (
+            <Section
+              title="Staged"
+              count={status.staged.length}
+              actions={[
+                { icon: <MinusIcon size={11} />, title: "Unstage all", onAction: unstageAll },
+              ]}
+            >
+              <Tree
+                nodes={staged}
+                depth={0}
+                staged
+                toggledFolders={toggledFolders}
+                onToggleFolder={toggleFolder}
+                onStage={stageOne}
+                onUnstage={unstageOne}
+                onRevert={setRevertTarget}
+                onOpenDiff={openDiff}
+              />
+            </Section>
+          )}
+
+          {!error && status && status.unstaged.length > 0 && (
+            <Section
+              title="Unstaged"
+              count={status.unstaged.length}
+              actions={[
+                {
+                  icon: <DiscardIcon size={11} />,
+                  title: "Revert all",
+                  onAction: () => setRevertAllPending(true),
+                },
+                { icon: <PlusIcon size={11} />, title: "Stage all", onAction: stageAll },
+              ]}
+            >
+              <Tree
+                nodes={unstaged}
+                depth={0}
+                staged={false}
+                toggledFolders={toggledFolders}
+                onToggleFolder={toggleFolder}
+                onStage={stageOne}
+                onUnstage={unstageOne}
+                onRevert={setRevertTarget}
+                onOpenDiff={openDiff}
+              />
+            </Section>
+          )}
+        </div>
+      )}
 
       {revertTarget && (
         <RevertFileModal
-          fileName={revertTarget.path.split("/").pop() ?? revertTarget.path}
+          message={
+            <>
+              This will permanently discard changes to{" "}
+              <span className="text-foreground">
+                {revertTarget.path.split("/").pop() ?? revertTarget.path}
+              </span>
+              . This action cannot be undone.
+            </>
+          }
           onConfirm={confirmRevert}
           onCancel={() => setRevertTarget(null)}
+        />
+      )}
+
+      {revertAllPending && (
+        <RevertFileModal
+          message={
+            <>
+              This will permanently discard all{" "}
+              <span className="text-foreground">{status?.unstaged.length ?? 0}</span> unstaged
+              change{status?.unstaged.length === 1 ? "" : "s"}. This action cannot be undone.
+            </>
+          }
+          onConfirm={confirmRevertAll}
+          onCancel={() => setRevertAllPending(false)}
         />
       )}
     </aside>
@@ -323,32 +459,34 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
 function Section({
   title,
   count,
-  actionIcon,
-  actionTitle,
-  onAction,
+  actions,
   children,
 }: {
   title: string;
   count: number;
-  actionIcon: React.ReactNode;
-  actionTitle: string;
-  onAction: () => void;
-  children: React.ReactNode;
+  actions: { icon: ReactNode; title: string; onAction: () => void }[];
+  children: ReactNode;
 }) {
   return (
     <div className="mb-1">
       <div className="group flex items-center justify-between px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground no-select">
-        <span>
-          {title} <span className="text-white/30">{count}</span>
-        </span>
-        <button
-          type="button"
-          title={actionTitle}
-          onClick={onAction}
-          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground group-hover:opacity-100 transition-opacity"
-        >
-          {actionIcon}
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-white/30">{count}</span>
+          <span>{title}</span>
+        </div>
+        <div className="flex items-center gap-0.5">
+          {actions.map((a) => (
+            <button
+              key={a.title}
+              type="button"
+              title={a.title}
+              onClick={a.onAction}
+              className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground group-hover:opacity-100 transition-opacity"
+            >
+              {a.icon}
+            </button>
+          ))}
+        </div>
       </div>
       {children}
     </div>
@@ -359,7 +497,7 @@ function Tree({
   nodes,
   depth,
   staged,
-  expanded,
+  toggledFolders,
   onToggleFolder,
   onStage,
   onUnstage,
@@ -369,7 +507,7 @@ function Tree({
   nodes: TreeNode[];
   depth: number;
   staged: boolean;
-  expanded: Set<string>;
+  toggledFolders: Set<string>;
   onToggleFolder: (path: string) => void;
   onStage: (path: string) => void;
   onUnstage: (path: string) => void;
@@ -380,6 +518,9 @@ function Tree({
     <>
       {nodes.map((node) => {
         const expandKey = `${staged ? "staged" : "unstaged"}:${node.path}`;
+        // Staged folders default to collapsed, unstaged to expanded; a
+        // toggle flips away from that default.
+        const isExpanded = toggledFolders.has(expandKey) ? staged : !staged;
         return node.type === "folder" ? (
           <div key={node.path}>
             <button
@@ -391,17 +532,17 @@ function Tree({
               <ChevronRightIcon
                 size={11}
                 className={`shrink-0 text-muted-foreground transition-transform ${
-                  expanded.has(expandKey) ? "rotate-90" : ""
+                  isExpanded ? "rotate-90" : ""
                 }`}
               />
               <span className="truncate">{node.name}</span>
             </button>
-            {expanded.has(expandKey) && (
+            {isExpanded && (
               <Tree
                 nodes={node.children}
                 depth={depth + 1}
                 staged={staged}
-                expanded={expanded}
+                toggledFolders={toggledFolders}
                 onToggleFolder={onToggleFolder}
                 onStage={onStage}
                 onUnstage={onUnstage}
@@ -432,7 +573,7 @@ function Tree({
               style={{ width: staged ? 20 : 42 }}
             >
               <span
-                className={`absolute right-0 w-3 text-center text-[10px] font-semibold opacity-70 transition-opacity group-hover:opacity-0 ${STATUS_COLOR[node.kind]}`}
+                className={`pointer-events-none absolute right-0 w-3 text-center text-[10px] font-semibold opacity-70 transition-opacity group-hover:opacity-0 ${STATUS_COLOR[node.kind]}`}
               >
                 {STATUS_LETTER[node.kind]}
               </span>

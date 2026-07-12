@@ -1,4 +1,4 @@
-import type { Settings } from "./types";
+import type { CustomCommand, Settings } from "./types";
 
 export type TabKind = "terminal" | "claude" | "opencode" | "ide";
 
@@ -50,6 +50,18 @@ export function createTab(kind: TabKind, settings: Settings): Tab {
     title: TAB_TITLES[kind],
     color: null,
     startupCommand: startupCommandForKind(kind, settings),
+  };
+}
+
+/** A per-project custom command opens a plain terminal-kind tab — it runs an
+ *  arbitrary shell command, so it gets no AI status tracking (busy/ready/waiting). */
+export function createCustomTab(cmd: CustomCommand): Tab {
+  return {
+    id: crypto.randomUUID(),
+    kind: "terminal",
+    title: cmd.name,
+    color: cmd.color,
+    startupCommand: cmd.command,
   };
 }
 

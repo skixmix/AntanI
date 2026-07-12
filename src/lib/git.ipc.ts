@@ -35,6 +35,10 @@ export function gitRevertFile(
   return invoke("git_revert_file", { projectPath, path, kind });
 }
 
+export function gitRevertAll(projectPath: string): Promise<void> {
+  return invoke("git_revert_all", { projectPath });
+}
+
 /** Start (idempotently) the background poller for a project. Emits `git-status-changed`
  *  whenever the working tree status changes; ~2s poll interval, local-only. */
 export function gitWatchStart(projectId: string, projectPath: string): Promise<void> {

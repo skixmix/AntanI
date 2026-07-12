@@ -1,6 +1,7 @@
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { projectInitials } from "../lib/constants";
 import type { Project } from "../lib/types";
 import { ColorPicker } from "./ColorPicker";
 
@@ -8,7 +9,7 @@ interface ProjectRowProps {
   project: Project;
   active: boolean;
   status?: "busy" | "waiting";
-  needsAttention?: boolean;
+  needsAttention?: "ready" | "waiting";
   rowRef?: React.Ref<HTMLDivElement>;
   onSelect: () => void;
   onRename: (name: string) => void;
@@ -82,7 +83,9 @@ export function ProjectRow({
         active
           ? "text-white"
           : "border-l-transparent text-white/75 hover:bg-sidebar-accent/60 hover:text-white"
-      } ${isDragging ? "opacity-30" : ""} ${needsAttention ? "needs-attention-glow" : ""}`}
+      } ${isDragging ? "opacity-30" : ""} ${
+        needsAttention ? `needs-attention-glow-${needsAttention}` : ""
+      }`}
       style={
         active
           ? { borderLeftColor: project.color, backgroundColor: `${project.color}26` }
@@ -94,10 +97,10 @@ export function ProjectRow({
       )}
       <span
         ref={colorSwatchRef}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold text-black/80"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[10px] font-bold text-black/80"
         style={{ backgroundColor: project.color }}
       >
-        {project.name.charAt(0).toUpperCase()}
+        {projectInitials(project.name)}
       </span>
 
       {editing ? (

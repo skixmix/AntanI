@@ -97,7 +97,13 @@ export function TabChip({
         active
           ? "bg-accent text-foreground"
           : "bg-transparent text-muted-foreground hover:bg-secondary"
-      } ${isDragging ? "opacity-30 scale-95" : ""} ${needsAttention ? "needs-attention-glow" : ""}`}
+      } ${isDragging ? "opacity-30 scale-95" : ""} ${
+        needsAttention
+          ? status === "ready"
+            ? "needs-attention-glow-ready"
+            : "needs-attention-glow-waiting"
+          : ""
+      }`}
       style={{ borderBottomColor: accentColor ?? "transparent" }}
     >
       {showInsertBefore && (
