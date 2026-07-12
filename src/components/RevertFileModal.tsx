@@ -2,12 +2,12 @@ import { useEffect } from "react";
 import { createPortal } from "react-dom";
 
 interface RevertFileModalProps {
-  fileName: string;
+  message: React.ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-export function RevertFileModal({ fileName, onConfirm, onCancel }: RevertFileModalProps) {
+export function RevertFileModal({ message, onConfirm, onCancel }: RevertFileModalProps) {
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("antani:picker-open"));
     return () => {
@@ -26,10 +26,7 @@ export function RevertFileModal({ fileName, onConfirm, onCancel }: RevertFileMod
       >
         <div className="flex flex-col gap-1.5">
           <h2 className="text-sm font-semibold text-foreground">Discard changes?</h2>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            This will permanently discard changes to{" "}
-            <span className="text-foreground">{fileName}</span>. This action cannot be undone.
-          </p>
+          <p className="text-xs leading-relaxed text-muted-foreground">{message}</p>
         </div>
 
         <div className="flex justify-end gap-2">

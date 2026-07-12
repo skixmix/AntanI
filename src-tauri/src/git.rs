@@ -23,6 +23,7 @@ pub struct GitFileEntry {
 pub struct GitStatus {
     pub staged: Vec<GitFileEntry>,
     pub unstaged: Vec<GitFileEntry>,
+    pub branch: String,
 }
 
 fn classify(code: char) -> FileChangeKind {
@@ -82,7 +83,11 @@ pub fn parse_porcelain_status(text: &str) -> GitStatus {
 
     staged.sort_by(|a, b| a.path.cmp(&b.path));
     unstaged.sort_by(|a, b| a.path.cmp(&b.path));
-    GitStatus { staged, unstaged }
+    GitStatus {
+        staged,
+        unstaged,
+        branch: String::new(),
+    }
 }
 
 pub(crate) fn run_git(project_path: &str, args: &[&str]) -> Result<String, String> {
@@ -101,10 +106,27 @@ pub(crate) fn status_args() -> &'static [&'static str] {
     &["status", "--porcelain=v1", "--untracked-files=all", "-z"]
 }
 
+/// Current branch name, or `detached@<short-sha>` when HEAD isn't on a branch.
+pub(crate) fn current_branch(project_path: &str) -> String {
+    let name = run_git(project_path, &["branch", "--show-current"])
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if !name.is_empty() {
+        return name;
+    }
+    match run_git(project_path, &["rev-parse", "--short", "HEAD"]) {
+        Ok(sha) => format!("detached@{}", sha.trim()),
+        Err(_) => String::new(),
+    }
+}
+
 #[tauri::command]
 pub fn git_status(project_path: String) -> Result<GitStatus, String> {
     let out = run_git(&project_path, status_args())?;
-    Ok(parse_porcelain_status(&out))
+    let mut status = parse_porcelain_status(&out);
+    status.branch = current_branch(&project_path);
+    Ok(status)
 }
 
 #[tauri::command]
@@ -159,6 +181,18 @@ pub fn git_revert_file(
         run_git(&project_path, &["restore", "--", &path])?;
         Ok(())
     }
+}
+
+/// Discard every unstaged change, file by file (reusing `git_revert_file`'s
+/// per-kind logic) rather than `git clean`, so behavior matches discarding
+/// each file individually.
+#[tauri::command]
+pub fn git_revert_all(project_path: String) -> Result<(), String> {
+    let status = git_status(project_path.clone())?;
+    for entry in status.unstaged {
+        git_revert_file(project_path.clone(), entry.path, entry.kind)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -406,5 +440,22 @@ mod tests {
             std::fs::read_to_string(dir.join("tracked.txt")).unwrap(),
             "original\n"
         );
+    }
+
+    #[test]
+    fn git_revert_all_discards_every_unstaged_change() {
+        let dir = init_repo();
+        let path = dir.to_str().unwrap().to_string();
+        std::fs::write(dir.join("tracked.txt"), "changed\n").unwrap();
+        std::fs::write(dir.join("new.txt"), "new\n").unwrap();
+
+        git_revert_all(path.clone()).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("tracked.txt")).unwrap(),
+            "original\n"
+        );
+        assert!(!dir.join("new.txt").exists());
+        assert!(git_status(path).unwrap().unstaged.is_empty());
     }
 }

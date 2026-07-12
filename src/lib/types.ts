@@ -1,11 +1,19 @@
 /** TypeScript mirror of the Rust `state::Project` / `state::AppData` structs.
  *  Kept in sync manually; the Rust side serializes with camelCase. */
 
+export interface CustomCommand {
+  id: string;
+  name: string;
+  command: string;
+  color: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   path: string;
   color: string;
+  customCommands: CustomCommand[];
 }
 
 export interface AppData {
@@ -18,6 +26,9 @@ export interface Settings {
   opencodeCommand: string;
   notificationsEnabled: boolean;
   vscodeImportPrompted: boolean;
+  soundEnabled: boolean;
+  soundReady: string;
+  soundWaiting: string;
 }
 
 export type FileChangeKind = "added" | "modified" | "deleted";
@@ -30,4 +41,5 @@ export interface GitFileEntry {
 export interface GitStatus {
   staged: GitFileEntry[];
   unstaged: GitFileEntry[];
+  branch: string;
 }

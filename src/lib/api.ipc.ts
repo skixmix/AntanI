@@ -1,3 +1,4 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { type Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -14,6 +15,10 @@ import type { AppData, Settings } from "./types";
 
 export function getAppState(): Promise<AppData> {
   return invoke<AppData>("get_app_state");
+}
+
+export function getAppVersion(): Promise<string> {
+  return getVersion();
 }
 
 export function addProject(path: string, name: string, color: string): Promise<AppData> {
@@ -34,6 +39,29 @@ export function setProjectColor(id: string, color: string): Promise<AppData> {
 
 export function reorderProjects(orderedIds: string[]): Promise<AppData> {
   return invoke<AppData>("reorder_projects", { orderedIds });
+}
+
+export function addCustomCommand(
+  projectId: string,
+  name: string,
+  command: string,
+  color: string,
+): Promise<AppData> {
+  return invoke<AppData>("add_custom_command", { projectId, name, command, color });
+}
+
+export function removeCustomCommand(projectId: string, commandId: string): Promise<AppData> {
+  return invoke<AppData>("remove_custom_command", { projectId, commandId });
+}
+
+export function updateCustomCommand(
+  projectId: string,
+  commandId: string,
+  name: string,
+  command: string,
+  color: string,
+): Promise<AppData> {
+  return invoke<AppData>("update_custom_command", { projectId, commandId, name, command, color });
 }
 
 export function setActiveProject(id: string | null): Promise<AppData> {

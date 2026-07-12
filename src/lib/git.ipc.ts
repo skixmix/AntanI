@@ -11,6 +11,12 @@ export function gitStatus(projectPath: string): Promise<GitStatus> {
   return invoke<GitStatus>("git_status", { projectPath });
 }
 
+/** Whether a `gitStatus` rejection means "this folder isn't a git repo" as
+ *  opposed to some other failure (git missing, permissions, I/O, ...). */
+export function isNotGitRepoError(error: string): boolean {
+  return error.toLowerCase().includes("not a git repository");
+}
+
 export function gitStage(projectPath: string, paths: string[]): Promise<void> {
   return invoke("git_stage", { projectPath, paths });
 }
@@ -33,6 +39,10 @@ export function gitRevertFile(
   kind: FileChangeKind,
 ): Promise<void> {
   return invoke("git_revert_file", { projectPath, path, kind });
+}
+
+export function gitRevertAll(projectPath: string): Promise<void> {
+  return invoke("git_revert_all", { projectPath });
 }
 
 /** Start (idempotently) the background poller for a project. Emits `git-status-changed`

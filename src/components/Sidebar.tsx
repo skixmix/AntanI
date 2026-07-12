@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { projectInitials } from "../lib/constants";
 import type { Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
-import { ProjectsIcon } from "./Icons";
+import { ChevronRightIcon, ProjectsIcon, WrenchIcon } from "./Icons";
 import { ProjectRow } from "./ProjectRow";
 
 interface SidebarProps {
   projects: Project[];
   activeProjectId: string | null;
   projectStatuses: Record<string, "busy" | "waiting">;
-  projectNeedsAttention: Record<string, boolean>;
+  projectNeedsAttention: Record<string, "ready" | "waiting">;
   onAdd: () => void;
   onSelect: (id: string) => void;
   onRename: (id: string, name: string) => void;
@@ -23,7 +24,9 @@ interface SidebarProps {
 const MIN_WIDTH = 160;
 const MAX_WIDTH = 480;
 const DEFAULT_WIDTH = 260;
+const COLLAPSED_WIDTH = 56;
 const LS_KEY = "sidebar-width";
+const LS_COLLAPSED_KEY = "sidebar-collapsed";
 
 function readPersistedWidth(): number {
   try {
@@ -34,6 +37,14 @@ function readPersistedWidth(): number {
     }
   } catch {}
   return DEFAULT_WIDTH;
+}
+
+function readPersistedCollapsed(): boolean {
+  try {
+    return localStorage.getItem(LS_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 export function Sidebar({
@@ -67,12 +78,15 @@ export function Sidebar({
     },
   );
   const [width, setWidth] = useState(readPersistedWidth);
+  const [collapsed, setCollapsed] = useState(readPersistedCollapsed);
+  const [isResizing, setIsResizing] = useState(false);
   const [accentLineHeight, setAccentLineHeight] = useState(0);
   const resizingRef = useRef(false);
   const startXRef = useRef(0);
   const startWRef = useRef(0);
   const sidebarRef = useRef<HTMLElement>(null);
   const activeRowRef = useRef<HTMLDivElement>(null);
+  const activeCollapsedRowRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -81,11 +95,27 @@ export function Sidebar({
     } catch {}
   }, [width]);
 
-  // Measure the accent line height: top of sidebar → bottom of active row
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_COLLAPSED_KEY, collapsed ? "1" : "0");
+    } catch {}
+  }, [collapsed]);
+
+  const effectiveWidth = collapsed ? COLLAPSED_WIDTH : width;
+
+  // Exposed as a CSS var so the bottom status bar can mirror this width to
+  // keep its centered content in sync as this sidebar is resized.
+  useEffect(() => {
+    document.documentElement.style.setProperty("--sidebar-width", `${effectiveWidth}px`);
+  }, [effectiveWidth]);
+
+  // Measure the accent line height: top of sidebar → bottom of active row.
+  // Same measurement whether expanded (active row) or collapsed (active
+  // project's icon button), so the accent always reaches the active project.
   useLayoutEffect(() => {
     function measure() {
       const sidebar = sidebarRef.current;
-      const row = activeRowRef.current;
+      const row = collapsed ? activeCollapsedRowRef.current : activeRowRef.current;
       if (!sidebar || !row) {
         setAccentLineHeight(0);
         return;
@@ -111,6 +141,7 @@ export function Sidebar({
     (e: React.MouseEvent) => {
       e.preventDefault();
       resizingRef.current = true;
+      setIsResizing(true);
       startXRef.current = e.clientX;
       startWRef.current = width;
 
@@ -124,6 +155,7 @@ export function Sidebar({
       }
       function onUp() {
         resizingRef.current = false;
+        setIsResizing(false);
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
       }
@@ -138,12 +170,14 @@ export function Sidebar({
       ref={sidebarRef}
       className="relative flex h-full shrink-0 flex-col"
       style={{
-        width,
+        width: effectiveWidth,
         background: "var(--color-sidebar)",
         borderRight: "1px solid var(--color-panel-divider)",
+        transition: isResizing ? undefined : "width 180ms ease",
       }}
     >
-      {/* L-shaped accent line: vertical strip on the right edge down to the active row */}
+      {/* Active-project accent: an L-shaped line from the top down to the
+          active row/icon, whether expanded or collapsed. */}
       {activeProject && accentLineHeight > 0 && (
         <div
           className="absolute right-0 top-0 z-20 pointer-events-none"
@@ -158,18 +192,84 @@ export function Sidebar({
       {/* Projects header — height matches the top tab row (color line + tab
           strip) in the center view, so the bottom border lines up there */}
       <div
-        className="flex shrink-0 items-center gap-1.5 px-3 text-xs font-semibold uppercase tracking-widest text-white/40 no-select"
+        className={`flex shrink-0 items-center justify-center text-xs font-semibold uppercase tracking-widest text-white/40 no-select ${
+          collapsed ? "" : "gap-1.5"
+        }`}
         style={{ height: 53, borderBottom: "1px solid var(--color-sidebar-border)" }}
       >
-        <ProjectsIcon size={13} />
-        Projects
+        <ProjectsIcon size={13} className="shrink-0" />
+        {!collapsed && "Projects"}
       </div>
+
+      {/* Collapse toggle — anchored to the sidebar's outer edge so it stays
+          in the same spot whether expanded or collapsed, instead of
+          competing for space in the (very narrow, when collapsed) header. */}
+      <button
+        type="button"
+        title={collapsed ? "Expand projects panel" : "Collapse projects panel"}
+        onClick={() => setCollapsed((c) => !c)}
+        className="absolute z-30 flex h-6 w-6 items-center justify-center rounded-full border bg-sidebar text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
+        style={{
+          right: -12,
+          top: 20,
+          borderColor: activeProject?.color ?? "var(--color-sidebar-border)",
+        }}
+      >
+        <ChevronRightIcon size={11} className={collapsed ? "" : "rotate-180"} />
+      </button>
 
       {/* Project list */}
       <div ref={listRef} className="flex-1 overflow-y-auto">
-        {projects.length === 0 ? (
-          <div className="mt-8 px-4 text-center text-xs leading-relaxed text-muted-foreground no-select">
-            No projects yet — click Add project below.
+        {collapsed ? (
+          projects.map((project) => (
+            <button
+              key={project.id}
+              ref={project.id === activeProjectId ? activeCollapsedRowRef : undefined}
+              type="button"
+              title={project.name}
+              onClick={() => onSelect(project.id)}
+              className={`relative flex w-full items-center justify-center py-2 no-select ${
+                projectNeedsAttention[project.id]
+                  ? `needs-attention-glow-${projectNeedsAttention[project.id]}`
+                  : ""
+              }`}
+            >
+              <span
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[10px] font-bold text-black/80"
+                style={{
+                  backgroundColor: project.color,
+                  boxShadow:
+                    project.id === activeProjectId
+                      ? "0 0 0 2px var(--color-foreground)"
+                      : undefined,
+                }}
+              >
+                {projectInitials(project.name)}
+              </span>
+              {projectStatuses[project.id] && (
+                <span className="absolute right-2.5 top-1 flex items-center justify-center">
+                  {projectStatuses[project.id] === "busy" ? (
+                    <span className="ai-busy-dot shrink-0" title="Activity in progress" />
+                  ) : (
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full bg-red-400"
+                      title="Waiting for input"
+                    />
+                  )}
+                </span>
+              )}
+            </button>
+          ))
+        ) : projects.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-xs leading-relaxed text-muted-foreground no-select">
+            <span>No projects yet.</span>
+            <button
+              type="button"
+              onClick={onAdd}
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-sidebar-accent transition-colors"
+            >
+              Add project
+            </button>
           </div>
         ) : (
           <>
@@ -202,7 +302,10 @@ export function Sidebar({
         <button
           type="button"
           onClick={onAdd}
-          className="flex w-full items-center gap-2.5 px-3 py-3.5 text-sm text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors no-select"
+          title="Add project"
+          className={`flex w-full items-center text-sm text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors no-select ${
+            collapsed ? "justify-center py-3" : "gap-2.5 px-3 py-3.5"
+          }`}
         >
           <svg
             width="15"
@@ -223,37 +326,28 @@ export function Sidebar({
             />
             <path d="M8 5v6M5 8h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
-          Add project
+          {!collapsed && "Add project"}
         </button>
         <button
           type="button"
           onClick={onOpenSettings}
-          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors no-select"
+          title="Settings"
+          className={`flex w-full items-center text-xs text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors no-select ${
+            collapsed ? "justify-center py-2.5" : "gap-2.5 px-3 py-2.5"
+          }`}
           style={{ borderTop: "1px solid var(--color-sidebar-border)" }}
         >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-            className="shrink-0 opacity-60"
-          >
-            <path
-              d="M11.3 2.3a3 3 0 0 0-4.1 3.6L2.6 10.5a1.4 1.4 0 0 0 2 2l4.6-4.6a3 3 0 0 0 3.6-4.1l-2 2-1.4-.4-.4-1.4 2-2z"
-              stroke="currentColor"
-              strokeWidth="1.3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          Settings
+          <WrenchIcon size={13} className="shrink-0 opacity-60" />
+          {!collapsed && "Settings"}
         </button>
         {showFreeRamButton && (
           <button
             type="button"
             onClick={onFreeRam}
-            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-red-400/80 hover:text-red-400 hover:bg-sidebar-accent transition-colors no-select"
+            title="Free VS Code RAM"
+            className={`flex w-full items-center text-xs text-red-400/80 hover:text-red-400 hover:bg-sidebar-accent transition-colors no-select ${
+              collapsed ? "justify-center py-2.5" : "gap-2.5 px-3 py-2.5"
+            }`}
             style={{ borderTop: "1px solid var(--color-sidebar-border)" }}
           >
             <svg
@@ -278,16 +372,18 @@ export function Sidebar({
                 strokeLinecap="round"
               />
             </svg>
-            Free VS Code RAM
+            {!collapsed && "Free VS Code RAM"}
           </button>
         )}
       </div>
 
       {/* Resize handle */}
-      <div
-        className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/40 transition-colors z-10"
-        onMouseDown={onResizeStart}
-      />
+      {!collapsed && (
+        <div
+          className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/40 transition-colors z-10"
+          onMouseDown={onResizeStart}
+        />
+      )}
     </aside>
   );
 }

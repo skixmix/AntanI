@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addTab,
   closeTab,
+  createCustomTab,
   createTab,
   defaultTitle,
   findTabOwner,
@@ -14,13 +15,16 @@ import {
   startupCommandForKind,
   type TabsState,
 } from "./tabs";
-import type { Settings } from "./types";
+import type { CustomCommand, Settings } from "./types";
 
 const SETTINGS: Settings = {
   claudeCommand: "claude --resume",
   opencodeCommand: "oc",
   notificationsEnabled: true,
   vscodeImportPrompted: true,
+  soundEnabled: true,
+  soundReady: "Glass",
+  soundWaiting: "Ping",
 };
 const PROJECT = "proj-1";
 
@@ -47,6 +51,17 @@ describe("defaultTitle", () => {
     expect(defaultTitle("claude")).toBe("Claude");
     expect(defaultTitle("opencode")).toBe("opencode");
     expect(defaultTitle("ide")).toBe("IDE");
+  });
+});
+
+describe("createCustomTab", () => {
+  it("builds a terminal-kind tab from a custom command", () => {
+    const cmd: CustomCommand = { id: "c1", name: "Build", command: "make build", color: "#3b82f6" };
+    const tab = createCustomTab(cmd);
+    expect(tab.kind).toBe("terminal");
+    expect(tab.title).toBe("Build");
+    expect(tab.color).toBe("#3b82f6");
+    expect(tab.startupCommand).toBe("make build");
   });
 });
 
@@ -98,6 +113,12 @@ describe("closeTab", () => {
     const pt = projectTabs(closed, PROJECT);
     expect(pt.activeTabId).toBe(t2.id);
     expect(pt.tabs.map((t) => t.id)).toEqual([t1.id, t2.id]);
+  });
+
+  it("is a no-op for an unknown tab id", () => {
+    const state = seed(["terminal"]);
+    const next = closeTab(state, PROJECT, "missing");
+    expect(next).toBe(state);
   });
 });
 
@@ -161,11 +182,13 @@ describe("renameTab", () => {
 });
 
 describe("recolorTab", () => {
-  it("recolors the matching tab", () => {
-    const state = seed(["terminal"]);
-    const [t0] = projectTabs(state, PROJECT).tabs;
+  it("recolors the matching tab and leaves others untouched", () => {
+    const state = seed(["terminal", "claude"]);
+    const [t0, t1] = projectTabs(state, PROJECT).tabs;
     const next = recolorTab(state, PROJECT, t0.id, "#ff0000");
-    expect(projectTabs(next, PROJECT).tabs[0].color).toBe("#ff0000");
+    const pt = projectTabs(next, PROJECT);
+    expect(pt.tabs[0].color).toBe("#ff0000");
+    expect(pt.tabs[1].color).toBe(t1.color);
   });
 });
 

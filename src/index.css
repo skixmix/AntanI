@@ -59,7 +59,9 @@ button,
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--color-primary);
+  /* Blue, not the orange --color-primary: that sat too close to the red
+     "waiting" dot at 8px to tell apart at a glance. */
+  background: #60a5fa;
   animation: ai-pulse 1.8s ease-in-out infinite;
   vertical-align: middle;
 }
@@ -75,17 +77,32 @@ button,
 }
 
 /* "Look at me" cue for a background tab/project that needs input while the
-   app is focused — a system notification would be redundant here. */
-.needs-attention-glow {
-  animation: attention-glow 1.4s ease-in-out infinite;
+   app is focused — a system notification would be redundant here. Colored to
+   match the status dot it's echoing: green for "ready", red for "waiting". */
+.needs-attention-glow-ready {
+  animation: attention-glow-ready 1.4s ease-in-out infinite;
 }
 
-@keyframes attention-glow {
+.needs-attention-glow-waiting {
+  animation: attention-glow-waiting 1.4s ease-in-out infinite;
+}
+
+@keyframes attention-glow-waiting {
   0%,
   100% {
     box-shadow: inset 0 0 0 0 rgba(248, 113, 113, 0.5);
   }
   50% {
     box-shadow: inset 0 0 14px 2px rgba(248, 113, 113, 0.55);
+  }
+}
+
+@keyframes attention-glow-ready {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 0 rgba(74, 222, 128, 0.5);
+  }
+  50% {
+    box-shadow: inset 0 0 14px 2px rgba(74, 222, 128, 0.55);
   }
 }

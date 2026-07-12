@@ -2,6 +2,7 @@ mod git;
 mod git_watcher;
 mod ide_webview;
 mod pty;
+mod sound;
 mod state;
 mod vscode_server;
 
@@ -84,6 +85,44 @@ fn set_project_color(state: State<AppState>, id: String, color: String) -> Resul
 #[tauri::command]
 fn reorder_projects(state: State<AppState>, ordered_ids: Vec<String>) -> Result<AppData, String> {
     mutate(&state, |d| d.reorder(&ordered_ids))
+}
+
+#[tauri::command]
+fn add_custom_command(
+    state: State<AppState>,
+    project_id: String,
+    name: String,
+    command: String,
+    color: String,
+) -> Result<AppData, String> {
+    mutate(&state, |d| {
+        d.add_custom_command(&project_id, name, command, color);
+    })
+}
+
+#[tauri::command]
+fn remove_custom_command(
+    state: State<AppState>,
+    project_id: String,
+    command_id: String,
+) -> Result<AppData, String> {
+    mutate(&state, |d| {
+        d.remove_custom_command(&project_id, &command_id)
+    })
+}
+
+#[tauri::command]
+fn update_custom_command(
+    state: State<AppState>,
+    project_id: String,
+    command_id: String,
+    name: String,
+    command: String,
+    color: String,
+) -> Result<AppData, String> {
+    mutate(&state, |d| {
+        d.update_custom_command(&project_id, &command_id, name, command, color);
+    })
 }
 
 #[tauri::command]
@@ -170,9 +209,13 @@ pub fn run() {
             rename_project,
             set_project_color,
             reorder_projects,
+            add_custom_command,
+            remove_custom_command,
+            update_custom_command,
             set_active_project,
             get_settings,
             update_settings,
+            sound::play_system_sound,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
@@ -183,6 +226,7 @@ pub fn run() {
             git::git_stage_all,
             git::git_unstage_all,
             git::git_revert_file,
+            git::git_revert_all,
             git_watcher::git_watch_start,
             git_watcher::git_watch_stop,
             vscode_server::ensure_ide_server,

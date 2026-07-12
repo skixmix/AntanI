@@ -1,5 +1,6 @@
 import { Channel } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { CanvasAddon } from "@xterm/addon-canvas";
 import { FitAddon } from "@xterm/addon-fit";
@@ -11,8 +12,13 @@ import { killPty, onPtyExit, resizePty, spawnPty, writePty } from "../lib/api.ip
 import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_SCROLLBACK } from "../lib/constants";
 import type { TabStatus } from "../lib/tabs";
 
+// Deliberately excludes bare, common words ("confirm", "Trust", "Press enter")
+// that show up constantly in ordinary assistant prose or persistent footer
+// hints — matching those turned nearly every idle screen into a false
+// "waiting" read. Only patterns that are reliably interactive-prompt-shaped
+// (a "(y/n)" choice, a first-run trust dialog, ...) belong here.
 const WAITING_RE =
-  /(\[y\/n\]|\(y\/n\)|\(Y\/n\)|\(N\/y\)|yes\/no|Do you want|Allow once|Allow always|Permission required|Trust|Proceed\?|Continue\?|confirm|Press enter|press any key|Esc to cancel)/i;
+  /(\[y\/n\]|\(y\/n\)|\(Y\/n\)|\(N\/y\)|yes\/no|Do you want|Allow once|Allow always|Permission required|Do you trust|Proceed\?|Continue\?|press any key to continue|Esc to cancel)/i;
 
 // Long enough that a mid-response pause (waiting on a tool call, network
 // latency between streamed chunks, ...) doesn't get misread as "done" —
@@ -23,6 +29,13 @@ const SILENCE_MS = 3000;
 const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 32;
+
+// Same convention as Terminal.app/iTerm2: wrap each dropped path in single
+// quotes so spaces and other shell-special characters survive as literal
+// text instead of being reinterpreted by the shell.
+function shellEscapePath(path: string): string {
+  return `'${path.split("'").join("'\\''")}'`;
+}
 
 interface TerminalViewProps {
   tabId: string;
@@ -132,6 +145,11 @@ export function TerminalView({
       window.clearTimeout(silenceTimer);
       silenceTimer = window.setTimeout(() => {
         if (disposed || !seenBusy) return;
+        // An unsent draft (e.g. the user paused mid-message) sits on screen
+        // the whole time composing is true — checking it here would read the
+        // user's own typed text as a permission prompt. Bail and let the
+        // eventual submit (which triggers real output) re-drive this timer.
+        if (composing) return;
         const status: TabStatus = WAITING_RE.test(visibleScreenText()) ? "waiting" : "ready";
         setStatus(status);
         if (status === "ready") {
@@ -290,6 +308,21 @@ export function TerminalView({
     fit.fit();
     term.focus();
     void resizePty(tabId, term.cols, term.rows);
+  }, [visible, tabId]);
+
+  useEffect(() => {
+    if (!visible) return;
+    // The webview's native drag-drop handler is window-scoped, not
+    // element-scoped, so this gates on `visible` (only the active tab
+    // registers a handler) rather than hit-testing the drop position.
+    const unlisten = getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type !== "drop") return;
+      const text = event.payload.paths.map(shellEscapePath).join(" ");
+      void writePty(tabId, `${text} `);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
   }, [visible, tabId]);
 
   function zoom(delta: number) {

@@ -7,7 +7,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
-use crate::git::{parse_porcelain_status, run_git, status_args, GitStatus};
+use crate::git::{current_branch, parse_porcelain_status, run_git, status_args, GitStatus};
 
 /// How often the background watcher re-checks `git status` for a watched project.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -63,8 +63,13 @@ pub fn git_watch_start(
         let mut last: Option<String> = None;
         while !thread_stop.load(Ordering::Relaxed) {
             if let Ok(out) = run_git(&project_path, status_args()) {
-                if last.as_deref() != Some(out.as_str()) {
-                    let status = parse_porcelain_status(&out);
+                let branch = current_branch(&project_path);
+                // Branch is folded into the dedup key so a checkout with no
+                // working-tree diff still updates the label shown in the UI.
+                let key = format!("{branch}\0{out}");
+                if last.as_deref() != Some(key.as_str()) {
+                    let mut status = parse_porcelain_status(&out);
+                    status.branch = branch;
                     let _ = app.emit(
                         GIT_STATUS_CHANGED_EVENT,
                         GitStatusChanged {
@@ -72,7 +77,7 @@ pub fn git_watch_start(
                             status,
                         },
                     );
-                    last = Some(out);
+                    last = Some(key);
                 }
             }
             thread::sleep(POLL_INTERVAL);

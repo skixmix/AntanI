@@ -1,16 +1,20 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FirstRunVscodeModal } from "./components/FirstRunVscodeModal";
 import { FreeRamModal } from "./components/FreeRamModal";
 import { ImportVscodeModal } from "./components/ImportVscodeModal";
-import { SettingsPage } from "./components/SettingsPage";
+import { SettingsPage, type TabId as SettingsTabId } from "./components/SettingsPage";
 import { Sidebar } from "./components/Sidebar";
+import { StatusBar } from "./components/StatusBar";
 import { Workspace } from "./components/Workspace";
 import * as api from "./lib/api.ipc";
 import { basename, defaultColorForIndex, MAX_QUICK_SWITCH } from "./lib/constants";
 import { initNotifications, notifyAgentReady, notifyAgentWaiting } from "./lib/notifications.ipc";
+import { playSystemSound } from "./lib/sound.ipc";
 import {
   addTab,
   closeTab,
+  createCustomTab,
   createTab,
   findTabOwner,
   projectTabs,
@@ -23,7 +27,7 @@ import {
   type TabStatus,
   type TabsState,
 } from "./lib/tabs";
-import type { AppData, Settings } from "./lib/types";
+import type { AppData, CustomCommand, Settings } from "./lib/types";
 
 const MEM_POLL_MS = 10_000;
 
@@ -81,11 +85,16 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showFreeRamModal, setShowFreeRamModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showSettingsPage, setShowSettingsPage] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId | null>(null);
   const [showFirstRunImportModal, setShowFirstRunImportModal] = useState(false);
   const [pendingIdeOpenProjectId, setPendingIdeOpenProjectId] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState("");
 
   const { memMb, refreshMem } = useVscodeMemory();
+
+  useEffect(() => {
+    void api.getAppVersion().then(setAppVersion);
+  }, []);
 
   // Latest-value refs so handleStatusChange (below) can stay referentially
   // stable — it's a TerminalView effect dependency, and a new identity on
@@ -104,6 +113,13 @@ function App() {
   tabStatusesRef.current = tabStatuses;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  // Tracks the native window's actual focus state, not document.hasFocus():
+  // the embedded VS Code IDE runs as a separate child webview, so keyboard
+  // focus can sit there (or shift during terminal interaction) while the OS
+  // window is still frontmost — document.hasFocus() on the main webview's own
+  // document would then wrongly report "unfocused" and fire notifications
+  // the user is actually looking right at.
+  const windowFocusedRef = useRef(true);
 
   useEffect(() => {
     Promise.all([api.getAppState(), api.getSettings()])
@@ -161,6 +177,24 @@ function App() {
     [run],
   );
 
+  const handleAddCustomCommand = useCallback(
+    (projectId: string, name: string, command: string, color: string) =>
+      run(() => api.addCustomCommand(projectId, name, command, color)),
+    [run],
+  );
+
+  const handleRemoveCustomCommand = useCallback(
+    (projectId: string, commandId: string) =>
+      run(() => api.removeCustomCommand(projectId, commandId)),
+    [run],
+  );
+
+  const handleUpdateCustomCommand = useCallback(
+    (projectId: string, commandId: string, name: string, command: string, color: string) =>
+      run(() => api.updateCustomCommand(projectId, commandId, name, command, color)),
+    [run],
+  );
+
   const activeId = data?.activeProjectId ?? null;
 
   const openTab = useCallback(
@@ -170,6 +204,15 @@ function App() {
       setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
     },
     [activeId, settings],
+  );
+
+  const openCustomTab = useCallback(
+    (cmd: CustomCommand) => {
+      if (!activeId) return;
+      setTabs((t) => addTab(t, activeId, createCustomTab(cmd)));
+      setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
+    },
+    [activeId],
   );
 
   const selectTab = useCallback(
@@ -242,15 +285,25 @@ function App() {
         tabsRef.current[owner.projectId]?.activeTabId === tabId;
       // Already looking right at this tab with the window focused — no glow,
       // no system notification needed.
-      if (owner && project && !(isOpenTab && document.hasFocus())) {
+      if (owner && project && !(isOpenTab && windowFocusedRef.current)) {
         setNeedsAttention((s) => (s[tabId] ? s : { ...s, [tabId]: true }));
         // System notifications are for when the user isn't looking at the app
         // at all — while it's focused, the glow above is the "look at me"
         // signal instead, even for a background tab/project.
         const notificationsEnabled = settingsRef.current?.notificationsEnabled ?? true;
-        if (notificationsEnabled && !document.hasFocus()) {
+        if (notificationsEnabled && !windowFocusedRef.current) {
           const notifyFn = status === "ready" ? notifyAgentReady : notifyAgentWaiting;
           notifyFn(project.name, owner.tab.title, owner.projectId, tabId);
+        }
+        // Unlike the OS notification above, sound isn't gated on window
+        // focus — it's the "look at me" signal even while the app itself is
+        // the focused app, just not on this exact tab.
+        if (settingsRef.current?.soundEnabled ?? true) {
+          const soundName =
+            status === "ready"
+              ? (settingsRef.current?.soundReady ?? "Glass")
+              : (settingsRef.current?.soundWaiting ?? "Ping");
+          void playSystemSound(soundName);
         }
       }
     }
@@ -296,19 +349,16 @@ function App() {
     [settings, openIdeNow],
   );
 
-  const handleToggleIde = useCallback(() => {
+  // Fully stops VS Code for the active project — the only action that does,
+  // as opposed to selectTab/handleOpenIde which just hide/show its pane.
+  const handleCloseIde = useCallback(() => {
     if (!activeId) return;
-    const isOpen = ideOpenByProject[activeId] ?? false;
-    if (isOpen) {
-      setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
-      setIdeEverOpenedByProject((prev) => ({ ...prev, [activeId]: false }));
-      void refreshMem();
-    } else {
-      requestOpenIde(activeId);
-    }
-  }, [activeId, ideOpenByProject, requestOpenIde, refreshMem]);
+    setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
+    setIdeEverOpenedByProject((prev) => ({ ...prev, [activeId]: false }));
+    void refreshMem();
+  }, [activeId, refreshMem]);
 
-  // Unlike handleToggleIde, always ends in "open" — used when an action (e.g.
+  // Unlike handleCloseIde, always ends in "open" — used when an action (e.g.
   // viewing a diff) needs the IDE tab visible, regardless of its prior state.
   const handleOpenIde = useCallback(() => {
     if (!activeId) return;
@@ -370,20 +420,42 @@ function App() {
   // it (visible tab + window focused) — on mount, whenever the visible tab
   // changes, and when the window regains focus while already parked on it.
   const visibleTabId = activeId ? (tabs[activeId]?.activeTabId ?? null) : null;
+  const visibleTabIdRef = useRef(visibleTabId);
+  visibleTabIdRef.current = visibleTabId;
+
+  const clearAttentionIfFocused = useCallback((tabId: string | null) => {
+    if (!tabId || !windowFocusedRef.current) return;
+    setNeedsAttention((s) => {
+      if (!s[tabId]) return s;
+      const next = { ...s };
+      delete next[tabId];
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
-    function clearIfFocused() {
-      if (!visibleTabId || !document.hasFocus()) return;
-      setNeedsAttention((s) => {
-        if (!s[visibleTabId]) return s;
-        const next = { ...s };
-        delete next[visibleTabId];
-        return next;
+    clearAttentionIfFocused(visibleTabId);
+  }, [visibleTabId, clearAttentionIfFocused]);
+
+  // Native window focus, not document.hasFocus(): the embedded VS Code IDE is
+  // a separate child webview, so DOM focus can be elsewhere in the app while
+  // the OS window is still frontmost.
+  useEffect(() => {
+    const win = getCurrentWindow();
+    void win.isFocused().then((focused) => {
+      windowFocusedRef.current = focused;
+    });
+    let unlisten: (() => void) | undefined;
+    void win
+      .onFocusChanged(({ payload: focused }) => {
+        windowFocusedRef.current = focused;
+        if (focused) clearAttentionIfFocused(visibleTabIdRef.current);
+      })
+      .then((fn) => {
+        unlisten = fn;
       });
-    }
-    clearIfFocused();
-    window.addEventListener("focus", clearIfFocused);
-    return () => window.removeEventListener("focus", clearIfFocused);
-  }, [visibleTabId]);
+    return () => unlisten?.();
+  }, [clearAttentionIfFocused]);
 
   // "ready" (green, at-prompt) doesn't count as activity here — only an
   // in-flight response ("busy") or a blocked permission prompt ("waiting")
@@ -402,13 +474,21 @@ function App() {
     return statuses;
   }, [tabs, tabStatuses]);
 
+  // Which color the project row's glow should echo — "waiting" (red) wins
+  // over "ready" (green) if a project has tabs needing attention for both.
   const projectNeedsAttention = useMemo(() => {
-    const result: Record<string, boolean> = {};
+    const result: Record<string, "ready" | "waiting"> = {};
     for (const projectId of Object.keys(tabs)) {
-      result[projectId] = projectTabs(tabs, projectId).tabs.some((tab) => needsAttention[tab.id]);
+      let kind: "ready" | "waiting" | undefined;
+      for (const tab of projectTabs(tabs, projectId).tabs) {
+        if (!needsAttention[tab.id]) continue;
+        if (tabStatuses[tab.id] === "waiting") kind = "waiting";
+        else if (tabStatuses[tab.id] === "ready" && kind !== "waiting") kind = "ready";
+      }
+      if (kind) result[projectId] = kind;
     }
     return result;
-  }, [tabs, needsAttention]);
+  }, [tabs, needsAttention, tabStatuses]);
 
   if (!data || !settings) {
     return (
@@ -420,6 +500,7 @@ function App() {
 
   const active = data.projects.find((p) => p.id === data.activeProjectId) ?? null;
   const ideOpen = activeId ? (ideOpenByProject[activeId] ?? false) : false;
+  const ideRunning = activeId ? (ideEverOpenedByProject[activeId] ?? false) : false;
   const ideInstanceCount = Object.values(ideEverOpenedByProject).filter(Boolean).length;
   const showFreeRamButton = ideInstanceCount > 0 && memMb !== null && memMb >= 1024;
 
@@ -444,7 +525,7 @@ function App() {
           onReorder={(ids) => run(() => api.reorderProjects(ids))}
           showFreeRamButton={showFreeRamButton}
           onFreeRam={() => setShowFreeRamModal(true)}
-          onOpenSettings={() => setShowSettingsPage(true)}
+          onOpenSettings={() => setSettingsInitialTab("general")}
         />
         <Workspace
           project={active}
@@ -453,27 +534,37 @@ function App() {
           tabStatuses={tabStatuses}
           needsAttention={needsAttention}
           ideOpen={ideOpen}
+          ideRunning={ideRunning}
           ideEverOpenedByProject={ideEverOpenedByProject}
           ideInstanceCount={ideInstanceCount}
           memMb={memMb}
           onOpenTab={openTab}
+          onOpenCustomTab={openCustomTab}
+          onOpenCommandSettings={() => setSettingsInitialTab("commands")}
           onSelectTab={selectTab}
           onCloseTab={handleCloseTab}
           onRenameTab={handleRenameTab}
           onRecolorTab={handleRecolorTab}
           onReorderTab={handleReorderTab}
-          onToggleIde={handleToggleIde}
+          onCloseIde={handleCloseIde}
           onOpenIde={handleOpenIde}
           onStatusChange={handleStatusChange}
         />
       </div>
 
-      {showSettingsPage && (
+      <StatusBar project={active} version={appVersion} />
+
+      {settingsInitialTab && (
         <SettingsPage
           settings={settings}
-          onClose={() => setShowSettingsPage(false)}
+          project={active}
+          initialTab={settingsInitialTab}
+          onClose={() => setSettingsInitialTab(null)}
           onImportVscode={() => setShowImportModal(true)}
           onUpdateSettings={handleUpdateSettings}
+          onAddCustomCommand={handleAddCustomCommand}
+          onRemoveCustomCommand={handleRemoveCustomCommand}
+          onUpdateCustomCommand={handleUpdateCustomCommand}
         />
       )}
 

@@ -1,8 +1,17 @@
 import type { ReactNode } from "react";
+import { projectInitials } from "../lib/constants";
 import type { Tab, TabKind, TabStatus } from "../lib/tabs";
-import type { Project } from "../lib/types";
+import type { CustomCommand, Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
-import { AnthropicIcon, OpenCodeIcon, TerminalIcon, VSCodeIcon } from "./Icons";
+import {
+  AnthropicIcon,
+  CloseIcon,
+  CustomCommandIcon,
+  OpenCodeIcon,
+  TerminalIcon,
+  VSCodeIcon,
+  WrenchIcon,
+} from "./Icons";
 import { TabChip } from "./TabChip";
 
 interface TabStripProps {
@@ -12,15 +21,19 @@ interface TabStripProps {
   needsAttention: Record<string, true>;
   project: Project;
   ideOpen: boolean;
+  ideRunning: boolean;
   ideInstanceCount: number;
   memMb: number | null;
   onOpen: (kind: TabKind) => void;
+  onOpenCustom: (cmd: CustomCommand) => void;
+  onOpenCommandSettings: () => void;
   onSelect: (tabId: string) => void;
   onClose: (tabId: string) => void;
   onRename: (tabId: string, title: string) => void;
   onRecolor: (tabId: string, color: string) => void;
   onReorder: (fromId: string, insertBeforeId: string | null) => void;
-  onToggleIde: () => void;
+  onOpenIde: () => void;
+  onCloseIde: () => void;
 }
 
 const QUICK_OPEN: { kind: TabKind; label: string; icon: ReactNode }[] = [
@@ -36,15 +49,19 @@ export function TabStrip({
   needsAttention,
   project,
   ideOpen,
+  ideRunning,
   ideInstanceCount,
   memMb,
   onOpen,
+  onOpenCustom,
+  onOpenCommandSettings,
   onSelect,
   onClose,
   onRename,
   onRecolor,
   onReorder,
-  onToggleIde,
+  onOpenIde,
+  onCloseIde,
 }: TabStripProps) {
   const { draggingId, insertBeforeId, startDrag } = useDragReorder("tabs", false, onReorder);
 
@@ -67,17 +84,18 @@ export function TabStrip({
         className="flex items-stretch overflow-x-auto"
         style={{ borderBottom: "1px solid var(--color-border)", height: 52 }}
       >
-        {/* Project avatar */}
+        {/* Project avatar — extra left padding clears room for the projects
+            sidebar's floating collapse toggle, which pokes in from the left edge */}
         <div
-          className="flex shrink-0 items-center justify-center px-3 no-select"
+          className="flex shrink-0 items-center justify-center pl-5 pr-3 no-select"
           title={project.path}
           style={{ borderRight: "1px solid var(--color-border)" }}
         >
           <span
-            className="flex h-6 w-6 items-center justify-center rounded text-xs font-bold text-black/80"
+            className="flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold text-black/80"
             style={{ backgroundColor: project.color }}
           >
-            {project.name.charAt(0).toUpperCase()}
+            {projectInitials(project.name)}
           </span>
         </div>
 
@@ -119,18 +137,37 @@ export function TabStrip({
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* VS Code toggle */}
-        <button
-          type="button"
-          onClick={onToggleIde}
-          title={ideOpen ? "Close VS Code" : "Open embedded VS Code"}
-          className={`flex shrink-0 flex-col items-center justify-center gap-0.5 border-l border-border px-3 transition-colors ${
+        {/* VS Code open/close — extra right padding clears room for the source
+            control sidebar's floating collapse toggle, which pokes in from the right edge */}
+        <div
+          onClick={onOpenIde}
+          title={ideRunning ? "Show VS Code" : "Open embedded VS Code"}
+          className={`group flex shrink-0 flex-col items-center justify-center gap-0.5 border-l border-border pl-3 pr-5 cursor-pointer transition-colors ${
             ideOpen
               ? "bg-accent text-foreground"
               : "text-muted-foreground hover:bg-secondary hover:text-foreground"
           }`}
         >
           <div className="flex items-center gap-2 text-xs font-medium">
+            {ideRunning && (
+              <span className="relative flex h-3 w-3 shrink-0 items-center justify-center">
+                <span className="flex items-center justify-center transition-opacity group-hover:opacity-0">
+                  <span className="h-2 w-2 rounded-full bg-green-400" title="Running" />
+                </span>
+                <button
+                  type="button"
+                  aria-label="Close VS Code"
+                  title="Close VS Code"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCloseIde();
+                  }}
+                  className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                >
+                  <CloseIcon size={11} />
+                </button>
+              </span>
+            )}
             <VSCodeIcon size={14} className="text-[#007ACC]" />
             VS Code
           </div>
@@ -138,26 +175,21 @@ export function TabStrip({
             {memLabel}
             {memMb !== null && ideInstanceCount > 1 && ` · ${ideInstanceCount} open`}
           </div>
-        </button>
+        </div>
       </div>
 
       {/* Quick-open toolbar */}
       <div className="flex items-stretch text-xs" style={{ height: 34 }}>
-        {/* Gear placeholder — left anchor */}
-        <div
-          className="flex shrink-0 items-center px-3 text-muted-foreground"
+        {/* Settings — left anchor */}
+        <button
+          type="button"
+          title="Manage commands"
+          onClick={onOpenCommandSettings}
+          className="flex shrink-0 items-center px-3 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
           style={{ borderRight: "1px solid var(--color-border)" }}
         >
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.4" />
-            <path
-              d="M8 1.5v1.2M8 13.3v1.2M1.5 8h1.2M13.3 8h1.2M3.4 3.4l.85.85M11.75 11.75l.85.85M3.4 12.6l.85-.85M11.75 4.25l.85-.85"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-            />
-          </svg>
-        </div>
+          <WrenchIcon size={13} />
+        </button>
 
         {/* Quick-open buttons */}
         <div className="flex items-center gap-0.5 px-1.5">
@@ -173,6 +205,30 @@ export function TabStrip({
               <span>{item.label}</span>
             </button>
           ))}
+
+          {project.customCommands.map((cmd) => (
+            <button
+              key={cmd.id}
+              type="button"
+              title={`New ${cmd.name} tab`}
+              onClick={() => onOpenCustom(cmd)}
+              className="flex items-center gap-1.5 rounded px-2 py-1 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+            >
+              <span style={{ color: cmd.color }}>
+                <CustomCommandIcon size={13} />
+              </span>
+              <span>{cmd.name}</span>
+            </button>
+          ))}
+
+          <button
+            type="button"
+            title="Add command"
+            onClick={onOpenCommandSettings}
+            className="flex items-center justify-center rounded px-2 py-1 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          >
+            +
+          </button>
         </div>
       </div>
     </div>

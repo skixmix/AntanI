@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { basename, defaultColorForIndex, PROJECT_COLORS } from "./constants";
+import { basename, defaultColorForIndex, PROJECT_COLORS, projectInitials } from "./constants";
 
 describe("basename", () => {
   it("returns the final path segment", () => {
@@ -40,5 +40,22 @@ describe("defaultColorForIndex", () => {
     for (let i = 0; i < 25; i++) {
       expect(PROJECT_COLORS).toContain(defaultColorForIndex(i));
     }
+  });
+});
+
+describe("projectInitials", () => {
+  it("uses the first letter of the first two words for multi-word names", () => {
+    expect(projectInitials("My Project")).toBe("MP");
+    expect(projectInitials("foo_bar-baz")).toBe("FB");
+  });
+
+  it("uses the first two letters for a single-word name", () => {
+    expect(projectInitials("Project")).toBe("PR");
+    expect(projectInitials("P")).toBe("P");
+  });
+
+  it("returns an empty string for blank input", () => {
+    expect(projectInitials("")).toBe("");
+    expect(projectInitials("   ")).toBe("");
   });
 });

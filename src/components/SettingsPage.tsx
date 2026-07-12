@@ -1,16 +1,30 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Settings } from "../lib/types";
-import { TerminalIcon, VSCodeIcon } from "./Icons";
+import { PROJECT_COLORS } from "../lib/constants";
+import { playSystemSound, SYSTEM_SOUNDS } from "../lib/sound.ipc";
+import type { CustomCommand, Project, Settings } from "../lib/types";
+import { ColorPicker } from "./ColorPicker";
+import { CloseIcon, TerminalIcon, VSCodeIcon } from "./Icons";
 
 interface SettingsPageProps {
   settings: Settings;
+  project: Project | null;
+  initialTab?: TabId;
   onClose: () => void;
   onImportVscode: () => void;
   onUpdateSettings: (patch: Partial<Settings>) => void;
+  onAddCustomCommand: (projectId: string, name: string, command: string, color: string) => void;
+  onRemoveCustomCommand: (projectId: string, commandId: string) => void;
+  onUpdateCustomCommand: (
+    projectId: string,
+    commandId: string,
+    name: string,
+    command: string,
+    color: string,
+  ) => void;
 }
 
-type TabId = "general" | "commands" | "vscode";
+export type TabId = "general" | "commands" | "vscode";
 
 const TABS: { id: TabId; label: string; icon: (className: string) => ReactNode }[] = [
   {
@@ -50,20 +64,75 @@ const TABS: { id: TabId; label: string; icon: (className: string) => ReactNode }
 function SectionCard({
   title,
   description,
+  badge,
   children,
 }: {
   title: string;
   description: string;
+  badge?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
       <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-medium text-foreground">{title}</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-medium text-foreground">{title}</h2>
+          {badge}
+        </div>
         <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
       </div>
       {children}
     </section>
+  );
+}
+
+/** Color dot + name — makes which project a per-project section applies to
+ *  unmissable, since Settings is a full-screen overlay with no project sidebar. */
+function ProjectBadge({ project }: { project: Project }) {
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-tertiary px-2.5 py-1 text-[11px] font-medium text-foreground">
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: project.color }} />
+      {project.name}
+    </span>
+  );
+}
+
+function SoundPicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-4">
+      <span className="text-xs font-medium text-foreground">{label}</span>
+      <div className="flex items-center gap-2">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.currentTarget.value)}
+          className="rounded-md bg-tertiary px-2.5 py-1.5 text-xs text-foreground outline-none ring-1 ring-border transition-shadow focus:ring-primary/60"
+        >
+          {SYSTEM_SOUNDS.map((sound) => (
+            <option key={sound} value={sound}>
+              {sound}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          title={`Preview ${value}`}
+          onClick={() => void playSystemSound(value)}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M4 2.5v11l10-5.5-10-5.5Z" />
+          </svg>
+        </button>
+      </div>
+    </label>
   );
 }
 
@@ -108,13 +177,136 @@ function CommandField({
   );
 }
 
+function CustomCommandRow({
+  cmd,
+  onEdit,
+  onRemove,
+}: {
+  cmd: CustomCommand;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-md bg-tertiary px-2.5 py-1.5">
+      <button
+        type="button"
+        onClick={onEdit}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <span
+          className="h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: cmd.color }}
+        />
+        <span className="shrink-0 text-xs font-medium text-foreground">{cmd.name}</span>
+        <span className="truncate font-mono text-[11px] text-muted-foreground">{cmd.command}</span>
+      </button>
+      <button
+        type="button"
+        onClick={onRemove}
+        title="Remove"
+        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
+      >
+        <CloseIcon size={11} />
+      </button>
+    </div>
+  );
+}
+
+function CustomCommandForm({
+  editing,
+  onSave,
+  onCancel,
+}: {
+  editing: CustomCommand | null;
+  onSave: (name: string, command: string, color: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(editing?.name ?? "");
+  const [command, setCommand] = useState(editing?.command ?? "");
+  const [color, setColor] = useState(editing?.color ?? PROJECT_COLORS[0]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const swatchRef = useRef<HTMLButtonElement>(null);
+
+  function submit() {
+    const trimmedName = name.trim();
+    const trimmedCommand = command.trim();
+    if (!trimmedName || !trimmedCommand) return;
+    onSave(trimmedName, trimmedCommand, color);
+    if (!editing) {
+      setName("");
+      setCommand("");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-dashed border-border p-2.5">
+      <div className="flex items-center gap-2">
+        <button
+          ref={swatchRef}
+          type="button"
+          title="Color"
+          onClick={() => setPickerOpen(true)}
+          className="h-6 w-6 shrink-0 rounded-full ring-1 ring-border transition-transform hover:scale-110"
+          style={{ backgroundColor: color }}
+        />
+        <input
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+          placeholder="Name"
+          className="w-28 min-w-0 rounded-md bg-tertiary px-2 py-1.5 text-xs text-foreground outline-none ring-1 ring-border transition-shadow focus:ring-primary/60"
+        />
+        <input
+          value={command}
+          onChange={(e) => setCommand(e.currentTarget.value)}
+          placeholder="Shell command"
+          spellCheck={false}
+          className="min-w-0 flex-1 rounded-md bg-tertiary px-2 py-1.5 font-mono text-xs text-foreground outline-none ring-1 ring-border transition-shadow focus:ring-primary/60"
+        />
+      </div>
+      <div className="flex items-center justify-end gap-2">
+        {editing && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md px-2.5 py-1 text-xs text-muted-foreground hover:bg-secondary transition-colors"
+          >
+            Cancel
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!name.trim() || !command.trim()}
+          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          {editing ? "Save" : "Add command"}
+        </button>
+      </div>
+      {pickerOpen && (
+        <ColorPicker
+          anchorEl={swatchRef.current}
+          selected={color}
+          onPick={setColor}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 export function SettingsPage({
   settings,
+  project,
+  initialTab,
   onClose,
   onImportVscode,
   onUpdateSettings,
+  onAddCustomCommand,
+  onRemoveCustomCommand,
+  onUpdateCustomCommand,
 }: SettingsPageProps) {
-  const [tab, setTab] = useState<TabId>("general");
+  const [tab, setTab] = useState<TabId>(initialTab ?? "general");
+  const [editingCommandId, setEditingCommandId] = useState<string | null>(null);
 
   // Park native webviews while the page is open — same reason as every other
   // full-screen/modal surface: they always paint on top of web content.
@@ -199,29 +391,114 @@ export function SettingsPage({
                     />
                   </button>
                 </div>
+
+                <div className="flex flex-col gap-3 border-t border-border pt-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs font-medium text-foreground">Sound</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={settings.soundEnabled}
+                      onClick={() => onUpdateSettings({ soundEnabled: !settings.soundEnabled })}
+                      className={`relative h-5 w-9 shrink-0 appearance-none rounded-full border-0 p-0 outline-none transition-colors ${
+                        settings.soundEnabled ? "bg-primary" : "bg-secondary"
+                      }`}
+                    >
+                      <span
+                        className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                          settings.soundEnabled ? "translate-x-[18px]" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  {settings.soundEnabled && (
+                    <div className="flex flex-col gap-2.5">
+                      <SoundPicker
+                        label="Agent ready sound"
+                        value={settings.soundReady}
+                        onChange={(soundReady) => onUpdateSettings({ soundReady })}
+                      />
+                      <SoundPicker
+                        label="Agent waiting sound"
+                        value={settings.soundWaiting}
+                        onChange={(soundWaiting) => onUpdateSettings({ soundWaiting })}
+                      />
+                    </div>
+                  )}
+                </div>
               </SectionCard>
             )}
 
             {tab === "commands" && (
-              <SectionCard
-                title="Launch commands"
-                description="Override the shell command run when opening a Claude or opencode tab — useful for aliases, wrappers, or extra flags."
-              >
-                <div className="flex flex-col gap-4">
-                  <CommandField
-                    label="Claude command"
-                    value={settings.claudeCommand}
-                    placeholder="claude"
-                    onCommit={(claudeCommand) => onUpdateSettings({ claudeCommand })}
-                  />
-                  <CommandField
-                    label="opencode command"
-                    value={settings.opencodeCommand}
-                    placeholder="opencode"
-                    onCommit={(opencodeCommand) => onUpdateSettings({ opencodeCommand })}
-                  />
-                </div>
-              </SectionCard>
+              <>
+                <SectionCard
+                  title="Launch commands"
+                  description="Override the shell command run when opening a Claude or opencode tab — useful for aliases, wrappers, or extra flags."
+                >
+                  <div className="flex flex-col gap-4">
+                    <CommandField
+                      label="Claude command"
+                      value={settings.claudeCommand}
+                      placeholder="claude"
+                      onCommit={(claudeCommand) => onUpdateSettings({ claudeCommand })}
+                    />
+                    <CommandField
+                      label="opencode command"
+                      value={settings.opencodeCommand}
+                      placeholder="opencode"
+                      onCommit={(opencodeCommand) => onUpdateSettings({ opencodeCommand })}
+                    />
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  title="Custom commands"
+                  description="Per-project quick-access commands. Each opens a new tab that runs its shell command."
+                  badge={project && <ProjectBadge project={project} />}
+                >
+                  {!project && (
+                    <p className="text-xs text-muted-foreground">
+                      Open a project to manage its custom commands.
+                    </p>
+                  )}
+                  {project && (
+                    <div className="flex flex-col gap-2">
+                      {project.customCommands.map((cmd) => (
+                        <CustomCommandRow
+                          key={cmd.id}
+                          cmd={cmd}
+                          onEdit={() => setEditingCommandId(cmd.id)}
+                          onRemove={() => {
+                            if (editingCommandId === cmd.id) setEditingCommandId(null);
+                            onRemoveCustomCommand(project.id, cmd.id);
+                          }}
+                        />
+                      ))}
+                      <CustomCommandForm
+                        key={editingCommandId ?? "new"}
+                        editing={
+                          project.customCommands.find((c) => c.id === editingCommandId) ?? null
+                        }
+                        onSave={(name, command, color) => {
+                          if (editingCommandId) {
+                            onUpdateCustomCommand(
+                              project.id,
+                              editingCommandId,
+                              name,
+                              command,
+                              color,
+                            );
+                            setEditingCommandId(null);
+                          } else {
+                            onAddCustomCommand(project.id, name, command, color);
+                          }
+                        }}
+                        onCancel={() => setEditingCommandId(null)}
+                      />
+                    </div>
+                  )}
+                </SectionCard>
+              </>
             )}
 
             {tab === "vscode" && (

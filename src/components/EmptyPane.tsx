@@ -1,3 +1,4 @@
+import { projectInitials } from "../lib/constants";
 import type { TabKind } from "../lib/tabs";
 import type { Project } from "../lib/types";
 import { AnthropicIcon, OpenCodeIcon, TerminalIcon, VSCodeIcon } from "./Icons";
@@ -5,7 +6,7 @@ import { AnthropicIcon, OpenCodeIcon, TerminalIcon, VSCodeIcon } from "./Icons";
 interface EmptyPaneProps {
   project: Project;
   onOpen: (kind: TabKind) => void;
-  onToggleIde: () => void;
+  onOpenIde: () => void;
 }
 
 interface Action {
@@ -14,7 +15,7 @@ interface Action {
   onClick: () => void;
 }
 
-export function EmptyPane({ project, onOpen, onToggleIde }: EmptyPaneProps) {
+export function EmptyPane({ project, onOpen, onOpenIde }: EmptyPaneProps) {
   const actions: Action[] = [
     {
       label: "Open Terminal",
@@ -26,7 +27,7 @@ export function EmptyPane({ project, onOpen, onToggleIde }: EmptyPaneProps) {
     {
       label: "Open VS Code",
       icon: <VSCodeIcon size={15} className="text-[#007ACC]" />,
-      onClick: onToggleIde,
+      onClick: onOpenIde,
     },
   ];
 
@@ -34,10 +35,10 @@ export function EmptyPane({ project, onOpen, onToggleIde }: EmptyPaneProps) {
     <div className="flex h-full flex-col items-center justify-center gap-8 no-select">
       {/* Project avatar */}
       <div
-        className="flex h-14 w-14 items-center justify-center rounded-xl text-2xl font-bold text-black/80"
+        className="flex h-14 w-14 items-center justify-center rounded-xl text-xl font-bold text-black/80"
         style={{ backgroundColor: project.color }}
       >
-        {project.name.charAt(0).toUpperCase()}
+        {projectInitials(project.name)}
       </div>
 
       {/* Action list — fixed width, centered */}

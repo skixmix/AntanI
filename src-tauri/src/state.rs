@@ -17,6 +17,19 @@ pub const DEFAULT_CLAUDE_COMMAND: &str = "claude";
 /// Default launch command for an opencode tab (overridable in settings).
 pub const DEFAULT_OPENCODE_COMMAND: &str = "opencode";
 
+/// A user-defined quick-access command, scoped to a single project. Opening it
+/// spawns a terminal-kind tab that runs `command` as its startup shell command.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomCommand {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    /// Hex color string chosen from the frontend palette; tints the shared
+    /// custom-command icon in the quick-access bar.
+    pub color: String,
+}
+
 /// A project is a local folder the user has added to the sidebar.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +39,10 @@ pub struct Project {
     pub path: String,
     /// Hex color string chosen from the frontend palette (single source of truth).
     pub color: String,
+    /// `serde(default)` so a `projects.json` from before this field existed
+    /// still loads fine — every existing project just gets an empty list.
+    #[serde(default)]
+    pub custom_commands: Vec<CustomCommand>,
 }
 
 /// The full persisted application state (Phase 1: projects + last active project).
@@ -44,6 +61,7 @@ impl AppData {
             name,
             path,
             color,
+            custom_commands: Vec::new(),
         };
         self.projects.push(project.clone());
         if self.active_project_id.is_none() {
@@ -69,6 +87,56 @@ impl AppData {
     pub fn set_color(&mut self, id: &str, color: String) {
         if let Some(p) = self.projects.iter_mut().find(|p| p.id == id) {
             p.color = color;
+        }
+    }
+
+    /// Add a custom command to a project. No-op (returns `None`) if the
+    /// project id is unknown.
+    pub fn add_custom_command(
+        &mut self,
+        project_id: &str,
+        name: String,
+        command: String,
+        color: String,
+    ) -> Option<CustomCommand> {
+        let project = self.projects.iter_mut().find(|p| p.id == project_id)?;
+        let cmd = CustomCommand {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            command,
+            color,
+        };
+        project.custom_commands.push(cmd.clone());
+        Some(cmd)
+    }
+
+    /// Remove a custom command by id. No-op if the project or command id is unknown.
+    pub fn remove_custom_command(&mut self, project_id: &str, command_id: &str) {
+        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            project.custom_commands.retain(|c| c.id != command_id);
+        }
+    }
+
+    /// Update a custom command's name/command/color. No-op if the project or
+    /// command id is unknown.
+    pub fn update_custom_command(
+        &mut self,
+        project_id: &str,
+        command_id: &str,
+        name: String,
+        command: String,
+        color: String,
+    ) {
+        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            if let Some(cmd) = project
+                .custom_commands
+                .iter_mut()
+                .find(|c| c.id == command_id)
+            {
+                cmd.name = name;
+                cmd.command = command;
+                cmd.color = color;
+            }
         }
     }
 
@@ -159,6 +227,9 @@ pub struct Settings {
     /// been shown (regardless of the user's answer). Must only ever flip
     /// false -> true, exactly once per install, so the prompt never repeats.
     pub vscode_import_prompted: bool,
+    pub sound_enabled: bool,
+    pub sound_ready: String,
+    pub sound_waiting: String,
 }
 
 impl Default for Settings {
@@ -168,6 +239,9 @@ impl Default for Settings {
             opencode_command: DEFAULT_OPENCODE_COMMAND.to_string(),
             notifications_enabled: true,
             vscode_import_prompted: false,
+            sound_enabled: true,
+            sound_ready: "Glass".to_string(),
+            sound_waiting: "Ping".to_string(),
         }
     }
 }
@@ -313,6 +387,9 @@ mod tests {
             opencode_command: "oc".into(),
             notifications_enabled: false,
             vscode_import_prompted: true,
+            sound_enabled: false,
+            sound_ready: "Hero".into(),
+            sound_waiting: "Frog".into(),
         };
         save(&path, &s).unwrap();
         let state = SettingsState::new(path.clone());
@@ -345,6 +422,9 @@ mod tests {
         assert_eq!(s.opencode_command, "opencode");
         assert!(s.notifications_enabled);
         assert!(!s.vscode_import_prompted);
+        assert!(s.sound_enabled);
+        assert_eq!(s.sound_ready, "Glass");
+        assert_eq!(s.sound_waiting, "Ping");
     }
 
     #[test]
@@ -354,12 +434,124 @@ mod tests {
             opencode_command: "oc".into(),
             notifications_enabled: false,
             vscode_import_prompted: true,
+            sound_enabled: false,
+            sound_ready: "Hero".into(),
+            sound_waiting: "Frog".into(),
         };
         let path =
             std::env::temp_dir().join(format!("antani-settings-{}.json", uuid::Uuid::new_v4()));
         save(&path, &s).unwrap();
         let loaded: Settings = load(&path);
         assert_eq!(loaded, s);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn add_custom_command_appends_and_returns_it() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        let cmd = d
+            .add_custom_command(&id, "Build".into(), "make build".into(), "#3b82f6".into())
+            .unwrap();
+        assert_eq!(d.projects[0].custom_commands.len(), 1);
+        assert_eq!(d.projects[0].custom_commands[0], cmd);
+        assert_eq!(cmd.name, "Build");
+        assert_eq!(cmd.command, "make build");
+        assert_eq!(cmd.color, "#3b82f6");
+    }
+
+    #[test]
+    fn add_custom_command_unknown_project_returns_none() {
+        let mut d = with_three();
+        let result = d.add_custom_command("bogus", "Build".into(), "make".into(), "#fff".into());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn remove_custom_command_removes_only_target() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        let a = d
+            .add_custom_command(&id, "A".into(), "a".into(), "#fff".into())
+            .unwrap();
+        let b = d
+            .add_custom_command(&id, "B".into(), "b".into(), "#000".into())
+            .unwrap();
+        d.remove_custom_command(&id, &a.id);
+        assert_eq!(d.projects[0].custom_commands, vec![b]);
+    }
+
+    #[test]
+    fn remove_custom_command_unknown_ids_are_no_ops() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        d.add_custom_command(&id, "A".into(), "a".into(), "#fff".into());
+        d.remove_custom_command("bogus-project", "bogus-command");
+        d.remove_custom_command(&id, "bogus-command");
+        assert_eq!(d.projects[0].custom_commands.len(), 1);
+    }
+
+    #[test]
+    fn update_custom_command_changes_target_only() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        let a = d
+            .add_custom_command(&id, "A".into(), "a".into(), "#fff".into())
+            .unwrap();
+        let b = d
+            .add_custom_command(&id, "B".into(), "b".into(), "#000".into())
+            .unwrap();
+        d.update_custom_command(&id, &a.id, "A2".into(), "a2".into(), "#111".into());
+        assert_eq!(d.projects[0].custom_commands[0].name, "A2");
+        assert_eq!(d.projects[0].custom_commands[0].command, "a2");
+        assert_eq!(d.projects[0].custom_commands[0].color, "#111");
+        assert_eq!(d.projects[0].custom_commands[1], b);
+    }
+
+    #[test]
+    fn update_custom_command_unknown_ids_are_no_ops() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        let a = d
+            .add_custom_command(&id, "A".into(), "a".into(), "#fff".into())
+            .unwrap();
+        d.update_custom_command(
+            "bogus-project",
+            &a.id,
+            "X".into(),
+            "x".into(),
+            "#000".into(),
+        );
+        d.update_custom_command(&id, "bogus-command", "X".into(), "x".into(), "#000".into());
+        assert_eq!(d.projects[0].custom_commands[0], a);
+    }
+
+    #[test]
+    fn custom_commands_save_then_load_round_trip() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        d.add_custom_command(&id, "Build".into(), "make build".into(), "#3b82f6".into());
+        let path =
+            std::env::temp_dir().join(format!("antani-customcmd-{}.json", uuid::Uuid::new_v4()));
+        save(&path, &d).unwrap();
+        let loaded: AppData = load(&path);
+        assert_eq!(loaded, d);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn project_json_without_custom_commands_field_loads_as_empty() {
+        let path = std::env::temp_dir().join(format!(
+            "antani-legacy-project-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        fs::write(
+            &path,
+            br##"{"projects":[{"id":"a","name":"A","path":"/a","color":"#ef4444"}],"activeProjectId":"a"}"##,
+        )
+        .unwrap();
+        let loaded: AppData = load(&path);
+        assert_eq!(loaded.projects[0].custom_commands, Vec::new());
         let _ = fs::remove_file(&path);
     }
 

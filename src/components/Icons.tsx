@@ -37,6 +37,25 @@ export function VSCodeIcon({ size = 14, className = "" }: IconProps) {
   );
 }
 
+/** Close/X glyph */
+export function CloseIcon({ size = 14, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M3 3l10 10M13 3L3 13" />
+    </svg>
+  );
+}
+
 /** Terminal chevron icon */
 export function TerminalIcon({ size = 14, className = "" }: IconProps) {
   return (
@@ -179,6 +198,29 @@ export function SourceControlIcon({ size = 14, className = "" }: IconProps) {
   );
 }
 
+/** Git branch glyph, used to label the current branch in the source control header */
+export function BranchIcon({ size = 12, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <circle cx="4" cy="3" r="1.6" />
+      <circle cx="4" cy="13" r="1.6" />
+      <circle cx="12" cy="6" r="1.6" />
+      <path d="M4 4.6V11.4M12 7.6V9a3 3 0 0 1-3 3H8" />
+    </svg>
+  );
+}
+
 /** Folder glyph for the "Projects" sidebar header */
 export function ProjectsIcon({ size = 13, className = "" }: IconProps) {
   return (
@@ -195,6 +237,45 @@ export function ProjectsIcon({ size = 13, className = "" }: IconProps) {
       className={className}
     >
       <path d="M1.5 4.2c0-.7.6-1.2 1.2-1.2h3l1.2 1.5h6.4c.7 0 1.2.6 1.2 1.2v6.1c0 .7-.6 1.2-1.2 1.2H2.7c-.7 0-1.2-.6-1.2-1.2V4.2Z" />
+    </svg>
+  );
+}
+
+/** Wrench glyph — used for the Settings entry point */
+export function WrenchIcon({ size = 13, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d="M11.3 2.3a3 3 0 0 0-4.1 3.6L2.6 10.5a1.4 1.4 0 0 0 2 2l4.6-4.6a3 3 0 0 0 3.6-4.1l-2 2-1.4-.4-.4-1.4 2-2z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Bolt glyph — shared icon for every per-project custom quick-access command,
+ *  tinted per-command via a wrapping element's `color` (uses currentColor). */
+export function CustomCommandIcon({ size = 13, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M8.8 1.2 3.2 9h3.4l-.9 5.8 6-8.2H8.2l.6-5.4Z" />
     </svg>
   );
 }
