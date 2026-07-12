@@ -1,7 +1,9 @@
+import { openPath } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { projectInitials } from "../lib/constants";
 import type { Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
+import { ContextMenu } from "./ContextMenu";
 import { ChevronRightIcon, ProjectsIcon, WrenchIcon } from "./Icons";
 import { ProjectRow } from "./ProjectRow";
 
@@ -79,6 +81,11 @@ export function Sidebar({
   );
   const [width, setWidth] = useState(readPersistedWidth);
   const [collapsed, setCollapsed] = useState(readPersistedCollapsed);
+  const [collapsedCtxMenu, setCollapsedCtxMenu] = useState<{
+    project: Project;
+    x: number;
+    y: number;
+  } | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [accentLineHeight, setAccentLineHeight] = useState(0);
   const resizingRef = useRef(false);
@@ -228,6 +235,10 @@ export function Sidebar({
               type="button"
               title={project.name}
               onClick={() => onSelect(project.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setCollapsedCtxMenu({ project, x: e.clientX, y: e.clientY });
+              }}
               className={`relative flex w-full items-center justify-center py-2 no-select ${
                 projectNeedsAttention[project.id]
                   ? `needs-attention-glow-${projectNeedsAttention[project.id]}`
@@ -296,6 +307,21 @@ export function Sidebar({
           </>
         )}
       </div>
+
+      {collapsedCtxMenu && (
+        <ContextMenu
+          x={collapsedCtxMenu.x}
+          y={collapsedCtxMenu.y}
+          onClose={() => setCollapsedCtxMenu(null)}
+          items={[
+            {
+              label: "Open in Finder",
+              icon: <ProjectsIcon size={13} />,
+              onSelect: () => void openPath(collapsedCtxMenu.project.path),
+            },
+          ]}
+        />
+      )}
 
       {/* Footer — pinned at bottom */}
       <div style={{ borderTop: "1px solid var(--color-sidebar-border)" }}>

@@ -25,7 +25,7 @@ const WAITING_RE =
 // each such false "ready" flips the tab-chip spinner to the green dot and
 // back, restarting its CSS animation and making it look like it never
 // settles into a smooth spin.
-const SILENCE_MS = 3000;
+const SILENCE_MS = 3500;
 const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 32;
@@ -342,7 +342,9 @@ export function TerminalView({
 
   return (
     <div className="absolute inset-0" style={{ display: visible ? "block" : "none" }}>
-      <div ref={containerRef} className="absolute inset-0 overflow-hidden p-1.5" />
+      <div className="absolute inset-0 p-1.5">
+        <div ref={containerRef} className="h-full w-full overflow-hidden" />
+      </div>
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded bg-black/40 px-2 py-1 text-[11px] text-white/60">
         <button type="button" className="hover:text-white" onClick={() => zoom(-1)}>
           −

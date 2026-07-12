@@ -1,15 +1,18 @@
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { openDiffInIde } from "../lib/api.ipc";
 import { buildFileTree, type TreeNode } from "../lib/fileTree";
 import * as git from "../lib/git.ipc";
 import { isNotGitRepoError } from "../lib/git.ipc";
 import type { FileChangeKind, GitFileEntry, GitStatus, Project } from "../lib/types";
+import { ContextMenu } from "./ContextMenu";
 import {
   ChevronRightIcon,
   DiscardIcon,
   FileIcon,
   MinusIcon,
   PlusIcon,
+  ProjectsIcon,
   SourceControlIcon,
 } from "./Icons";
 import { RevertFileModal } from "./RevertFileModal";
@@ -257,6 +260,12 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
     },
     [project, onOpenIde],
   );
+  const [fileCtxMenu, setFileCtxMenu] = useState<{ path: string; x: number; y: number } | null>(
+    null,
+  );
+  const onReveal = useCallback((path: string, x: number, y: number) => {
+    setFileCtxMenu({ path, x, y });
+  }, []);
 
   if (!project) {
     return (
@@ -387,6 +396,7 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
                 onUnstage={unstageOne}
                 onRevert={setRevertTarget}
                 onOpenDiff={openDiff}
+                onReveal={onReveal}
               />
             </Section>
           )}
@@ -414,6 +424,7 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
                 onUnstage={unstageOne}
                 onRevert={setRevertTarget}
                 onOpenDiff={openDiff}
+                onReveal={onReveal}
               />
             </Section>
           )}
@@ -447,6 +458,21 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
           }
           onConfirm={confirmRevertAll}
           onCancel={() => setRevertAllPending(false)}
+        />
+      )}
+
+      {fileCtxMenu && (
+        <ContextMenu
+          x={fileCtxMenu.x}
+          y={fileCtxMenu.y}
+          onClose={() => setFileCtxMenu(null)}
+          items={[
+            {
+              label: "Open in Finder",
+              icon: <ProjectsIcon size={13} />,
+              onSelect: () => void revealItemInDir(`${project.path}/${fileCtxMenu.path}`),
+            },
+          ]}
         />
       )}
     </aside>
@@ -500,6 +526,7 @@ function Tree({
   onUnstage,
   onRevert,
   onOpenDiff,
+  onReveal,
 }: {
   nodes: TreeNode[];
   depth: number;
@@ -510,6 +537,7 @@ function Tree({
   onUnstage: (path: string) => void;
   onRevert: (entry: GitFileEntry) => void;
   onOpenDiff: (path: string) => void;
+  onReveal: (path: string, x: number, y: number) => void;
 }) {
   return (
     <>
@@ -520,20 +548,37 @@ function Tree({
         const isExpanded = toggledFolders.has(expandKey) ? staged : !staged;
         return node.type === "folder" ? (
           <div key={node.path}>
-            <button
-              type="button"
-              onClick={() => onToggleFolder(expandKey)}
-              className="flex w-full items-center gap-1 px-3 py-1 text-xs text-foreground hover:bg-sidebar-accent transition-colors no-select"
+            <div
+              className="group flex w-full cursor-pointer items-center gap-1 pr-2 text-xs text-foreground hover:bg-sidebar-accent transition-colors no-select"
               style={{ paddingLeft: 12 + depth * 14 }}
+              onClick={() => onToggleFolder(expandKey)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onReveal(node.path, e.clientX, e.clientY);
+              }}
             >
-              <ChevronRightIcon
-                size={11}
-                className={`shrink-0 text-muted-foreground transition-transform ${
-                  isExpanded ? "rotate-90" : ""
-                }`}
-              />
-              <span className="truncate">{node.name}</span>
-            </button>
+              <div className="flex min-w-0 flex-1 items-center gap-1 py-1">
+                <ChevronRightIcon
+                  size={11}
+                  className={`shrink-0 text-muted-foreground transition-transform ${
+                    isExpanded ? "rotate-90" : ""
+                  }`}
+                />
+                <span className="truncate">{node.name}</span>
+              </div>
+              <button
+                type="button"
+                title={staged ? "Unstage folder" : "Stage folder"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (staged) onUnstage(node.path);
+                  else onStage(node.path);
+                }}
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground group-hover:opacity-100 transition-opacity"
+              >
+                {staged ? <MinusIcon size={11} /> : <PlusIcon size={11} />}
+              </button>
+            </div>
             {isExpanded && (
               <Tree
                 nodes={node.children}
@@ -545,6 +590,7 @@ function Tree({
                 onUnstage={onUnstage}
                 onRevert={onRevert}
                 onOpenDiff={onOpenDiff}
+                onReveal={onReveal}
               />
             )}
           </div>
@@ -552,6 +598,11 @@ function Tree({
           <div
             key={node.path}
             onClick={() => onOpenDiff(node.path)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onReveal(node.path, e.clientX, e.clientY);
+            }}
             className="group flex items-center gap-1.5 px-3 py-1 text-xs hover:bg-sidebar-accent transition-colors cursor-pointer"
             style={{ paddingLeft: 12 + (depth + 1) * 14 }}
             title={`${node.path} — click to view diff`}

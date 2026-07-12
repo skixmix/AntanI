@@ -130,8 +130,13 @@ function App() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  // Suppress browser native context menu globally.
+  // Suppress the browser's native context menu (Reload, Back, Services, ...)
+  // globally in production so the app feels native rather than like a web
+  // page — not a security measure: devtools are gated by the Tauri
+  // `devtools` Cargo feature (absent from release builds) regardless of this.
+  // Left enabled in dev so right-click can still reach devtools/inspect.
   useEffect(() => {
+    if (!import.meta.env.PROD) return;
     const block = (e: MouseEvent) => e.preventDefault();
     window.addEventListener("contextmenu", block);
     return () => window.removeEventListener("contextmenu", block);
