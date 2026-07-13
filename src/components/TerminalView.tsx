@@ -58,6 +58,9 @@ export function TerminalView({
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
 
+  // fontSize is only read here as the initial size; live changes are applied
+  // by the dedicated fontSize effect below without respawning the PTY.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see comment above
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -296,7 +299,20 @@ export function TerminalView({
       }
       void spawned.finally(() => killPty(tabId));
     };
-  }, [tabId, cwd, startupCommand, fontSize, isAi, onStatusChange]);
+  }, [tabId, cwd, startupCommand, isAi, onStatusChange]);
+
+  // Kept separate from the spawn effect above: fontSize changing must not
+  // respawn the PTY, since the old effect's cleanup kills it asynchronously
+  // (spawned.finally(() => killPty(tabId))) and can race past a fresh spawn
+  // of the same tabId, killing the new process instead of the old one.
+  useEffect(() => {
+    const term = termRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit) return;
+    term.options.fontSize = fontSize;
+    fit.fit();
+    void resizePty(tabId, term.cols, term.rows);
+  }, [tabId, fontSize]);
 
   useEffect(() => {
     if (!visible) return;

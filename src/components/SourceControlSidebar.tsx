@@ -6,6 +6,7 @@ import { buildFileTree, type TreeNode } from "../lib/fileTree";
 import * as git from "../lib/git.ipc";
 import { isNotGitRepoError } from "../lib/git.ipc";
 import type { FileChangeKind, GitFileEntry, GitStatus, Project } from "../lib/types";
+import { ConfirmPopover } from "./ConfirmPopover";
 import { ContextMenu } from "./ContextMenu";
 import {
   ChevronRightIcon,
@@ -16,7 +17,6 @@ import {
   ProjectsIcon,
   SourceControlIcon,
 } from "./Icons";
-import { RevertFileModal } from "./RevertFileModal";
 
 interface SourceControlSidebarProps {
   project: Project | null;
@@ -106,6 +106,7 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
     folderPath: string;
     entries: GitFileEntry[];
   } | null>(null);
+  const [revertAnchor, setRevertAnchor] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     try {
@@ -239,6 +240,7 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
     if (!project || !revertTarget) return;
     void git.gitRevertFile(project.path, revertTarget.path, revertTarget.kind).then(() => {
       setRevertTarget(null);
+      setRevertAnchor(null);
       refresh();
     });
   }, [project, revertTarget, refresh]);
@@ -246,6 +248,7 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
     if (!project) return;
     void git.gitRevertAll(project.path).then(() => {
       setRevertAllPending(false);
+      setRevertAnchor(null);
       refresh();
     });
   }, [project, refresh]);
@@ -255,6 +258,7 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
       revertFolderTarget.entries.map((e) => git.gitRevertFile(project.path, e.path, e.kind)),
     ).then(() => {
       setRevertFolderTarget(null);
+      setRevertAnchor(null);
       refresh();
     });
   }, [project, revertFolderTarget, refresh]);
@@ -410,7 +414,10 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
                 onToggleFolder={toggleFolder}
                 onStage={stageOne}
                 onUnstage={unstageOne}
-                onRevert={setRevertTarget}
+                onRevert={(entry, x, y) => {
+                  setRevertTarget(entry);
+                  setRevertAnchor({ x, y });
+                }}
                 onRevertFolder={null}
                 onOpenDiff={openDiff}
                 onReveal={onReveal}
@@ -426,7 +433,10 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
                 {
                   icon: <DiscardIcon size={11} />,
                   title: "Revert all",
-                  onAction: () => setRevertAllPending(true),
+                  onAction: (e) => {
+                    setRevertAllPending(true);
+                    setRevertAnchor({ x: e.clientX, y: e.clientY });
+                  },
                 },
                 { icon: <PlusIcon size={11} />, title: "Stage all", onAction: stageAll },
               ]}
@@ -441,8 +451,14 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
                 onToggleFolder={toggleFolder}
                 onStage={stageOne}
                 onUnstage={unstageOne}
-                onRevert={setRevertTarget}
-                onRevertFolder={setRevertFolderTarget}
+                onRevert={(entry, x, y) => {
+                  setRevertTarget(entry);
+                  setRevertAnchor({ x, y });
+                }}
+                onRevertFolder={(target, x, y) => {
+                  setRevertFolderTarget(target);
+                  setRevertAnchor({ x, y });
+                }}
                 onOpenDiff={openDiff}
                 onReveal={onReveal}
               />
@@ -451,8 +467,10 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
         </div>
       )}
 
-      {revertTarget && (
-        <RevertFileModal
+      {revertTarget && revertAnchor && (
+        <ConfirmPopover
+          x={revertAnchor.x}
+          y={revertAnchor.y}
           message={
             <>
               This will permanently discard changes to{" "}
@@ -463,12 +481,17 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
             </>
           }
           onConfirm={confirmRevert}
-          onCancel={() => setRevertTarget(null)}
+          onCancel={() => {
+            setRevertTarget(null);
+            setRevertAnchor(null);
+          }}
         />
       )}
 
-      {revertFolderTarget && (
-        <RevertFileModal
+      {revertFolderTarget && revertAnchor && (
+        <ConfirmPopover
+          x={revertAnchor.x}
+          y={revertAnchor.y}
           message={
             <>
               This will permanently discard all changes in{" "}
@@ -480,12 +503,17 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
             </>
           }
           onConfirm={confirmRevertFolder}
-          onCancel={() => setRevertFolderTarget(null)}
+          onCancel={() => {
+            setRevertFolderTarget(null);
+            setRevertAnchor(null);
+          }}
         />
       )}
 
-      {revertAllPending && (
-        <RevertFileModal
+      {revertAllPending && revertAnchor && (
+        <ConfirmPopover
+          x={revertAnchor.x}
+          y={revertAnchor.y}
           message={
             <>
               This will permanently discard all{" "}
@@ -494,7 +522,10 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
             </>
           }
           onConfirm={confirmRevertAll}
-          onCancel={() => setRevertAllPending(false)}
+          onCancel={() => {
+            setRevertAllPending(false);
+            setRevertAnchor(null);
+          }}
         />
       )}
 
@@ -524,7 +555,11 @@ function Section({
 }: {
   title: string;
   count: number;
-  actions: { icon: ReactNode; title: string; onAction: () => void }[];
+  actions: {
+    icon: ReactNode;
+    title: string;
+    onAction: (e: MouseEvent<HTMLButtonElement>) => void;
+  }[];
   children: ReactNode;
 }) {
   return (
@@ -577,8 +612,10 @@ function Tree({
   onToggleFolder: (path: string) => void;
   onStage: (path: string) => void;
   onUnstage: (path: string) => void;
-  onRevert: (entry: GitFileEntry) => void;
-  onRevertFolder: ((target: { folderPath: string; entries: GitFileEntry[] }) => void) | null;
+  onRevert: (entry: GitFileEntry, x: number, y: number) => void;
+  onRevertFolder:
+    | ((target: { folderPath: string; entries: GitFileEntry[] }, x: number, y: number) => void)
+    | null;
   onOpenDiff: (path: string) => void;
   onReveal: (path: string, x: number, y: number) => void;
 }) {
@@ -620,7 +657,7 @@ function Tree({
                       const entries = allEntries.filter(
                         (entry) => entry.path === node.path || entry.path.startsWith(prefix),
                       );
-                      onRevertFolder({ folderPath: node.path, entries });
+                      onRevertFolder({ folderPath: node.path, entries }, e.clientX, e.clientY);
                     }}
                     className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
                   >
@@ -752,7 +789,7 @@ function Tree({
                       title="Discard changes"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onRevert({ path: node.path, kind: node.kind });
+                        onRevert({ path: node.path, kind: node.kind }, e.clientX, e.clientY);
                       }}
                       className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
                     >

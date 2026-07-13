@@ -31,7 +31,7 @@ export function InjectBar({ project, activeTab, onOpenCommandSettings }: InjectB
     >
       <button
         type="button"
-        title="Manage snippets"
+        title={wanted === "ai" ? "Manage prompts" : "Manage snippets"}
         onClick={() => onOpenCommandSettings(settingsSubTab)}
         className="flex shrink-0 items-center px-3 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
         style={{ borderRight: "1px solid var(--color-border)" }}
