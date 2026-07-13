@@ -271,7 +271,10 @@ function CustomCommandForm({
           ref={swatchRef}
           type="button"
           title="Color"
-          onClick={() => setPickerOpen(true)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setPickerOpen(true);
+          }}
           className="h-6 w-6 shrink-0 rounded-full ring-1 ring-border transition-transform hover:scale-110"
           style={{ backgroundColor: color }}
         />
@@ -393,7 +396,10 @@ function InjectableForm({
           ref={swatchRef}
           type="button"
           title="Color"
-          onClick={() => setPickerOpen(true)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setPickerOpen(true);
+          }}
           className="h-6 w-6 shrink-0 rounded-full ring-1 ring-border transition-transform hover:scale-110"
           style={{ backgroundColor: color }}
         />

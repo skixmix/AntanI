@@ -77,6 +77,24 @@ button,
   }
 }
 
+/* Cursor-blink cadence (matches xterm's own default) on the terminal icon's
+   underscore, for a plain terminal tab whose shell has a job in the
+   foreground (so it can't currently accept input). */
+.terminal-cursor-blink {
+  animation: terminal-cursor-blink 1.06s step-end infinite;
+}
+
+@keyframes terminal-cursor-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0.15;
+  }
+}
+
 /* "Look at me" cue for a background tab/project that needs input while the
    app is focused — a system notification would be redundant here. Colored to
    match the status dot it's echoing: green for "ready", red for "waiting". */

@@ -28,6 +28,9 @@ export async function initNotifications(onClick: (projectId: string, tabId: stri
   if (!permissionGranted) {
     permissionGranted = (await requestPermission()) === "granted";
   }
+  // registerListener has no desktop backend in tauri-plugin-notification 2.x
+  // (invoke_handler only registers notify/request_permission/is_permission_granted
+  // on desktop) — click-to-focus is mobile-only for now, so this always rejects.
   await onAction((notification) => {
     const extra = notification.extra as { projectId?: string; tabId?: string } | undefined;
     if (!extra?.projectId || !extra?.tabId) return;
@@ -35,7 +38,7 @@ export async function initNotifications(onClick: (projectId: string, tabId: stri
     void win.show();
     void win.setFocus();
     onClick(extra.projectId, extra.tabId);
-  });
+  }).catch(() => {});
 }
 
 function notify(

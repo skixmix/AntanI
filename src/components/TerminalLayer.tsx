@@ -8,6 +8,7 @@ interface TerminalLayerProps {
   activeProjectId: string | null;
   fontSize: number;
   onStatusChange: (tabId: string, status: TabStatus) => void;
+  onRunningChange: (tabId: string, running: boolean) => void;
 }
 
 export function TerminalLayer({
@@ -16,6 +17,7 @@ export function TerminalLayer({
   activeProjectId,
   fontSize,
   onStatusChange,
+  onRunningChange,
 }: TerminalLayerProps) {
   return (
     <>
@@ -33,6 +35,7 @@ export function TerminalLayer({
               fontSize={fontSize}
               isAi={tab.kind === "claude" || tab.kind === "opencode"}
               onStatusChange={onStatusChange}
+              onRunningChange={onRunningChange}
             />
           ));
       })}

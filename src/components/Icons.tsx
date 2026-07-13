@@ -56,8 +56,13 @@ export function CloseIcon({ size = 14, className = "" }: IconProps) {
   );
 }
 
-/** Terminal chevron icon */
-export function TerminalIcon({ size = 14, className = "" }: IconProps) {
+/** Terminal chevron icon. `blink` pulses the underscore, signaling a job is
+ *  running in the foreground (as opposed to the shell sitting at a prompt). */
+export function TerminalIcon({
+  size = 14,
+  className = "",
+  blink = false,
+}: IconProps & { blink?: boolean }) {
   return (
     <svg
       width={size}
@@ -72,7 +77,7 @@ export function TerminalIcon({ size = 14, className = "" }: IconProps) {
       className={className}
     >
       <polyline points="4 17 10 11 4 5" />
-      <line x1="12" y1="19" x2="20" y2="19" />
+      <line x1="12" y1="19" x2="20" y2="19" className={blink ? "terminal-cursor-blink" : ""} />
     </svg>
   );
 }

@@ -52,7 +52,7 @@ export function ColorPicker({ anchorEl, selected, onPick, onClose }: ColorPicker
 
   return createPortal(
     <div
-      className="color-picker-panel z-50 w-44 rounded-lg border border-border bg-popover p-2.5 shadow-xl"
+      className="color-picker-panel z-[60] w-44 rounded-lg border border-border bg-popover p-2.5 shadow-xl"
       style={style}
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.stopPropagation()}

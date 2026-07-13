@@ -154,6 +154,17 @@ export function onPtyExit(handler: (event: PtyExit) => void): Promise<UnlistenFn
   return listen<PtyExit>("pty-exit", (event) => handler(event.payload));
 }
 
+export interface PtyRunning {
+  tabId: string;
+  running: boolean;
+}
+
+/** Subscribe to foreground-process-group changes for any PTY: `running` is
+ *  true whenever some job (not the login shell itself) holds the terminal. */
+export function onPtyRunning(handler: (event: PtyRunning) => void): Promise<UnlistenFn> {
+  return listen<PtyRunning>("pty-running-changed", (event) => handler(event.payload));
+}
+
 /**
  * Embedded VS Code (IDE tab). One shared `code serve-web` process backs a native
  * child webview per project. The Rust side owns the webview lifecycle; the

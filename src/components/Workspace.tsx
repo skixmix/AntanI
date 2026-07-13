@@ -13,6 +13,7 @@ interface WorkspaceProps {
   projects: Project[];
   tabs: TabsState;
   tabStatuses: Record<string, TabStatus>;
+  runningTabs: Record<string, true>;
   needsAttention: Record<string, true>;
   terminalFontSize: number;
   onOpenTab: (kind: TabKind) => void;
@@ -25,6 +26,7 @@ interface WorkspaceProps {
   onReorderTab: (fromId: string, insertBeforeId: string | null) => void;
   onOpenIde: () => void;
   onStatusChange: (tabId: string, status: TabStatus) => void;
+  onRunningChange: (tabId: string, running: boolean) => void;
 }
 
 export function Workspace({
@@ -32,6 +34,7 @@ export function Workspace({
   projects,
   tabs,
   tabStatuses,
+  runningTabs,
   needsAttention,
   terminalFontSize,
   onOpenTab,
@@ -44,6 +47,7 @@ export function Workspace({
   onReorderTab,
   onOpenIde,
   onStatusChange,
+  onRunningChange,
 }: WorkspaceProps) {
   if (!project) {
     return (
@@ -71,6 +75,7 @@ export function Workspace({
           tabs={projectTabList}
           activeTabId={activeTabId}
           tabStatuses={tabStatuses}
+          runningTabs={runningTabs}
           needsAttention={needsAttention}
           project={project}
           ideTabId={ideTabId}
@@ -92,6 +97,7 @@ export function Workspace({
             activeProjectId={project.id}
             fontSize={terminalFontSize}
             onStatusChange={onStatusChange}
+            onRunningChange={onRunningChange}
           />
           <IdeLayer projects={projects} tabs={tabs} activeProjectId={project.id} />
           {isEmpty && (
