@@ -10,6 +10,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 import { killPty, onPtyExit, resizePty, spawnPty, writePty } from "../lib/api.ipc";
 import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_SCROLLBACK } from "../lib/constants";
+import { fileDrag } from "../lib/fileDrag";
 import type { TabStatus } from "../lib/tabs";
 
 // Deliberately excludes bare, common words ("confirm", "Trust", "Press enter")
@@ -317,11 +318,29 @@ export function TerminalView({
     // registers a handler) rather than hit-testing the drop position.
     const unlisten = getCurrentWebview().onDragDropEvent((event) => {
       if (event.payload.type !== "drop") return;
+      if (event.payload.paths.length === 0) return;
       const text = event.payload.paths.map(shellEscapePath).join(" ");
       void writePty(tabId, `${text} `);
     });
+
+    // In-app file drags from the source control sidebar use pointer events
+    // (HTML5 drag API is unreliable in Tauri/WKWebView). On pointerup, if
+    // the cursor is over this terminal's container and a file drag is in
+    // flight, write the path.
+    const container = containerRef.current;
+    function onPointerUp(e: PointerEvent) {
+      if (!fileDrag.path) return;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right) return;
+      if (e.clientY < rect.top || e.clientY > rect.bottom) return;
+      void writePty(tabId, `${shellEscapePath(fileDrag.path)} `);
+    }
+    window.addEventListener("pointerup", onPointerUp);
+
     return () => {
       void unlisten.then((fn) => fn());
+      window.removeEventListener("pointerup", onPointerUp);
     };
   }, [visible, tabId]);
 

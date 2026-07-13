@@ -78,6 +78,9 @@ pub fn create_ide_webview(
     let webview = window
         .add_child(
             WebviewBuilder::new(&label, WebviewUrl::External(url))
+                // Tauri's OS-level drag-drop handler otherwise swallows `dragstart`
+                // inside the webview, killing VS Code's file-explorer HTML5 DnD.
+                .disable_drag_drop_handler()
                 // Paint the webview dark before the first pixel, eliminating the
                 // white flash while VS Code's own theme stylesheet loads.
                 .initialization_script(

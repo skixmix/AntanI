@@ -1,6 +1,7 @@
 mod git;
 mod git_watcher;
 mod ide_webview;
+mod menu;
 mod pty;
 mod sound;
 mod state;
@@ -155,6 +156,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
+            app.set_menu(menu::build(app.handle())?)?;
+
             let dir = app.path().app_data_dir()?;
             app.manage(AppState::new(dir.join(PROJECTS_FILE)));
             app.manage(SettingsState::new(dir.join(SETTINGS_FILE)));
