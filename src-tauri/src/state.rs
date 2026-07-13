@@ -230,6 +230,7 @@ pub struct Settings {
     pub sound_enabled: bool,
     pub sound_ready: String,
     pub sound_waiting: String,
+    pub terminal_font_size: u8,
 }
 
 impl Default for Settings {
@@ -242,6 +243,7 @@ impl Default for Settings {
             sound_enabled: true,
             sound_ready: "Glass".to_string(),
             sound_waiting: "Ping".to_string(),
+            terminal_font_size: 14,
         }
     }
 }

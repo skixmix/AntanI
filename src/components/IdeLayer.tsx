@@ -1,31 +1,28 @@
+import { projectTabs, type TabsState } from "../lib/tabs";
 import type { Project } from "../lib/types";
 import { IdeView } from "./IdeView";
 
 interface IdeLayerProps {
   projects: Project[];
+  tabs: TabsState;
   activeProjectId: string | null;
-  ideOpen: boolean;
-  ideEverOpenedByProject: Record<string, boolean>;
 }
 
-export function IdeLayer({
-  projects,
-  activeProjectId,
-  ideOpen,
-  ideEverOpenedByProject,
-}: IdeLayerProps) {
+export function IdeLayer({ projects, tabs, activeProjectId }: IdeLayerProps) {
   return (
     <>
-      {projects.map((project) => {
-        if (!ideEverOpenedByProject[project.id]) return null;
-        return (
-          <IdeView
-            key={project.id}
-            projectId={project.id}
-            folder={project.path}
-            visible={project.id === activeProjectId && ideOpen}
-          />
-        );
+      {projects.flatMap((project) => {
+        const { tabs: projectTabList, activeTabId } = projectTabs(tabs, project.id);
+        return projectTabList
+          .filter((tab) => tab.kind === "ide")
+          .map((tab) => (
+            <IdeView
+              key={tab.id}
+              projectId={project.id}
+              folder={project.path}
+              visible={project.id === activeProjectId && tab.id === activeTabId}
+            />
+          ));
       })}
     </>
   );

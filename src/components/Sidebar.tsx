@@ -1,6 +1,8 @@
 import { openPath } from "@tauri-apps/plugin-opener";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type React from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { projectInitials } from "../lib/constants";
+import { fileDrag } from "../lib/fileDrag";
 import type { Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
 import { ContextMenu } from "./ContextMenu";
@@ -10,6 +12,7 @@ import { ProjectRow } from "./ProjectRow";
 interface SidebarProps {
   projects: Project[];
   activeProjectId: string | null;
+  projectsWithActivity: Set<string>;
   projectStatuses: Record<string, "busy" | "waiting">;
   projectNeedsAttention: Record<string, "ready" | "waiting">;
   onAdd: () => void;
@@ -52,6 +55,7 @@ function readPersistedCollapsed(): boolean {
 export function Sidebar({
   projects,
   activeProjectId,
+  projectsWithActivity,
   projectStatuses,
   projectNeedsAttention,
   onAdd,
@@ -64,23 +68,116 @@ export function Sidebar({
   onFreeRam,
   onOpenSettings,
 }: SidebarProps) {
+  const activeProjects = useMemo(
+    () => projects.filter((p) => projectsWithActivity.has(p.id)),
+    [projects, projectsWithActivity],
+  );
+  const inactiveProjects = useMemo(
+    () => projects.filter((p) => !projectsWithActivity.has(p.id)),
+    [projects, projectsWithActivity],
+  );
+  const hasSections = activeProjects.length > 0;
+
+  const [activeProjectOrder, setActiveProjectOrder] = useState<string[]>(() =>
+    activeProjects.map((p) => p.id),
+  );
+
+  const activeProjectIds = useMemo(() => activeProjects.map((p) => p.id), [activeProjects]);
+
+  useEffect(() => {
+    setActiveProjectOrder((prev) => {
+      const incoming = new Set(activeProjectIds);
+      const kept = prev.filter((id) => incoming.has(id));
+      const added = activeProjectIds.filter((id) => !prev.includes(id));
+      return [...kept, ...added];
+    });
+  }, [activeProjectIds]);
+
+  const orderedActiveProjects = activeProjectOrder
+    .map((id) => activeProjects.find((p) => p.id === id))
+    .filter((p): p is (typeof activeProjects)[number] => p !== undefined);
+
   const { draggingId, insertBeforeId, startDrag } = useDragReorder(
     "projects",
     true,
     (fromId, insertBefore) => {
-      const ids = projects.map((p) => p.id);
-      const filtered = ids.filter((id) => id !== fromId);
+      const inactiveIds = inactiveProjects.map((p) => p.id);
+      const filtered = inactiveIds.filter((id) => id !== fromId);
       if (insertBefore === null) {
         filtered.push(fromId);
       } else {
         const idx = filtered.indexOf(insertBefore);
         if (idx !== -1) filtered.splice(idx, 0, fromId);
       }
-      onReorder(filtered);
+      const activeIds = activeProjectOrder;
+      onReorder([...filtered, ...activeIds]);
     },
   );
+
+  const {
+    draggingId: activeDraggingId,
+    insertBeforeId: activeInsertBeforeId,
+    startDrag: startActiveDrag,
+  } = useDragReorder("projects-active", true, (fromId, insertBefore) => {
+    setActiveProjectOrder((prev) => {
+      const filtered = prev.filter((id) => id !== fromId);
+      if (insertBefore === null) {
+        filtered.push(fromId);
+      } else {
+        const idx = filtered.indexOf(insertBefore);
+        if (idx !== -1) filtered.splice(idx, 0, fromId);
+      }
+      return filtered;
+    });
+  });
+  function withPathDrag(project: Project, reorderStart: (e: React.PointerEvent) => void) {
+    return (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      fileDrag.path = project.path;
+
+      const ghost = document.createElement("div");
+      ghost.textContent = project.name;
+      ghost.style.cssText = [
+        "position:fixed",
+        "pointer-events:none",
+        "z-index:9999",
+        "padding:3px 8px",
+        "border-radius:4px",
+        "font-size:11px",
+        "font-family:Menlo,monospace",
+        "white-space:nowrap",
+        "background:rgba(40,42,54,0.95)",
+        "border:1px solid rgba(255,255,255,0.12)",
+        "color:rgba(255,255,255,0.85)",
+        "box-shadow:0 2px 8px rgba(0,0,0,0.4)",
+      ].join(";");
+      ghost.style.left = `${e.clientX + 14}px`;
+      ghost.style.top = `${e.clientY + 6}px`;
+      document.body.appendChild(ghost);
+
+      function onMove(ev: PointerEvent) {
+        ghost.style.left = `${ev.clientX + 14}px`;
+        ghost.style.top = `${ev.clientY + 6}px`;
+      }
+      function onUp() {
+        fileDrag.path = null;
+        document.body.style.userSelect = "";
+        document.body.style.cursor = "";
+        ghost.remove();
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      }
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+
+      reorderStart(e);
+    };
+  }
+
   const [width, setWidth] = useState(readPersistedWidth);
   const [collapsed, setCollapsed] = useState(readPersistedCollapsed);
+  const [activeSectionOpen, setActiveSectionOpen] = useState(false);
+  const [inactiveSectionOpen, setInactiveSectionOpen] = useState(true);
   const [collapsedCtxMenu, setCollapsedCtxMenu] = useState<{
     project: Project;
     x: number;
@@ -95,6 +192,14 @@ export function Sidebar({
   const activeRowRef = useRef<HTMLDivElement>(null);
   const activeCollapsedRowRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const prevHasSectionsRef = useRef(hasSections);
+
+  useEffect(() => {
+    if (!prevHasSectionsRef.current && hasSections) {
+      setActiveSectionOpen(true);
+    }
+    prevHasSectionsRef.current = hasSections;
+  }, [hasSections]);
 
   useEffect(() => {
     try {
@@ -282,6 +387,81 @@ export function Sidebar({
               Add project
             </button>
           </div>
+        ) : hasSections ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setActiveSectionOpen((v) => !v)}
+              className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/30 hover:text-white/50 transition-colors no-select"
+              style={{ borderBottom: "1px solid var(--color-sidebar-border)" }}
+            >
+              <ChevronRightIcon
+                size={9}
+                className={`shrink-0 transition-transform ${activeSectionOpen ? "rotate-90" : ""}`}
+              />
+              Active
+            </button>
+            {activeSectionOpen && (
+              <>
+                {orderedActiveProjects.map((project) => (
+                  <ProjectRow
+                    key={project.id}
+                    dragScope="projects-active"
+                    project={project}
+                    active={project.id === activeProjectId}
+                    status={projectStatuses[project.id]}
+                    needsAttention={projectNeedsAttention[project.id]}
+                    rowRef={project.id === activeProjectId ? activeRowRef : undefined}
+                    onSelect={() => onSelect(project.id)}
+                    onRename={(name) => onRename(project.id, name)}
+                    onRecolor={(color) => onRecolor(project.id, color)}
+                    onRemove={() => onRemove(project.id)}
+                    onPointerDown={withPathDrag(project, (e) => startActiveDrag(e, project.id))}
+                    isDragging={activeDraggingId === project.id}
+                    showInsertBefore={
+                      activeInsertBeforeId === project.id && activeDraggingId !== project.id
+                    }
+                  />
+                ))}
+                {activeDraggingId && activeInsertBeforeId === null && (
+                  <div className="mx-2 h-0.5 rounded-full bg-primary my-0.5" />
+                )}
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setInactiveSectionOpen((v) => !v)}
+              className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/30 hover:text-white/50 transition-colors no-select"
+              style={{ borderBottom: "1px solid var(--color-sidebar-border)" }}
+            >
+              <ChevronRightIcon
+                size={9}
+                className={`shrink-0 transition-transform ${inactiveSectionOpen ? "rotate-90" : ""}`}
+              />
+              Inactive
+            </button>
+            {inactiveSectionOpen &&
+              inactiveProjects.map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  active={project.id === activeProjectId}
+                  status={projectStatuses[project.id]}
+                  needsAttention={projectNeedsAttention[project.id]}
+                  rowRef={project.id === activeProjectId ? activeRowRef : undefined}
+                  onSelect={() => onSelect(project.id)}
+                  onRename={(name) => onRename(project.id, name)}
+                  onRecolor={(color) => onRecolor(project.id, color)}
+                  onRemove={() => onRemove(project.id)}
+                  onPointerDown={withPathDrag(project, (e) => startDrag(e, project.id))}
+                  isDragging={draggingId === project.id}
+                  showInsertBefore={insertBeforeId === project.id && draggingId !== project.id}
+                />
+              ))}
+            {draggingId && insertBeforeId === null && (
+              <div className="mx-2 h-0.5 rounded-full bg-primary my-0.5" />
+            )}
+          </>
         ) : (
           <>
             {projects.map((project) => (
@@ -296,7 +476,7 @@ export function Sidebar({
                 onRename={(name) => onRename(project.id, name)}
                 onRecolor={(color) => onRecolor(project.id, color)}
                 onRemove={() => onRemove(project.id)}
-                onPointerDown={(e) => startDrag(e, project.id)}
+                onPointerDown={withPathDrag(project, (e) => startDrag(e, project.id))}
                 isDragging={draggingId === project.id}
                 showInsertBefore={insertBeforeId === project.id && draggingId !== project.id}
               />

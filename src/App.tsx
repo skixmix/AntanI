@@ -80,8 +80,6 @@ function App() {
   // looked at yet — drives the sidebar/tab-chip attention glow. Distinct from
   // tabStatuses: a tab can be "waiting" but no longer need a glow once viewed.
   const [needsAttention, setNeedsAttention] = useState<Record<string, true>>({});
-  const [ideOpenByProject, setIdeOpenByProject] = useState<Record<string, boolean>>({});
-  const [ideEverOpenedByProject, setIdeEverOpenedByProject] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [showFreeRamModal, setShowFreeRamModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -206,7 +204,6 @@ function App() {
     (kind: TabKind) => {
       if (!activeId || !settings) return;
       setTabs((t) => addTab(t, activeId, createTab(kind, settings)));
-      setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
     },
     [activeId, settings],
   );
@@ -215,7 +212,6 @@ function App() {
     (cmd: CustomCommand) => {
       if (!activeId) return;
       setTabs((t) => addTab(t, activeId, createCustomTab(cmd)));
-      setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
     },
     [activeId],
   );
@@ -224,7 +220,6 @@ function App() {
     (tabId: string) => {
       if (!activeId) return;
       setTabs((t) => setActiveTab(t, activeId, tabId));
-      setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
     },
     [activeId],
   );
@@ -332,16 +327,17 @@ function App() {
 
   const openIdeNow = useCallback(
     (id: string) => {
-      setIdeEverOpenedByProject((prev) => ({ ...prev, [id]: true }));
-      setIdeOpenByProject((prev) => ({ ...prev, [id]: true }));
+      if (!settings) return;
+      setTabs((t) => {
+        const existing = projectTabs(t, id).tabs.find((tab) => tab.kind === "ide");
+        if (existing) return setActiveTab(t, id, existing.id);
+        return addTab(t, id, createTab("ide", settings));
+      });
       void refreshMem();
     },
-    [refreshMem],
+    [settings, refreshMem],
   );
 
-  // The very first time ever (across the whole app history, not per-project)
-  // that the user opens the embedded VS Code, park the open and show the
-  // one-time import prompt instead — actual opening resumes once it's answered.
   const requestOpenIde = useCallback(
     (id: string) => {
       if (settings && !settings.vscodeImportPrompted) {
@@ -354,17 +350,6 @@ function App() {
     [settings, openIdeNow],
   );
 
-  // Fully stops VS Code for the active project — the only action that does,
-  // as opposed to selectTab/handleOpenIde which just hide/show its pane.
-  const handleCloseIde = useCallback(() => {
-    if (!activeId) return;
-    setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
-    setIdeEverOpenedByProject((prev) => ({ ...prev, [activeId]: false }));
-    void refreshMem();
-  }, [activeId, refreshMem]);
-
-  // Unlike handleCloseIde, always ends in "open" — used when an action (e.g.
-  // viewing a diff) needs the IDE tab visible, regardless of its prior state.
   const handleOpenIde = useCallback(() => {
     if (!activeId) return;
     requestOpenIde(activeId);
@@ -404,8 +389,20 @@ function App() {
 
   const handleKillAllIde = useCallback(async () => {
     await api.closeAllIdeWebviews();
-    setIdeOpenByProject({});
-    setIdeEverOpenedByProject({});
+    setTabs((t) => {
+      const next = { ...t };
+      for (const [projectId, ptabs] of Object.entries(next)) {
+        const filtered = ptabs.tabs.filter((tab) => tab.kind !== "ide");
+        if (filtered.length !== ptabs.tabs.length) {
+          const activeTabId =
+            ptabs.activeTabId && filtered.some((tab) => tab.id === ptabs.activeTabId)
+              ? ptabs.activeTabId
+              : (filtered[filtered.length - 1]?.id ?? null);
+          next[projectId] = { tabs: filtered, activeTabId };
+        }
+      }
+      return next;
+    });
     setShowFreeRamModal(false);
     void refreshMem();
   }, [refreshMem]);
@@ -495,6 +492,14 @@ function App() {
     return result;
   }, [tabs, needsAttention, tabStatuses]);
 
+  const projectsWithActivity = useMemo(() => {
+    const result = new Set<string>();
+    for (const [id, ptabs] of Object.entries(tabs)) {
+      if (ptabs.tabs.length > 0) result.add(id);
+    }
+    return result;
+  }, [tabs]);
+
   if (!data || !settings) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -504,9 +509,9 @@ function App() {
   }
 
   const active = data.projects.find((p) => p.id === data.activeProjectId) ?? null;
-  const ideOpen = activeId ? (ideOpenByProject[activeId] ?? false) : false;
-  const ideRunning = activeId ? (ideEverOpenedByProject[activeId] ?? false) : false;
-  const ideInstanceCount = Object.values(ideEverOpenedByProject).filter(Boolean).length;
+  const ideInstanceCount = Object.values(tabs).filter((ptabs) =>
+    ptabs.tabs.some((t) => t.kind === "ide"),
+  ).length;
   const showFreeRamButton = ideInstanceCount > 0 && memMb !== null && memMb >= 1024;
 
   return (
@@ -520,6 +525,7 @@ function App() {
         <Sidebar
           projects={data.projects}
           activeProjectId={data.activeProjectId}
+          projectsWithActivity={projectsWithActivity}
           projectStatuses={projectStatuses}
           projectNeedsAttention={projectNeedsAttention}
           onAdd={handleAdd}
@@ -538,11 +544,7 @@ function App() {
           tabs={tabs}
           tabStatuses={tabStatuses}
           needsAttention={needsAttention}
-          ideOpen={ideOpen}
-          ideRunning={ideRunning}
-          ideEverOpenedByProject={ideEverOpenedByProject}
-          ideInstanceCount={ideInstanceCount}
-          memMb={memMb}
+          terminalFontSize={settings.terminalFontSize}
           onOpenTab={openTab}
           onOpenCustomTab={openCustomTab}
           onOpenCommandSettings={() => setSettingsInitialTab("commands")}
@@ -551,7 +553,6 @@ function App() {
           onRenameTab={handleRenameTab}
           onRecolorTab={handleRecolorTab}
           onReorderTab={handleReorderTab}
-          onCloseIde={handleCloseIde}
           onOpenIde={handleOpenIde}
           onStatusChange={handleStatusChange}
         />
@@ -577,9 +578,20 @@ function App() {
         <ImportVscodeModal
           onClose={() => {
             setShowImportModal(false);
-            // Reset IDE state so IdeView remounts cleanly on next open.
-            setIdeOpenByProject({});
-            setIdeEverOpenedByProject({});
+            setTabs((t) => {
+              const next = { ...t };
+              for (const [projectId, ptabs] of Object.entries(next)) {
+                const filtered = ptabs.tabs.filter((tab) => tab.kind !== "ide");
+                if (filtered.length !== ptabs.tabs.length) {
+                  const activeTabId =
+                    ptabs.activeTabId && filtered.some((tab) => tab.id === ptabs.activeTabId)
+                      ? ptabs.activeTabId
+                      : (filtered[filtered.length - 1]?.id ?? null);
+                  next[projectId] = { tabs: filtered, activeTabId };
+                }
+              }
+              return next;
+            });
             void refreshMem();
           }}
         />

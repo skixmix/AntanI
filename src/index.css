@@ -107,3 +107,17 @@ button,
     box-shadow: inset 0 0 14px 2px rgba(74, 222, 128, 0.55);
   }
 }
+
+/* xterm reserves scrollbar width on .xterm-viewport even when no scrollbar is
+   visible, leaving a gap on the right. Hide it — xterm's own .xterm-scroll-area
+   handles overflow internally. */
+.xterm .xterm-viewport {
+  overflow-y: hidden !important;
+}
+
+.scrollbar-hidden {
+  scrollbar-width: none;
+}
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}

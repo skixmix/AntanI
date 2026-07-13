@@ -1,17 +1,9 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { projectInitials } from "../lib/constants";
 import type { Tab, TabKind, TabStatus } from "../lib/tabs";
 import type { CustomCommand, Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
-import {
-  AnthropicIcon,
-  CloseIcon,
-  CustomCommandIcon,
-  OpenCodeIcon,
-  TerminalIcon,
-  VSCodeIcon,
-  WrenchIcon,
-} from "./Icons";
+import { AnthropicIcon, CustomCommandIcon, OpenCodeIcon, VSCodeIcon, WrenchIcon } from "./Icons";
 import { TabChip } from "./TabChip";
 
 interface TabStripProps {
@@ -20,10 +12,7 @@ interface TabStripProps {
   tabStatuses: Record<string, TabStatus>;
   needsAttention: Record<string, true>;
   project: Project;
-  ideOpen: boolean;
-  ideRunning: boolean;
-  ideInstanceCount: number;
-  memMb: number | null;
+  ideTabId: string | null;
   onOpen: (kind: TabKind) => void;
   onOpenCustom: (cmd: CustomCommand) => void;
   onOpenCommandSettings: () => void;
@@ -33,11 +22,9 @@ interface TabStripProps {
   onRecolor: (tabId: string, color: string) => void;
   onReorder: (fromId: string, insertBeforeId: string | null) => void;
   onOpenIde: () => void;
-  onCloseIde: () => void;
 }
 
 const QUICK_OPEN: { kind: TabKind; label: string; icon: ReactNode }[] = [
-  { kind: "terminal", label: "Terminal", icon: <TerminalIcon size={13} /> },
   { kind: "opencode", label: "OpenCode", icon: <OpenCodeIcon size={13} /> },
   { kind: "claude", label: "Claude", icon: <AnthropicIcon size={13} /> },
 ];
@@ -48,10 +35,7 @@ export function TabStrip({
   tabStatuses,
   needsAttention,
   project,
-  ideOpen,
-  ideRunning,
-  ideInstanceCount,
-  memMb,
+  ideTabId,
   onOpen,
   onOpenCustom,
   onOpenCommandSettings,
@@ -61,29 +45,26 @@ export function TabStrip({
   onRecolor,
   onReorder,
   onOpenIde,
-  onCloseIde,
 }: TabStripProps) {
   const { draggingId, insertBeforeId, startDrag } = useDragReorder("tabs", false, onReorder);
 
-  const memLabel =
-    memMb === null ? "off" : memMb >= 1024 ? `${(memMb / 1024).toFixed(1)} GB` : `${memMb} MB`;
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const memColor =
-    memMb === null
-      ? "text-muted-foreground/70"
-      : memMb >= 3072
-        ? "text-red-400"
-        : memMb >= 1536
-          ? "text-yellow-400"
-          : "text-muted-foreground/70";
+  useEffect(() => {
+    if (!activeTabId || !scrollRef.current) return;
+    const container = scrollRef.current;
+    const el = container.querySelector<HTMLElement>(`[data-drag-id="${activeTabId}"]`);
+    if (!el) return;
+    const cr = container.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    const PEEK = 48;
+    container.scrollTo({ left: Math.max(0, container.scrollLeft + er.left - cr.left - PEEK), behavior: "smooth" });
+  }, [activeTabId]);
 
   return (
     <div className="flex flex-col border-b border-border shrink-0">
       {/* Tab row */}
-      <div
-        className="flex items-stretch overflow-x-auto"
-        style={{ borderBottom: "1px solid var(--color-border)", height: 52 }}
-      >
+      <div className="flex items-stretch" style={{ borderBottom: "1px solid var(--color-border)", height: 52 }}>
         {/* Project avatar — extra left padding clears room for the projects
             sidebar's floating collapse toggle, which pokes in from the left edge */}
         <div
@@ -99,83 +80,49 @@ export function TabStrip({
           </span>
         </div>
 
-        {/* Tabs */}
-        {tabs.map((tab) => (
-          <TabChip
-            key={tab.id}
-            tab={tab}
-            active={!ideOpen && tab.id === activeTabId}
-            status={tabStatuses[tab.id]}
-            needsAttention={!!needsAttention[tab.id]}
-            isDragging={draggingId === tab.id}
-            showInsertBefore={insertBeforeId === tab.id && draggingId !== tab.id}
-            onSelect={() => onSelect(tab.id)}
-            onClose={() => onClose(tab.id)}
-            onRename={(title) => onRename(tab.id, title)}
-            onRecolor={(color) => onRecolor(tab.id, color)}
-            onPointerDown={(e) => startDrag(e, tab.id)}
-          />
-        ))}
-
-        {/* Append-end insertion bar */}
-        {draggingId && insertBeforeId === null && (
-          <div className="w-0.5 self-stretch shrink-0 bg-primary/80 rounded-full mx-0.5 my-1" />
-        )}
-
-        {/* + new tab — bordered pill */}
-        <div className="flex items-center px-2 shrink-0">
-          <button
-            type="button"
-            title="New terminal tab"
-            onClick={() => onOpen("terminal")}
-            className="flex h-7 w-7 items-center justify-center rounded border border-border text-muted-foreground hover:border-primary/50 hover:bg-secondary hover:text-foreground transition-colors text-base leading-none"
-          >
-            +
-          </button>
-        </div>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* VS Code open/close — extra right padding clears room for the source
-            control sidebar's floating collapse toggle, which pokes in from the right edge */}
+        {/* Scrollable tabs — flex-1 so it takes all remaining space */}
         <div
-          onClick={onOpenIde}
-          title={ideRunning ? "Show VS Code" : "Open embedded VS Code"}
-          className={`group flex shrink-0 flex-col items-center justify-center gap-0.5 border-l border-border pl-3 pr-5 cursor-pointer transition-colors ${
-            ideOpen
-              ? "bg-accent text-foreground"
-              : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-          }`}
+          ref={scrollRef}
+          className="flex items-stretch flex-1 min-w-0 overflow-x-auto scrollbar-hidden"
         >
-          <div className="flex items-center gap-2 text-xs font-medium">
-            {ideRunning && (
-              <span className="relative flex h-3 w-3 shrink-0 items-center justify-center">
-                <span className="flex items-center justify-center transition-opacity group-hover:opacity-0">
-                  <span className="h-2 w-2 rounded-full bg-green-400" title="Running" />
-                </span>
-                <button
-                  type="button"
-                  aria-label="Close VS Code"
-                  title="Close VS Code"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCloseIde();
-                  }}
-                  className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-                >
-                  <CloseIcon size={11} />
-                </button>
-              </span>
-            )}
-            <VSCodeIcon size={14} className="text-[#007ACC]" />
-            VS Code
-          </div>
-          <div className={`text-[10px] leading-none ${memColor}`}>
-            {memLabel}
-            {memMb !== null && ideInstanceCount > 1 && ` · ${ideInstanceCount} open`}
+          {tabs.map((tab) => (
+            <TabChip
+              key={tab.id}
+              tab={tab}
+              active={tab.id === activeTabId}
+              status={tabStatuses[tab.id]}
+              needsAttention={!!needsAttention[tab.id]}
+              isDragging={draggingId === tab.id}
+              showInsertBefore={insertBeforeId === tab.id && draggingId !== tab.id}
+              onSelect={() => onSelect(tab.id)}
+              onClose={() => onClose(tab.id)}
+              onRename={(title) => onRename(tab.id, title)}
+              onRecolor={(color) => onRecolor(tab.id, color)}
+              onPointerDown={(e) => startDrag(e, tab.id)}
+            />
+          ))}
+
+          {/* Append-end insertion bar */}
+          {draggingId && insertBeforeId === null && (
+            <div className="w-0.5 self-stretch shrink-0 bg-primary/80 rounded-full mx-0.5 my-1" />
+          )}
+
+          {/* + new tab — bordered pill */}
+          <div className="flex items-center px-2 shrink-0">
+            <button
+              type="button"
+              title="New terminal tab"
+              onClick={() => onOpen("terminal")}
+              className="flex h-7 w-7 items-center justify-center rounded border border-border text-muted-foreground hover:border-primary/50 hover:bg-secondary hover:text-foreground transition-colors text-base leading-none"
+            >
+              +
+            </button>
           </div>
         </div>
+
+        {/* Spacer — extra right padding clears room for the source control
+            sidebar's floating collapse toggle, which pokes in from the right edge */}
+        <div className="shrink-0 pr-5" />
       </div>
 
       {/* Quick-open toolbar */}
@@ -193,6 +140,17 @@ export function TabStrip({
 
         {/* Quick-open buttons */}
         <div className="flex items-center gap-0.5 px-1.5">
+          {/* VS Code — routes to existing ide tab or opens a new one */}
+          <button
+            type="button"
+            title={ideTabId ? "Switch to VS Code tab" : "Open VS Code tab"}
+            onClick={onOpenIde}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          >
+            <VSCodeIcon size={13} className="text-[#007ACC]" />
+            <span>VS Code</span>
+          </button>
+
           {QUICK_OPEN.map((item) => (
             <button
               key={item.kind}

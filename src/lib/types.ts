@@ -29,6 +29,7 @@ export interface Settings {
   soundEnabled: boolean;
   soundReady: string;
   soundWaiting: string;
+  terminalFontSize: number;
 }
 
 export type FileChangeKind = "added" | "modified" | "deleted";

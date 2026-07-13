@@ -25,6 +25,7 @@ const SETTINGS: Settings = {
   soundEnabled: true,
   soundReady: "Glass",
   soundWaiting: "Ping",
+  terminalFontSize: 14,
 };
 const PROJECT = "proj-1";
 

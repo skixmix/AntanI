@@ -63,12 +63,16 @@ export function TabChip({
 
   useEffect(() => {
     if (!ctxMenu) return;
+    window.dispatchEvent(new CustomEvent("antani:picker-open"));
     const close = () => setCtxMenu(null);
     window.addEventListener("click", close);
     window.addEventListener("contextmenu", close);
+    window.addEventListener("antani:close-ctx-menus", close);
     return () => {
+      window.dispatchEvent(new CustomEvent("antani:picker-close"));
       window.removeEventListener("click", close);
       window.removeEventListener("contextmenu", close);
+      window.removeEventListener("antani:close-ctx-menus", close);
     };
   }, [ctxMenu]);
 
@@ -91,6 +95,7 @@ export function TabChip({
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
+        window.dispatchEvent(new CustomEvent("antani:close-ctx-menus"));
         setCtxMenu({ x: e.clientX, y: e.clientY });
       }}
       className={`group relative flex h-full shrink-0 items-center gap-2 border-b-2 border-r border-r-border px-3 text-sm no-select cursor-pointer transition-opacity ${

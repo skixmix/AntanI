@@ -365,68 +365,97 @@ export function SettingsPage({
           {/* Tab content */}
           <div className="flex min-w-0 flex-1 flex-col gap-4">
             {tab === "general" && (
-              <SectionCard
-                title="Notifications"
-                description="Notify when an agent tab becomes ready or needs input, while it isn't the focused tab."
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-xs text-muted-foreground">
-                    {settings.notificationsEnabled ? "Enabled" : "Disabled"}
-                  </span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={settings.notificationsEnabled}
-                    onClick={() =>
-                      onUpdateSettings({ notificationsEnabled: !settings.notificationsEnabled })
-                    }
-                    className={`relative h-5 w-9 shrink-0 appearance-none rounded-full border-0 p-0 outline-none transition-colors ${
-                      settings.notificationsEnabled ? "bg-primary" : "bg-secondary"
-                    }`}
-                  >
-                    <span
-                      className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                        settings.notificationsEnabled ? "translate-x-[18px]" : "translate-x-0"
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="flex flex-col gap-3 border-t border-border pt-3">
+              <>
+                <SectionCard title="Terminal" description="Appearance settings for terminal tabs.">
+                  <label className="flex items-center justify-between gap-4">
+                    <span className="text-xs font-medium text-foreground">Font size</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={8}
+                        max={32}
+                        value={settings.terminalFontSize}
+                        onChange={(e) => {
+                          const v = parseInt(e.currentTarget.value, 10);
+                          if (v >= 8 && v <= 32) onUpdateSettings({ terminalFontSize: v });
+                        }}
+                        className="w-16 rounded-md bg-tertiary px-2.5 py-1.5 text-xs text-foreground outline-none ring-1 ring-border transition-shadow focus:ring-primary/60 text-center tabular-nums"
+                      />
+                      {settings.terminalFontSize !== 14 && (
+                        <button
+                          type="button"
+                          onClick={() => onUpdateSettings({ terminalFontSize: 14 })}
+                          className="rounded-md px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                  </label>
+                </SectionCard>
+                <SectionCard
+                  title="Notifications"
+                  description="Notify when an agent tab becomes ready or needs input, while it isn't the focused tab."
+                >
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-xs font-medium text-foreground">Sound</span>
+                    <span className="text-xs text-muted-foreground">
+                      {settings.notificationsEnabled ? "Enabled" : "Disabled"}
+                    </span>
                     <button
                       type="button"
                       role="switch"
-                      aria-checked={settings.soundEnabled}
-                      onClick={() => onUpdateSettings({ soundEnabled: !settings.soundEnabled })}
+                      aria-checked={settings.notificationsEnabled}
+                      onClick={() =>
+                        onUpdateSettings({ notificationsEnabled: !settings.notificationsEnabled })
+                      }
                       className={`relative h-5 w-9 shrink-0 appearance-none rounded-full border-0 p-0 outline-none transition-colors ${
-                        settings.soundEnabled ? "bg-primary" : "bg-secondary"
+                        settings.notificationsEnabled ? "bg-primary" : "bg-secondary"
                       }`}
                     >
                       <span
                         className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                          settings.soundEnabled ? "translate-x-[18px]" : "translate-x-0"
+                          settings.notificationsEnabled ? "translate-x-[18px]" : "translate-x-0"
                         }`}
                       />
                     </button>
                   </div>
-                  {settings.soundEnabled && (
-                    <div className="flex flex-col gap-2.5">
-                      <SoundPicker
-                        label="Agent ready sound"
-                        value={settings.soundReady}
-                        onChange={(soundReady) => onUpdateSettings({ soundReady })}
-                      />
-                      <SoundPicker
-                        label="Agent waiting sound"
-                        value={settings.soundWaiting}
-                        onChange={(soundWaiting) => onUpdateSettings({ soundWaiting })}
-                      />
+
+                  <div className="flex flex-col gap-3 border-t border-border pt-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-xs font-medium text-foreground">Sound</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={settings.soundEnabled}
+                        onClick={() => onUpdateSettings({ soundEnabled: !settings.soundEnabled })}
+                        className={`relative h-5 w-9 shrink-0 appearance-none rounded-full border-0 p-0 outline-none transition-colors ${
+                          settings.soundEnabled ? "bg-primary" : "bg-secondary"
+                        }`}
+                      >
+                        <span
+                          className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                            settings.soundEnabled ? "translate-x-[18px]" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
                     </div>
-                  )}
-                </div>
-              </SectionCard>
+                    {settings.soundEnabled && (
+                      <div className="flex flex-col gap-2.5">
+                        <SoundPicker
+                          label="Agent ready sound"
+                          value={settings.soundReady}
+                          onChange={(soundReady) => onUpdateSettings({ soundReady })}
+                        />
+                        <SoundPicker
+                          label="Agent waiting sound"
+                          value={settings.soundWaiting}
+                          onChange={(soundWaiting) => onUpdateSettings({ soundWaiting })}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </SectionCard>
+              </>
             )}
 
             {tab === "commands" && (

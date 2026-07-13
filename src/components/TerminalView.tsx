@@ -7,7 +7,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { killPty, onPtyExit, resizePty, spawnPty, writePty } from "../lib/api.ipc";
 import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_SCROLLBACK } from "../lib/constants";
 import { fileDrag } from "../lib/fileDrag";
@@ -27,9 +27,6 @@ const WAITING_RE =
 // back, restarting its CSS animation and making it look like it never
 // settles into a smooth spin.
 const SILENCE_MS = 3500;
-const DEFAULT_FONT_SIZE = 14;
-const MIN_FONT_SIZE = 8;
-const MAX_FONT_SIZE = 32;
 
 // Same convention as Terminal.app/iTerm2: wrap each dropped path in single
 // quotes so spaces and other shell-special characters survive as literal
@@ -43,6 +40,7 @@ interface TerminalViewProps {
   cwd: string;
   startupCommand: string | null;
   visible: boolean;
+  fontSize: number;
   isAi?: boolean;
   onStatusChange?: (tabId: string, status: TabStatus) => void;
 }
@@ -52,14 +50,13 @@ export function TerminalView({
   cwd,
   startupCommand,
   visible,
+  fontSize,
   isAi,
   onStatusChange,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
-  const fontSizeRef = useRef(DEFAULT_FONT_SIZE);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -71,7 +68,7 @@ export function TerminalView({
       theme: { background: "#252830" },
       lineHeight: 1,
       fontFamily: "Menlo, monospace",
-      fontSize: fontSizeRef.current,
+      fontSize,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -299,7 +296,7 @@ export function TerminalView({
       }
       void spawned.finally(() => killPty(tabId));
     };
-  }, [tabId, cwd, startupCommand, isAi, onStatusChange]);
+  }, [tabId, cwd, startupCommand, fontSize, isAi, onStatusChange]);
 
   useEffect(() => {
     if (!visible) return;
@@ -344,35 +341,9 @@ export function TerminalView({
     };
   }, [visible, tabId]);
 
-  function zoom(delta: number) {
-    setFontSize((s) => {
-      const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, s + delta));
-      fontSizeRef.current = next;
-      const term = termRef.current;
-      const fit = fitRef.current;
-      if (term && fit) {
-        term.options.fontSize = next;
-        fit.fit();
-        void resizePty(tabId, term.cols, term.rows);
-      }
-      return next;
-    });
-  }
-
   return (
     <div className="absolute inset-0" style={{ display: visible ? "block" : "none" }}>
-      <div className="absolute inset-0 p-1.5">
-        <div ref={containerRef} className="h-full w-full overflow-hidden" />
-      </div>
-      <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded bg-black/40 px-2 py-1 text-[11px] text-white/60">
-        <button type="button" className="hover:text-white" onClick={() => zoom(-1)}>
-          −
-        </button>
-        <span className="tabular-nums w-8 text-center text-white/80">{fontSize}px</span>
-        <button type="button" className="hover:text-white" onClick={() => zoom(1)}>
-          +
-        </button>
-      </div>
+      <div ref={containerRef} className="absolute inset-0 overflow-hidden" style={{ backgroundColor: "#252830" }} />
     </div>
   );
 }
