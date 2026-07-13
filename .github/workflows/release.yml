@@ -83,10 +83,13 @@ jobs:
 
           # Self-signed root isn't trusted by default, which makes codesign fail to
           # resolve the identity even though it was imported successfully. Since
-          # there's no Apple CA in the chain, we have to trust it explicitly, scoped
-          # to this throwaway runner keychain only.
+          # there's no Apple CA in the chain, we have to trust it explicitly.
+          # `security add-trusted-cert -k <user keychain>` triggers a macOS Security
+          # Agent GUI prompt that hangs forever on a headless runner, so add it to
+          # System.keychain via sudo instead — GitHub-hosted runners have
+          # passwordless sudo, so this stays non-interactive.
           openssl pkcs12 -in "$CERT_P12_PATH" -clcerts -nokeys -passin pass:"$APPLE_CERTIFICATE_PASSWORD" -legacy -out "$CERT_PEM_PATH"
-          security add-trusted-cert -p codeSign -k "$KEYCHAIN_PATH" "$CERT_PEM_PATH"
+          sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$CERT_PEM_PATH"
 
           security list-keychain -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
 
