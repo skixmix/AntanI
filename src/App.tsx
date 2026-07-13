@@ -37,6 +37,10 @@ function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [tabs, setTabs] = useState<TabsState>({});
   const [tabStatuses, setTabStatuses] = useState<Record<string, TabStatus>>({});
+  // Plain-terminal-tab counterpart to tabStatuses: whether a job (not the
+  // login shell) currently holds the pty's foreground process group. No
+  // notification/glow semantics attached, unlike tabStatuses.
+  const [runningTabs, setRunningTabs] = useState<Record<string, true>>({});
   // Tabs/projects with an unresolved "ready"/"waiting" event the user hasn't
   // looked at yet — drives the sidebar/tab-chip attention glow. Distinct from
   // tabStatuses: a tab can be "waiting" but no longer need a glow once viewed.
@@ -229,6 +233,12 @@ function App() {
         delete next[tabId];
         return next;
       });
+      setRunningTabs((s) => {
+        if (!(tabId in s)) return s;
+        const next = { ...s };
+        delete next[tabId];
+        return next;
+      });
       setNeedsAttention((s) => {
         if (!(tabId in s)) return s;
         const next = { ...s };
@@ -291,6 +301,16 @@ function App() {
       }
     }
     setTabStatuses(tabStatusesRef.current);
+  }, []);
+  const handleRunningChange = useCallback((tabId: string, running: boolean) => {
+    setRunningTabs((s) => {
+      const wasRunning = tabId in s;
+      if (running === wasRunning) return s;
+      const next = { ...s };
+      if (running) next[tabId] = true;
+      else delete next[tabId];
+      return next;
+    });
   }, []);
   const handleRenameTab = useCallback(
     (tabId: string, title: string) =>
@@ -498,6 +518,7 @@ function App() {
           projects={data.projects}
           tabs={tabs}
           tabStatuses={tabStatuses}
+          runningTabs={runningTabs}
           needsAttention={needsAttention}
           terminalFontSize={settings.terminalFontSize}
           onOpenTab={openTab}
@@ -513,6 +534,7 @@ function App() {
           onReorderTab={handleReorderTab}
           onOpenIde={handleOpenIde}
           onStatusChange={handleStatusChange}
+          onRunningChange={handleRunningChange}
         />
       </div>
 

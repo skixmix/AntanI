@@ -8,7 +8,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
-import { killPty, onPtyExit, resizePty, spawnPty, writePty } from "../lib/api.ipc";
+import { killPty, onPtyExit, onPtyRunning, resizePty, spawnPty, writePty } from "../lib/api.ipc";
 import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_SCROLLBACK } from "../lib/constants";
 import { fileDrag } from "../lib/fileDrag";
 import type { TabStatus } from "../lib/tabs";
@@ -43,6 +43,10 @@ interface TerminalViewProps {
   fontSize: number;
   isAi?: boolean;
   onStatusChange?: (tabId: string, status: TabStatus) => void;
+  /** Foreground-process-group signal, independent of the AI busy/ready/waiting
+   *  pipeline above: fires for any tab kind, driven by the pty itself rather
+   *  than output heuristics. */
+  onRunningChange?: (tabId: string, running: boolean) => void;
 }
 
 export function TerminalView({
@@ -53,6 +57,7 @@ export function TerminalView({
   fontSize,
   isAi,
   onStatusChange,
+  onRunningChange,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -272,10 +277,19 @@ export function TerminalView({
         seenBusy = false;
         armed = false;
         setStatus("idle");
+        onRunningChange?.(tabId, false);
       }
     }).then((fn) => {
       if (disposed) fn();
       else unlisten = fn;
+    });
+
+    let unlistenRunning: UnlistenFn | undefined;
+    void onPtyRunning((event) => {
+      if (!disposed && event.tabId === tabId) onRunningChange?.(tabId, event.running);
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlistenRunning = fn;
     });
 
     const spawned = spawnPty(
@@ -292,6 +306,8 @@ export function TerminalView({
       window.clearTimeout(resizeTimer);
       window.clearTimeout(silenceTimer);
       unlisten?.();
+      unlistenRunning?.();
+      onRunningChange?.(tabId, false);
       try {
         term.dispose();
       } catch {
@@ -299,7 +315,7 @@ export function TerminalView({
       }
       void spawned.finally(() => killPty(tabId));
     };
-  }, [tabId, cwd, startupCommand, isAi, onStatusChange]);
+  }, [tabId, cwd, startupCommand, isAi, onStatusChange, onRunningChange]);
 
   // Kept separate from the spawn effect above: fontSize changing must not
   // respawn the PTY, since the old effect's cleanup kills it asynchronously
@@ -373,7 +389,7 @@ export function TerminalView({
     <div className="absolute inset-0" style={{ display: visible ? "block" : "none" }}>
       <div
         ref={containerRef}
-        className="absolute inset-0 overflow-hidden"
+        className="absolute inset-0 overflow-hidden pb-2 pl-2"
         style={{ backgroundColor: "#252830" }}
       />
     </div>

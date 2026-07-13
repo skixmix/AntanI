@@ -49,10 +49,23 @@ intentional, not a missing feature.
 - **Tooling is fixed.** `bun` is the package manager + runtime; Biome does both
   lint and format (Bun ships neither); `knip` guards against dead code. Don't add
   ESLint, Prettier, or a second formatter.
+- **Clean code over clever code.** Favor readable, self-explanatory code:
+  descriptive names, small focused functions, early returns over nested
+  conditionals, no unnecessary indirection. Code should read as what it does
+  without needing a comment to explain it — see the comments rule below for
+  the corollary.
 - **No comments by default.** Write zero comments unless the *why* is non-obvious
   to a future reader: a hidden constraint, a subtle invariant, a platform-specific
   workaround. Never narrate what the code does, never add section headers, never
   write docstrings that restate the function name.
+- **Caveats belong in AGENTS.md, not just inline.** When you hit a non-obvious
+  constraint that would help future work in an area (a platform quirk, a footgun,
+  a "why this and not the obvious alternative"), write it up in the relevant
+  `AGENTS.md` — root or the nearest subdirectory one — rather than leaning on an
+  inline comment alone. `src/AGENTS.md`'s "Tauri / WKWebView platform notes" is
+  the model to follow. If a new area of the codebase (a new subsystem, a new
+  top-level directory) accumulates its own conventions or caveats, create an
+  `AGENTS.md` for it instead of piling everything into the root file.
 
 ## Testing philosophy: behavior, not brittle
 

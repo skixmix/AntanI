@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
@@ -17,6 +19,15 @@ const DEFAULT_SHELL: &str = "/bin/zsh";
 /// Frontend event fired once when a PTY's process exits (normal exit or kill).
 const PTY_EXIT_EVENT: &str = "pty-exit";
 
+/// Frontend event fired whenever a PTY's foreground process group flips
+/// between the login shell itself and a job it launched (e.g. `bun run dev`).
+const PTY_RUNNING_EVENT: &str = "pty-running-changed";
+
+/// How often to poll the pty's foreground process group. This only drives a
+/// UI dot, not anything latency-sensitive, so a coarse interval keeps the
+/// poll thread's cost negligible.
+const RUNNING_POLL_INTERVAL: Duration = Duration::from_millis(300);
+
 /// The handles we keep for a live PTY so we can write to it, resize it, and kill
 /// it. The reader thread owns the read side and the child separately, so it is
 /// not represented here.
@@ -24,10 +35,15 @@ struct PtySession {
     writer: Mutex<Box<dyn Write + Send>>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    /// Signals the foreground-process-group poll thread to stop. Set on drop
+    /// so a closed tab's poll thread exits within one `RUNNING_POLL_INTERVAL`
+    /// tick instead of lingering on a stale fd.
+    stop_running_poll: Arc<AtomicBool>,
 }
 
 impl Drop for PtySession {
     fn drop(&mut self) {
+        self.stop_running_poll.store(true, Ordering::Relaxed);
         // Killing the shell and then dropping the master (which closes the PTY)
         // makes the kernel send SIGHUP to the whole foreground process group, so
         // children such as `htop` die too. This is the zero-orphan guarantee for
@@ -58,6 +74,13 @@ impl PtyManager {
 struct PtyExit {
     tab_id: String,
     exit_code: u32,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PtyRunning {
+    tab_id: String,
+    running: bool,
 }
 
 /// Resolve the user's login shell. `$SHELL` is unset for apps launched from
@@ -143,6 +166,12 @@ pub fn pty_spawn(
     let killer = child.clone_killer();
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    // Captured before the master moves into the session below. The shell is
+    // its own session/process-group leader when spawned into a fresh pty, so
+    // its pid doubles as its pgid — the baseline "nothing else has the
+    // foreground" value.
+    let shell_pgid = child.process_id().map(|pid| pid as libc::pid_t);
+    let running_fd = pair.master.as_raw_fd();
 
     if let Some(command) = startup_command {
         if !command.trim().is_empty() {
@@ -153,6 +182,7 @@ pub fn pty_spawn(
     }
 
     let exit_tab_id = tab_id.clone();
+    let exit_app = app.clone();
     thread::spawn(move || {
         let mut buf = [0u8; READ_BUF_SIZE];
         loop {
@@ -166,7 +196,7 @@ pub fn pty_spawn(
             }
         }
         let exit_code = child.wait().map(|status| status.exit_code()).unwrap_or(0);
-        let _ = app.emit(
+        let _ = exit_app.emit(
             PTY_EXIT_EVENT,
             PtyExit {
                 tab_id: exit_tab_id,
@@ -175,10 +205,45 @@ pub fn pty_spawn(
         );
     });
 
+    let stop_running_poll = Arc::new(AtomicBool::new(false));
+    if let (Some(fd), Some(shell_pgid)) = (running_fd, shell_pgid) {
+        let stop = stop_running_poll.clone();
+        let app = app.clone();
+        let poll_tab_id = tab_id.clone();
+        thread::spawn(move || {
+            let mut last_running = false;
+            while !stop.load(Ordering::Relaxed) {
+                thread::sleep(RUNNING_POLL_INTERVAL);
+                if stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                // SAFETY: fd stays open for the pty's lifetime, which this
+                // thread is bounded by via `stop` (set on PtySession::drop,
+                // itself set before the master is dropped and the fd closed).
+                let pgrp = unsafe { libc::tcgetpgrp(fd) };
+                if pgrp <= 0 {
+                    break;
+                }
+                let running = pgrp != shell_pgid;
+                if running != last_running {
+                    last_running = running;
+                    let _ = app.emit(
+                        PTY_RUNNING_EVENT,
+                        PtyRunning {
+                            tab_id: poll_tab_id.clone(),
+                            running,
+                        },
+                    );
+                }
+            }
+        });
+    }
+
     let session = PtySession {
         writer: Mutex::new(writer),
         master: Mutex::new(pair.master),
         killer: Mutex::new(killer),
+        stop_running_poll,
     };
     manager
         .sessions

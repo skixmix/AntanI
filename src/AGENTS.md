@@ -55,6 +55,18 @@ on the Rust side, not here.
   `pointerdown` and set `document.body.style.userSelect = "none"` while a drag is
   live to prevent text selection bleed-through into xterm.
 
+- **Popovers that close on outside-click need `e.stopPropagation()` on the
+  trigger.** `ColorPicker`, `ConfirmPopover`, and `ContextMenu` all close
+  themselves via a `window.addEventListener("click", ...)` added in
+  `useEffect`. If the button that opens one of them doesn't stop propagation,
+  that same click keeps bubbling to `window` and closes the popover in the
+  same tick it opened — before it ever paints. It looks like the popover
+  "doesn't render" (or, worse, silently no-ops) rather than flashing open;
+  there's no console error. `TabChip`'s context-menu items get this for free
+  because their menu container already stops propagation; any trigger button
+  that isn't inside such a container must call `e.stopPropagation()` itself
+  (see the color swatches in `SettingsPage.tsx`).
+
 ## Testing: what, and why
 
 Vitest tests **pure logic in `src/lib` only** — e.g. path→name parsing and palette

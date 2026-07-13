@@ -2,12 +2,16 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { Tab, TabStatus } from "../lib/tabs";
 import { ColorPicker } from "./ColorPicker";
+import { ConfirmPopover } from "./ConfirmPopover";
 import { AnthropicIcon, OpenCodeIcon, TerminalIcon, VSCodeIcon } from "./Icons";
 
 interface TabChipProps {
   tab: Tab;
   active: boolean;
   status?: TabStatus;
+  /** Plain-terminal-tab counterpart to `status`: true while some job (not the
+   *  login shell) holds the pty's foreground process group. */
+  running?: boolean;
   needsAttention?: boolean;
   isDragging?: boolean;
   showInsertBefore?: boolean;
@@ -19,7 +23,6 @@ interface TabChipProps {
 }
 
 const KIND_ICON: Record<string, ReactNode> = {
-  terminal: <TerminalIcon size={12} className="opacity-70" />,
   opencode: <OpenCodeIcon size={12} className="opacity-80" />,
   claude: <AnthropicIcon size={12} className="text-[#d4622a]" />,
   ide: <VSCodeIcon size={12} className="text-[#007ACC] opacity-80" />,
@@ -38,6 +41,7 @@ export function TabChip({
   tab,
   active,
   status,
+  running,
   needsAttention,
   isDragging,
   showInsertBefore,
@@ -51,8 +55,19 @@ export function TabChip({
   const [draft, setDraft] = useState(tab.title);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [closeConfirm, setCloseConfirm] = useState<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const chipRef = useRef<HTMLDivElement>(null);
+
+  const isAiRunning =
+    (tab.kind === "claude" || tab.kind === "opencode") &&
+    (status === "busy" || status === "waiting");
+  const isTerminalRunning = tab.kind === "terminal" && !!running;
+
+  function requestClose(x: number, y: number) {
+    if (isAiRunning || isTerminalRunning) setCloseConfirm({ x, y });
+    else onClose();
+  }
 
   useEffect(() => {
     if (editing) {
@@ -114,7 +129,13 @@ export function TabChip({
       {showInsertBefore && (
         <div className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-primary" />
       )}
-      <span className="shrink-0 flex items-center">{KIND_ICON[tab.kind] ?? null}</span>
+      <span className="shrink-0 flex items-center">
+        {tab.kind === "terminal" ? (
+          <TerminalIcon size={12} className="opacity-70" blink={running} />
+        ) : (
+          (KIND_ICON[tab.kind] ?? null)
+        )}
+      </span>
 
       {editing ? (
         <input
@@ -157,7 +178,7 @@ export function TabChip({
           aria-label="Close tab"
           onClick={(e) => {
             e.stopPropagation();
-            onClose();
+            requestClose(e.clientX, e.clientY);
           }}
           className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
         >
@@ -171,6 +192,24 @@ export function TabChip({
           selected={tab.color ?? ""}
           onPick={onRecolor}
           onClose={() => setPickerOpen(false)}
+        />
+      )}
+
+      {closeConfirm && (
+        <ConfirmPopover
+          x={closeConfirm.x}
+          y={closeConfirm.y}
+          message={
+            <>
+              <span className="font-medium">{tab.title}</span> is still running. Close it anyway?
+            </>
+          }
+          confirmLabel="Close tab"
+          onConfirm={() => {
+            setCloseConfirm(null);
+            onClose();
+          }}
+          onCancel={() => setCloseConfirm(null)}
         />
       )}
 
@@ -206,8 +245,9 @@ export function TabChip({
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-destructive hover:bg-secondary"
             onClick={() => {
-              onClose();
+              const anchor = ctxMenu;
               setCtxMenu(null);
+              if (anchor) requestClose(anchor.x, anchor.y);
             }}
           >
             Close tab
