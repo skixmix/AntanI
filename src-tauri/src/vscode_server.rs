@@ -18,6 +18,11 @@ pub const SERVE_WEB_HOST: &str = "127.0.0.1";
 /// one stable origin — VS Code keys its per-folder state by origin.
 pub const SERVE_WEB_PORT: u16 = 51851;
 
+/// Port for a dev build (`ANTANI_DEV`, separate identifier) so it can run beside
+/// the installed release — which owns `SERVE_WEB_PORT` — without the two
+/// code-servers colliding on the same port.
+const SERVE_WEB_PORT_DEV: u16 = 51852;
+
 /// Subfolder (under the app-data dir) for code-server's user data.
 const SERVER_DATA_DIR: &str = "vscode-server-data";
 
@@ -95,10 +100,16 @@ struct Inner {
 pub struct VscodeServer {
     inner: Mutex<Inner>,
     app_data_dir: PathBuf,
+    port: u16,
 }
 
 impl VscodeServer {
     pub fn new(app_data_dir: PathBuf) -> Self {
+        let port = if std::env::var_os("ANTANI_DEV").is_some() {
+            SERVE_WEB_PORT_DEV
+        } else {
+            SERVE_WEB_PORT
+        };
         Self {
             inner: Mutex::new(Inner {
                 phase: Phase::Stopped,
@@ -107,6 +118,7 @@ impl VscodeServer {
                 stderr_tail: Arc::new(Mutex::new(Vec::new())),
             }),
             app_data_dir,
+            port,
         }
     }
 
@@ -140,7 +152,7 @@ impl VscodeServer {
     /// The port to load once the server is up, or `None` if it is not ready.
     pub fn ready_port(&self) -> Option<u16> {
         let inner = self.inner.lock().ok()?;
-        (inner.phase == Phase::Ready).then_some(SERVE_WEB_PORT)
+        (inner.phase == Phase::Ready).then_some(self.port)
     }
 
     /// Ensure the shared server is starting or up. Idempotent: concurrent callers
@@ -264,7 +276,7 @@ fn start_and_wait(app: AppHandle) {
     cmd.arg("--host")
         .arg(SERVE_WEB_HOST)
         .arg("--port")
-        .arg(SERVE_WEB_PORT.to_string())
+        .arg(server.port.to_string())
         .arg("--auth")
         .arg("none")
         .arg("--user-data-dir")
@@ -355,7 +367,7 @@ fn start_and_wait(app: AppHandle) {
                 return;
             }
         }
-        if tcp_ready() {
+        if tcp_ready(server.port) {
             if let Ok(mut inner) = server.inner.lock() {
                 if inner.phase == Phase::Starting {
                     inner.phase = Phase::Ready;
@@ -534,8 +546,8 @@ fn fnv1a(bytes: &[u8]) -> u32 {
     hash
 }
 
-fn tcp_ready() -> bool {
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), SERVE_WEB_PORT);
+fn tcp_ready(port: u16) -> bool {
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
     TcpStream::connect_timeout(&addr, TCP_CONNECT_TIMEOUT).is_ok()
 }
 
@@ -595,6 +607,7 @@ const MACHINE_SETTINGS: &str = r#"{
   "workbench.iconTheme": "material-icon-theme",
   "workbench.startupEditor": "none",
   "workbench.secondarySideBar.defaultVisibility": "hidden",
+  "workbench.editor.dragToOpenWindow": false,
   "window.commandCenter": false,
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "biomejs.biome",
@@ -666,6 +679,15 @@ fn seed_user_settings(data_dir: &Path, imported_settings_path: &Path) {
                 serde_json::json!("Default Dark+"),
             );
         }
+    }
+
+    // Detaching an editor into a new window uses `window.open()`, which a child
+    // WKWebView can't honor; force it off so dragging a tab isn't a dead end.
+    if let Some(obj) = existing.as_object_mut() {
+        obj.insert(
+            "workbench.editor.dragToOpenWindow".to_string(),
+            serde_json::json!(false),
+        );
     }
 
     if let Ok(text) = serde_json::to_string_pretty(&existing) {
@@ -908,49 +930,4 @@ pub fn open_diff_in_ide(
     conn.shutdown(std::net::Shutdown::Write)
         .map_err(|e| e.to_string())?;
     Ok(())
-}
-
-/// Return the total RSS (resident set size) in MB consumed by the serve-web
-/// process and all of its children, or `null` if the server is not running.
-/// Uses `sysinfo` so no shell subprocesses are needed.
-#[tauri::command]
-pub fn get_vscode_memory_mb(app: AppHandle) -> Option<u64> {
-    use sysinfo::{Pid, System};
-
-    let server = app.state::<VscodeServer>();
-    let pgid = {
-        let inner = server.inner.lock().ok()?;
-        if inner.phase != Phase::Ready {
-            return None;
-        }
-        inner.pgid? as u32
-    };
-
-    let root_pid = Pid::from_u32(pgid);
-    let mut sys = System::new();
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-
-    // Walk all processes: include the root and any process whose parent chain
-    // leads back to it (the Node worker children that serve-web spawns).
-    let total_bytes: u64 = sys
-        .processes()
-        .values()
-        .filter(|p| {
-            if p.pid() == root_pid {
-                return true;
-            }
-            // Walk up the parent chain.
-            let mut cur = p.parent();
-            while let Some(parent_pid) = cur {
-                if parent_pid == root_pid {
-                    return true;
-                }
-                cur = sys.process(parent_pid).and_then(|pp| pp.parent());
-            }
-            false
-        })
-        .map(|p| p.memory())
-        .sum();
-
-    Some(total_bytes / 1_048_576)
 }

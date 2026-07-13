@@ -1,12 +1,15 @@
 mod git;
 mod git_watcher;
 mod ide_webview;
+mod menu;
 mod pty;
 mod sound;
 mod state;
 mod vscode_server;
 
-use state::{AppData, AppState, Settings, SettingsState, PROJECTS_FILE, SETTINGS_FILE};
+use state::{
+    AppData, AppState, InjectTarget, Settings, SettingsState, PROJECTS_FILE, SETTINGS_FILE,
+};
 use tauri::{Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use vscode_server::VscodeServer;
@@ -126,6 +129,44 @@ fn update_custom_command(
 }
 
 #[tauri::command]
+fn add_injectable(
+    state: State<AppState>,
+    project_id: String,
+    name: String,
+    text: String,
+    target: InjectTarget,
+    color: String,
+) -> Result<AppData, String> {
+    mutate(&state, |d| {
+        d.add_injectable(&project_id, name, text, target, color);
+    })
+}
+
+#[tauri::command]
+fn remove_injectable(
+    state: State<AppState>,
+    project_id: String,
+    injectable_id: String,
+) -> Result<AppData, String> {
+    mutate(&state, |d| d.remove_injectable(&project_id, &injectable_id))
+}
+
+#[tauri::command]
+fn update_injectable(
+    state: State<AppState>,
+    project_id: String,
+    injectable_id: String,
+    name: String,
+    text: String,
+    target: InjectTarget,
+    color: String,
+) -> Result<AppData, String> {
+    mutate(&state, |d| {
+        d.update_injectable(&project_id, &injectable_id, name, text, target, color);
+    })
+}
+
+#[tauri::command]
 fn set_active_project(state: State<AppState>, id: Option<String>) -> Result<AppData, String> {
     mutate(&state, |d| d.set_active(id))
 }
@@ -155,6 +196,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
+            app.set_menu(menu::build(app.handle())?)?;
+
             let dir = app.path().app_data_dir()?;
             app.manage(AppState::new(dir.join(PROJECTS_FILE)));
             app.manage(SettingsState::new(dir.join(SETTINGS_FILE)));
@@ -212,6 +255,9 @@ pub fn run() {
             add_custom_command,
             remove_custom_command,
             update_custom_command,
+            add_injectable,
+            remove_injectable,
+            update_injectable,
             set_active_project,
             get_settings,
             update_settings,
@@ -230,15 +276,13 @@ pub fn run() {
             git_watcher::git_watch_start,
             git_watcher::git_watch_stop,
             vscode_server::ensure_ide_server,
-            vscode_server::get_vscode_memory_mb,
             vscode_server::import_from_vscode,
             vscode_server::open_diff_in_ide,
             ide_webview::create_ide_webview,
             ide_webview::set_ide_bounds,
             ide_webview::show_ide_webview,
             ide_webview::hide_ide_webview,
-            ide_webview::close_ide_webview,
-            ide_webview::close_all_ide_webviews
+            ide_webview::close_ide_webview
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -1,9 +1,12 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FirstRunVscodeModal } from "./components/FirstRunVscodeModal";
-import { FreeRamModal } from "./components/FreeRamModal";
 import { ImportVscodeModal } from "./components/ImportVscodeModal";
-import { SettingsPage, type TabId as SettingsTabId } from "./components/SettingsPage";
+import {
+  type CommandsSubTab,
+  SettingsPage,
+  type TabId as SettingsTabId,
+} from "./components/SettingsPage";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { Workspace } from "./components/Workspace";
@@ -27,49 +30,7 @@ import {
   type TabStatus,
   type TabsState,
 } from "./lib/tabs";
-import type { AppData, CustomCommand, Settings } from "./lib/types";
-
-const MEM_POLL_MS = 10_000;
-
-function useVscodeMemory() {
-  const [memMb, setMemMb] = useState<number | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      const mb = await api.getVscodeMemoryMb();
-      setMemMb(mb);
-    } catch {
-      setMemMb(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-    timerRef.current = setInterval(() => void refresh(), MEM_POLL_MS);
-    return () => {
-      if (timerRef.current !== null) clearInterval(timerRef.current);
-    };
-  }, [refresh]);
-
-  // Refresh immediately when the server becomes ready — this is the earliest
-  // moment a real RSS value is available; polling would lag by up to MEM_POLL_MS.
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void api
-      .onIdeServerStatus((event) => {
-        if (event.status === "ready") void refresh();
-        // Refresh on stop/fail too so the display snaps to "off" immediately.
-        if (event.status === "failed") void refresh();
-      })
-      .then((fn) => {
-        unlisten = fn;
-      });
-    return () => unlisten?.();
-  }, [refresh]);
-
-  return { memMb, refreshMem: refresh };
-}
+import type { AppData, CustomCommand, InjectTarget, Settings } from "./lib/types";
 
 function App() {
   const [data, setData] = useState<AppData | null>(null);
@@ -80,17 +41,13 @@ function App() {
   // looked at yet — drives the sidebar/tab-chip attention glow. Distinct from
   // tabStatuses: a tab can be "waiting" but no longer need a glow once viewed.
   const [needsAttention, setNeedsAttention] = useState<Record<string, true>>({});
-  const [ideOpenByProject, setIdeOpenByProject] = useState<Record<string, boolean>>({});
-  const [ideEverOpenedByProject, setIdeEverOpenedByProject] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
-  const [showFreeRamModal, setShowFreeRamModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId | null>(null);
+  const [settingsCommandsSubTab, setSettingsCommandsSubTab] = useState<CommandsSubTab>("custom");
   const [showFirstRunImportModal, setShowFirstRunImportModal] = useState(false);
   const [pendingIdeOpenProjectId, setPendingIdeOpenProjectId] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState("");
-
-  const { memMb, refreshMem } = useVscodeMemory();
 
   useEffect(() => {
     void api.getAppVersion().then(setAppVersion);
@@ -200,13 +157,36 @@ function App() {
     [run],
   );
 
+  const handleAddInjectable = useCallback(
+    (projectId: string, name: string, text: string, target: InjectTarget, color: string) =>
+      run(() => api.addInjectable(projectId, name, text, target, color)),
+    [run],
+  );
+
+  const handleRemoveInjectable = useCallback(
+    (projectId: string, injectableId: string) =>
+      run(() => api.removeInjectable(projectId, injectableId)),
+    [run],
+  );
+
+  const handleUpdateInjectable = useCallback(
+    (
+      projectId: string,
+      injectableId: string,
+      name: string,
+      text: string,
+      target: InjectTarget,
+      color: string,
+    ) => run(() => api.updateInjectable(projectId, injectableId, name, text, target, color)),
+    [run],
+  );
+
   const activeId = data?.activeProjectId ?? null;
 
   const openTab = useCallback(
     (kind: TabKind) => {
       if (!activeId || !settings) return;
       setTabs((t) => addTab(t, activeId, createTab(kind, settings)));
-      setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
     },
     [activeId, settings],
   );
@@ -215,7 +195,6 @@ function App() {
     (cmd: CustomCommand) => {
       if (!activeId) return;
       setTabs((t) => addTab(t, activeId, createCustomTab(cmd)));
-      setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
     },
     [activeId],
   );
@@ -224,7 +203,6 @@ function App() {
     (tabId: string) => {
       if (!activeId) return;
       setTabs((t) => setActiveTab(t, activeId, tabId));
-      setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
     },
     [activeId],
   );
@@ -332,16 +310,16 @@ function App() {
 
   const openIdeNow = useCallback(
     (id: string) => {
-      setIdeEverOpenedByProject((prev) => ({ ...prev, [id]: true }));
-      setIdeOpenByProject((prev) => ({ ...prev, [id]: true }));
-      void refreshMem();
+      if (!settings) return;
+      setTabs((t) => {
+        const existing = projectTabs(t, id).tabs.find((tab) => tab.kind === "ide");
+        if (existing) return setActiveTab(t, id, existing.id);
+        return addTab(t, id, createTab("ide", settings));
+      });
     },
-    [refreshMem],
+    [settings],
   );
 
-  // The very first time ever (across the whole app history, not per-project)
-  // that the user opens the embedded VS Code, park the open and show the
-  // one-time import prompt instead — actual opening resumes once it's answered.
   const requestOpenIde = useCallback(
     (id: string) => {
       if (settings && !settings.vscodeImportPrompted) {
@@ -354,17 +332,6 @@ function App() {
     [settings, openIdeNow],
   );
 
-  // Fully stops VS Code for the active project — the only action that does,
-  // as opposed to selectTab/handleOpenIde which just hide/show its pane.
-  const handleCloseIde = useCallback(() => {
-    if (!activeId) return;
-    setIdeOpenByProject((prev) => ({ ...prev, [activeId]: false }));
-    setIdeEverOpenedByProject((prev) => ({ ...prev, [activeId]: false }));
-    void refreshMem();
-  }, [activeId, refreshMem]);
-
-  // Unlike handleCloseIde, always ends in "open" — used when an action (e.g.
-  // viewing a diff) needs the IDE tab visible, regardless of its prior state.
   const handleOpenIde = useCallback(() => {
     if (!activeId) return;
     requestOpenIde(activeId);
@@ -401,14 +368,6 @@ function App() {
     },
     [settings],
   );
-
-  const handleKillAllIde = useCallback(async () => {
-    await api.closeAllIdeWebviews();
-    setIdeOpenByProject({});
-    setIdeEverOpenedByProject({});
-    setShowFreeRamModal(false);
-    void refreshMem();
-  }, [refreshMem]);
 
   useEffect(() => {
     function onQuickSwitch(e: Event) {
@@ -495,6 +454,14 @@ function App() {
     return result;
   }, [tabs, needsAttention, tabStatuses]);
 
+  const projectsWithActivity = useMemo(() => {
+    const result = new Set<string>();
+    for (const [id, ptabs] of Object.entries(tabs)) {
+      if (ptabs.tabs.length > 0) result.add(id);
+    }
+    return result;
+  }, [tabs]);
+
   if (!data || !settings) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -504,11 +471,6 @@ function App() {
   }
 
   const active = data.projects.find((p) => p.id === data.activeProjectId) ?? null;
-  const ideOpen = activeId ? (ideOpenByProject[activeId] ?? false) : false;
-  const ideRunning = activeId ? (ideEverOpenedByProject[activeId] ?? false) : false;
-  const ideInstanceCount = Object.values(ideEverOpenedByProject).filter(Boolean).length;
-  const showFreeRamButton = ideInstanceCount > 0 && memMb !== null && memMb >= 1024;
-
   return (
     <div className="flex h-full w-full flex-col bg-background">
       {import.meta.env.DEV && (
@@ -520,6 +482,7 @@ function App() {
         <Sidebar
           projects={data.projects}
           activeProjectId={data.activeProjectId}
+          projectsWithActivity={projectsWithActivity}
           projectStatuses={projectStatuses}
           projectNeedsAttention={projectNeedsAttention}
           onAdd={handleAdd}
@@ -528,8 +491,6 @@ function App() {
           onRecolor={(id, color) => run(() => api.setProjectColor(id, color))}
           onRemove={handleRemove}
           onReorder={(ids) => run(() => api.reorderProjects(ids))}
-          showFreeRamButton={showFreeRamButton}
-          onFreeRam={() => setShowFreeRamModal(true)}
           onOpenSettings={() => setSettingsInitialTab("general")}
         />
         <Workspace
@@ -538,20 +499,18 @@ function App() {
           tabs={tabs}
           tabStatuses={tabStatuses}
           needsAttention={needsAttention}
-          ideOpen={ideOpen}
-          ideRunning={ideRunning}
-          ideEverOpenedByProject={ideEverOpenedByProject}
-          ideInstanceCount={ideInstanceCount}
-          memMb={memMb}
+          terminalFontSize={settings.terminalFontSize}
           onOpenTab={openTab}
           onOpenCustomTab={openCustomTab}
-          onOpenCommandSettings={() => setSettingsInitialTab("commands")}
+          onOpenCommandSettings={(subTab) => {
+            setSettingsCommandsSubTab(subTab ?? "custom");
+            setSettingsInitialTab("commands");
+          }}
           onSelectTab={selectTab}
           onCloseTab={handleCloseTab}
           onRenameTab={handleRenameTab}
           onRecolorTab={handleRecolorTab}
           onReorderTab={handleReorderTab}
-          onCloseIde={handleCloseIde}
           onOpenIde={handleOpenIde}
           onStatusChange={handleStatusChange}
         />
@@ -564,12 +523,16 @@ function App() {
           settings={settings}
           project={active}
           initialTab={settingsInitialTab}
+          initialCommandsSubTab={settingsCommandsSubTab}
           onClose={() => setSettingsInitialTab(null)}
           onImportVscode={() => setShowImportModal(true)}
           onUpdateSettings={handleUpdateSettings}
           onAddCustomCommand={handleAddCustomCommand}
           onRemoveCustomCommand={handleRemoveCustomCommand}
           onUpdateCustomCommand={handleUpdateCustomCommand}
+          onAddInjectable={handleAddInjectable}
+          onRemoveInjectable={handleRemoveInjectable}
+          onUpdateInjectable={handleUpdateInjectable}
         />
       )}
 
@@ -577,24 +540,25 @@ function App() {
         <ImportVscodeModal
           onClose={() => {
             setShowImportModal(false);
-            // Reset IDE state so IdeView remounts cleanly on next open.
-            setIdeOpenByProject({});
-            setIdeEverOpenedByProject({});
-            void refreshMem();
+            setTabs((t) => {
+              const next = { ...t };
+              for (const [projectId, ptabs] of Object.entries(next)) {
+                const filtered = ptabs.tabs.filter((tab) => tab.kind !== "ide");
+                if (filtered.length !== ptabs.tabs.length) {
+                  const activeTabId =
+                    ptabs.activeTabId && filtered.some((tab) => tab.id === ptabs.activeTabId)
+                      ? ptabs.activeTabId
+                      : (filtered[filtered.length - 1]?.id ?? null);
+                  next[projectId] = { tabs: filtered, activeTabId };
+                }
+              }
+              return next;
+            });
           }}
         />
       )}
 
       {showFirstRunImportModal && <FirstRunVscodeModal onFinish={handleFirstRunFinish} />}
-
-      {showFreeRamModal && memMb !== null && (
-        <FreeRamModal
-          memMb={memMb}
-          instanceCount={ideInstanceCount}
-          onConfirm={handleKillAllIde}
-          onCancel={() => setShowFreeRamModal(false)}
-        />
-      )}
 
       {error && (
         <div className="fixed bottom-3 right-3 z-50 max-w-sm rounded-md border border-destructive bg-destructive/90 px-3 py-2 text-xs text-foreground shadow-lg">

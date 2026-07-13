@@ -3,7 +3,7 @@ import { type Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AppData, Settings } from "./types";
+import type { AppData, InjectTarget, Settings } from "./types";
 
 /**
  * Typed wrappers around the Rust Tauri commands. Every mutating command
@@ -62,6 +62,38 @@ export function updateCustomCommand(
   color: string,
 ): Promise<AppData> {
   return invoke<AppData>("update_custom_command", { projectId, commandId, name, command, color });
+}
+
+export function addInjectable(
+  projectId: string,
+  name: string,
+  text: string,
+  target: InjectTarget,
+  color: string,
+): Promise<AppData> {
+  return invoke<AppData>("add_injectable", { projectId, name, text, target, color });
+}
+
+export function removeInjectable(projectId: string, injectableId: string): Promise<AppData> {
+  return invoke<AppData>("remove_injectable", { projectId, injectableId });
+}
+
+export function updateInjectable(
+  projectId: string,
+  injectableId: string,
+  name: string,
+  text: string,
+  target: InjectTarget,
+  color: string,
+): Promise<AppData> {
+  return invoke<AppData>("update_injectable", {
+    projectId,
+    injectableId,
+    name,
+    text,
+    target,
+    color,
+  });
 }
 
 export function setActiveProject(id: string | null): Promise<AppData> {
@@ -182,10 +214,6 @@ export function closeIdeWebview(projectId: string): Promise<void> {
   return invoke("close_ide_webview", { projectId });
 }
 
-export function closeAllIdeWebviews(): Promise<void> {
-  return invoke("close_all_ide_webviews");
-}
-
 /** Copy extensions + settings from the user's desktop VS Code into the app's
  *  own isolated directories. Returns a summary string. */
 export function importFromVscode(): Promise<string> {
@@ -210,12 +238,4 @@ export function onIdeServerStatus(
   handler: (event: IdeServerStatusEvent) => void,
 ): Promise<UnlistenFn> {
   return listen<IdeServerStatusEvent>("ide-server-status", (event) => handler(event.payload));
-}
-
-/**
- * Total RSS in MB used by the serve-web process tree, or null if the server
- * is not running. Intended for a status-bar display; poll at ~3s.
- */
-export function getVscodeMemoryMb(): Promise<number | null> {
-  return invoke<number | null>("get_vscode_memory_mb");
 }

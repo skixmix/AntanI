@@ -2,6 +2,8 @@ import { projectTabs, type TabKind, type TabStatus, type TabsState } from "../li
 import type { CustomCommand, Project } from "../lib/types";
 import { EmptyPane } from "./EmptyPane";
 import { IdeLayer } from "./IdeLayer";
+import { InjectBar } from "./InjectBar";
+import type { CommandsSubTab } from "./SettingsPage";
 import { SourceControlSidebar } from "./SourceControlSidebar";
 import { TabStrip } from "./TabStrip";
 import { TerminalLayer } from "./TerminalLayer";
@@ -12,20 +14,15 @@ interface WorkspaceProps {
   tabs: TabsState;
   tabStatuses: Record<string, TabStatus>;
   needsAttention: Record<string, true>;
-  ideOpen: boolean;
-  ideRunning: boolean;
-  ideEverOpenedByProject: Record<string, boolean>;
-  ideInstanceCount: number;
-  memMb: number | null;
+  terminalFontSize: number;
   onOpenTab: (kind: TabKind) => void;
   onOpenCustomTab: (cmd: CustomCommand) => void;
-  onOpenCommandSettings: () => void;
+  onOpenCommandSettings: (subTab?: CommandsSubTab) => void;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onRenameTab: (tabId: string, title: string) => void;
   onRecolorTab: (tabId: string, color: string) => void;
   onReorderTab: (fromId: string, insertBeforeId: string | null) => void;
-  onCloseIde: () => void;
   onOpenIde: () => void;
   onStatusChange: (tabId: string, status: TabStatus) => void;
 }
@@ -36,11 +33,7 @@ export function Workspace({
   tabs,
   tabStatuses,
   needsAttention,
-  ideOpen,
-  ideRunning,
-  ideEverOpenedByProject,
-  ideInstanceCount,
-  memMb,
+  terminalFontSize,
   onOpenTab,
   onOpenCustomTab,
   onOpenCommandSettings,
@@ -49,7 +42,6 @@ export function Workspace({
   onRenameTab,
   onRecolorTab,
   onReorderTab,
-  onCloseIde,
   onOpenIde,
   onStatusChange,
 }: WorkspaceProps) {
@@ -65,7 +57,10 @@ export function Workspace({
   }
 
   const { tabs: projectTabList, activeTabId } = projectTabs(tabs, project.id);
-  const isEmpty = projectTabList.length === 0 && !ideOpen;
+  const ideTabId = projectTabList.find((t) => t.kind === "ide")?.id ?? null;
+  const isEmpty = projectTabList.length === 0;
+  const activeTab = projectTabList.find((t) => t.id === activeTabId) ?? null;
+  const showInjectBar = activeTab !== null && activeTab.kind !== "ide";
 
   return (
     <>
@@ -78,10 +73,7 @@ export function Workspace({
           tabStatuses={tabStatuses}
           needsAttention={needsAttention}
           project={project}
-          ideOpen={ideOpen}
-          ideRunning={ideRunning}
-          ideInstanceCount={ideInstanceCount}
-          memMb={memMb}
+          ideTabId={ideTabId}
           onOpen={onOpenTab}
           onOpenCustom={onOpenCustomTab}
           onOpenCommandSettings={onOpenCommandSettings}
@@ -91,7 +83,6 @@ export function Workspace({
           onRecolor={onRecolorTab}
           onReorder={onReorderTab}
           onOpenIde={onOpenIde}
-          onCloseIde={onCloseIde}
         />
 
         <div className="relative flex-1 overflow-hidden">
@@ -99,20 +90,24 @@ export function Workspace({
             projects={projects}
             tabs={tabs}
             activeProjectId={project.id}
+            fontSize={terminalFontSize}
             onStatusChange={onStatusChange}
           />
-          <IdeLayer
-            projects={projects}
-            activeProjectId={project.id}
-            ideOpen={ideOpen}
-            ideEverOpenedByProject={ideEverOpenedByProject}
-          />
+          <IdeLayer projects={projects} tabs={tabs} activeProjectId={project.id} />
           {isEmpty && (
             <div className="absolute inset-0">
               <EmptyPane project={project} onOpen={onOpenTab} onOpenIde={onOpenIde} />
             </div>
           )}
         </div>
+
+        {showInjectBar && activeTab && (
+          <InjectBar
+            project={project}
+            activeTab={activeTab}
+            onOpenCommandSettings={onOpenCommandSettings}
+          />
+        )}
       </main>
       <SourceControlSidebar project={project} onOpenIde={onOpenIde} />
     </>

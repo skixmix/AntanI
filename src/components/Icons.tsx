@@ -280,6 +280,55 @@ export function CustomCommandIcon({ size = 13, className = "" }: IconProps) {
   );
 }
 
+/** Chat bubble with a sparkle — marks an AI prompt injectable, distinct from
+ *  the bolt used for launchable custom commands. */
+export function PromptIcon({ size = 13, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M2.5 4a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 13.5 4v4.5A1.5 1.5 0 0 1 12 10H6.5l-3 2.5V10H4A1.5 1.5 0 0 1 2.5 8.5V4Z" />
+      <path
+        d="M8 4.3 8.7 6l1.7.7-1.7.7L8 9.1l-.7-1.7L5.6 6.7 7.3 6 8 4.3Z"
+        fill="currentColor"
+        stroke="none"
+      />
+    </svg>
+  );
+}
+
+/** Terminal window with an arrow dropping into it — marks a terminal snippet
+ *  injectable, hinting the text is pushed into the terminal. */
+export function InjectIcon({ size = 13, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect x="1.8" y="5" width="12.4" height="9" rx="1.4" />
+      <path d="M4.4 8 6.3 9.7 4.4 11.4" />
+      <path d="M8 1.2v4M6.3 3.5 8 5.2 9.7 3.5" />
+    </svg>
+  );
+}
+
 /** Pencil glyph — used for "Rename" menu entries */
 export function PencilIcon({ size = 13, className = "" }: IconProps) {
   return (

@@ -46,43 +46,43 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   useLayoutEffect(() => {
     window.addEventListener("click", onClose);
     window.addEventListener("contextmenu", onClose);
+    window.addEventListener("antani:close-ctx-menus", onClose);
     return () => {
       window.removeEventListener("click", onClose);
       window.removeEventListener("contextmenu", onClose);
+      window.removeEventListener("antani:close-ctx-menus", onClose);
     };
   }, [onClose]);
 
   return createPortal(
-    <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div
-        ref={menuRef}
-        className="fixed z-50 min-w-36 rounded-lg border border-border bg-popover p-1 shadow-xl text-sm"
-        style={{ left: pos.left, top: pos.top, visibility: pos.visible ? "visible" : "hidden" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {items.map((item) => (
-          <div key={item.label}>
-            {item.separatorBefore && <div className="my-1 border-t border-border" />}
-            <button
-              type="button"
-              className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-secondary ${
-                item.destructive ? "text-destructive" : "text-foreground"
-              }`}
-              onClick={() => {
-                item.onSelect();
-                onClose();
-              }}
-            >
-              <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                {item.icon}
-              </span>
-              {item.label}
-            </button>
-          </div>
-        ))}
-      </div>
-    </>,
+    <div
+      ref={menuRef}
+      className="fixed z-50 min-w-36 rounded-lg border border-border bg-popover p-1 shadow-xl text-sm"
+      style={{ left: pos.left, top: pos.top, visibility: pos.visible ? "visible" : "hidden" }}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
+    >
+      {items.map((item) => (
+        <div key={item.label}>
+          {item.separatorBefore && <div className="my-1 border-t border-border" />}
+          <button
+            type="button"
+            className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-secondary ${
+              item.destructive ? "text-destructive" : "text-foreground"
+            }`}
+            onClick={() => {
+              item.onSelect();
+              onClose();
+            }}
+          >
+            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+              {item.icon}
+            </span>
+            {item.label}
+          </button>
+        </div>
+      ))}
+    </div>,
     document.body,
   );
 }

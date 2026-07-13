@@ -30,7 +30,7 @@ const TAB_TITLES: Record<TabKind, string> = {
   terminal: "Terminal",
   claude: "Claude",
   opencode: "opencode",
-  ide: "IDE",
+  ide: "VS Code",
 };
 
 export function defaultTitle(kind: TabKind): string {

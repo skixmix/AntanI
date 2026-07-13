@@ -41,6 +41,20 @@ on the Rust side, not here.
   Don't re-enable them or litter per-line `biome-ignore` comments. Revisit only if
   genuinely public-facing web content is ever added.
 
+## Tauri / WKWebView platform notes
+
+- **No HTML5 drag API.** `draggable`, `dataTransfer`, `ondrop`, and window-level
+  `drop` listeners (even with the capture flag) silently fail in Tauri's WKWebView
+  on macOS. Use **pointer events** for all in-app drag interactions, exactly as
+  `useDragReorder` does. For drag state that must be shared across distant
+  components (e.g. sidebar → terminal), a plain mutable module-level object is the
+  right primitive — no React state, no context (see `src/lib/fileDrag.ts`). For
+  drag ghosts / visual feedback, manipulate the DOM directly and imperatively
+  (create on `pointerdown`, move on `pointermove`, remove on `pointerup`); avoid
+  routing this through React renders. Always call `e.preventDefault()` on
+  `pointerdown` and set `document.body.style.userSelect = "none"` while a drag is
+  live to prevent text selection bleed-through into xterm.
+
 ## Testing: what, and why
 
 Vitest tests **pure logic in `src/lib` only** — e.g. path→name parsing and palette

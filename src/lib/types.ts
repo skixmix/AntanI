@@ -8,12 +8,23 @@ export interface CustomCommand {
   color: string;
 }
 
+export type InjectTarget = "terminal" | "ai";
+
+export interface Injectable {
+  id: string;
+  name: string;
+  text: string;
+  target: InjectTarget;
+  color: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   path: string;
   color: string;
   customCommands: CustomCommand[];
+  injectables: Injectable[];
 }
 
 export interface AppData {
@@ -29,6 +40,7 @@ export interface Settings {
   soundEnabled: boolean;
   soundReady: string;
   soundWaiting: string;
+  terminalFontSize: number;
 }
 
 export type FileChangeKind = "added" | "modified" | "deleted";

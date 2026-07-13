@@ -30,6 +30,30 @@ pub struct CustomCommand {
     pub color: String,
 }
 
+/// Which kind of tab an injectable's text is meant for. Terminal snippets go to
+/// plain shell tabs; AI prompts go to Claude/opencode tabs.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum InjectTarget {
+    Terminal,
+    Ai,
+}
+
+/// A user-defined snippet or prompt, scoped to a single project. Unlike a
+/// `CustomCommand` (which opens a new tab), injecting one writes `text` into the
+/// *current* terminal/AI tab without submitting it — the user reviews and sends.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Injectable {
+    pub id: String,
+    pub name: String,
+    pub text: String,
+    pub target: InjectTarget,
+    /// Hex color string chosen from the frontend palette; tints the chip in the
+    /// bottom injection bar.
+    pub color: String,
+}
+
 /// A project is a local folder the user has added to the sidebar.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +67,9 @@ pub struct Project {
     /// still loads fine — every existing project just gets an empty list.
     #[serde(default)]
     pub custom_commands: Vec<CustomCommand>,
+    /// `serde(default)` for the same back-compat reason as `custom_commands`.
+    #[serde(default)]
+    pub injectables: Vec<Injectable>,
 }
 
 /// The full persisted application state (Phase 1: projects + last active project).
@@ -62,6 +89,7 @@ impl AppData {
             path,
             color,
             custom_commands: Vec::new(),
+            injectables: Vec::new(),
         };
         self.projects.push(project.clone());
         if self.active_project_id.is_none() {
@@ -136,6 +164,59 @@ impl AppData {
                 cmd.name = name;
                 cmd.command = command;
                 cmd.color = color;
+            }
+        }
+    }
+
+    /// Add an injectable to a project. No-op (returns `None`) if the project id
+    /// is unknown.
+    pub fn add_injectable(
+        &mut self,
+        project_id: &str,
+        name: String,
+        text: String,
+        target: InjectTarget,
+        color: String,
+    ) -> Option<Injectable> {
+        let project = self.projects.iter_mut().find(|p| p.id == project_id)?;
+        let injectable = Injectable {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            text,
+            target,
+            color,
+        };
+        project.injectables.push(injectable.clone());
+        Some(injectable)
+    }
+
+    /// Remove an injectable by id. No-op if the project or injectable id is unknown.
+    pub fn remove_injectable(&mut self, project_id: &str, injectable_id: &str) {
+        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            project.injectables.retain(|i| i.id != injectable_id);
+        }
+    }
+
+    /// Update an injectable's fields. No-op if the project or injectable id is unknown.
+    pub fn update_injectable(
+        &mut self,
+        project_id: &str,
+        injectable_id: &str,
+        name: String,
+        text: String,
+        target: InjectTarget,
+        color: String,
+    ) {
+        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            if let Some(injectable) = project
+                .injectables
+                .iter_mut()
+                .find(|i| i.id == injectable_id)
+            {
+                injectable.name = name;
+                injectable.text = text;
+                injectable.target = target;
+                injectable.color = color;
             }
         }
     }
@@ -230,6 +311,7 @@ pub struct Settings {
     pub sound_enabled: bool,
     pub sound_ready: String,
     pub sound_waiting: String,
+    pub terminal_font_size: u8,
 }
 
 impl Default for Settings {
@@ -242,6 +324,7 @@ impl Default for Settings {
             sound_enabled: true,
             sound_ready: "Glass".to_string(),
             sound_waiting: "Ping".to_string(),
+            terminal_font_size: 14,
         }
     }
 }
@@ -390,6 +473,7 @@ mod tests {
             sound_enabled: false,
             sound_ready: "Hero".into(),
             sound_waiting: "Frog".into(),
+            terminal_font_size: 14,
         };
         save(&path, &s).unwrap();
         let state = SettingsState::new(path.clone());
@@ -437,6 +521,7 @@ mod tests {
             sound_enabled: false,
             sound_ready: "Hero".into(),
             sound_waiting: "Frog".into(),
+            terminal_font_size: 14,
         };
         let path =
             std::env::temp_dir().join(format!("antani-settings-{}.json", uuid::Uuid::new_v4()));
@@ -536,6 +621,173 @@ mod tests {
         save(&path, &d).unwrap();
         let loaded: AppData = load(&path);
         assert_eq!(loaded, d);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn add_injectable_appends_and_returns_it() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        let inj = d
+            .add_injectable(
+                &id,
+                "Run tests".into(),
+                "bun test\nbun run lint".into(),
+                InjectTarget::Terminal,
+                "#3b82f6".into(),
+            )
+            .unwrap();
+        assert_eq!(d.projects[0].injectables.len(), 1);
+        assert_eq!(d.projects[0].injectables[0], inj);
+        assert_eq!(inj.name, "Run tests");
+        assert_eq!(inj.text, "bun test\nbun run lint");
+        assert_eq!(inj.target, InjectTarget::Terminal);
+    }
+
+    #[test]
+    fn add_injectable_unknown_project_returns_none() {
+        let mut d = with_three();
+        let result = d.add_injectable(
+            "bogus",
+            "X".into(),
+            "x".into(),
+            InjectTarget::Ai,
+            "#fff".into(),
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn remove_injectable_removes_only_target() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        let a = d
+            .add_injectable(
+                &id,
+                "A".into(),
+                "a".into(),
+                InjectTarget::Terminal,
+                "#fff".into(),
+            )
+            .unwrap();
+        let b = d
+            .add_injectable(&id, "B".into(), "b".into(), InjectTarget::Ai, "#000".into())
+            .unwrap();
+        d.remove_injectable(&id, &a.id);
+        assert_eq!(d.projects[0].injectables, vec![b]);
+    }
+
+    #[test]
+    fn remove_injectable_unknown_ids_are_no_ops() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        d.add_injectable(
+            &id,
+            "A".into(),
+            "a".into(),
+            InjectTarget::Terminal,
+            "#fff".into(),
+        );
+        d.remove_injectable("bogus-project", "bogus-injectable");
+        d.remove_injectable(&id, "bogus-injectable");
+        assert_eq!(d.projects[0].injectables.len(), 1);
+    }
+
+    #[test]
+    fn update_injectable_changes_target_only() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        let a = d
+            .add_injectable(
+                &id,
+                "A".into(),
+                "a".into(),
+                InjectTarget::Terminal,
+                "#fff".into(),
+            )
+            .unwrap();
+        let b = d
+            .add_injectable(&id, "B".into(), "b".into(), InjectTarget::Ai, "#000".into())
+            .unwrap();
+        d.update_injectable(
+            &id,
+            &a.id,
+            "A2".into(),
+            "a2".into(),
+            InjectTarget::Ai,
+            "#111".into(),
+        );
+        assert_eq!(d.projects[0].injectables[0].name, "A2");
+        assert_eq!(d.projects[0].injectables[0].text, "a2");
+        assert_eq!(d.projects[0].injectables[0].target, InjectTarget::Ai);
+        assert_eq!(d.projects[0].injectables[0].color, "#111");
+        assert_eq!(d.projects[0].injectables[1], b);
+    }
+
+    #[test]
+    fn update_injectable_unknown_ids_are_no_ops() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        let a = d
+            .add_injectable(
+                &id,
+                "A".into(),
+                "a".into(),
+                InjectTarget::Terminal,
+                "#fff".into(),
+            )
+            .unwrap();
+        d.update_injectable(
+            "bogus-project",
+            &a.id,
+            "X".into(),
+            "x".into(),
+            InjectTarget::Ai,
+            "#000".into(),
+        );
+        d.update_injectable(
+            &id,
+            "bogus-injectable",
+            "X".into(),
+            "x".into(),
+            InjectTarget::Ai,
+            "#000".into(),
+        );
+        assert_eq!(d.projects[0].injectables[0], a);
+    }
+
+    #[test]
+    fn injectables_save_then_load_round_trip() {
+        let mut d = with_three();
+        let id = d.projects[0].id.clone();
+        d.add_injectable(
+            &id,
+            "Prompt".into(),
+            "explain this code\nin detail".into(),
+            InjectTarget::Ai,
+            "#3b82f6".into(),
+        );
+        let path =
+            std::env::temp_dir().join(format!("antani-injectable-{}.json", uuid::Uuid::new_v4()));
+        save(&path, &d).unwrap();
+        let loaded: AppData = load(&path);
+        assert_eq!(loaded, d);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn project_json_without_injectables_field_loads_as_empty() {
+        let path = std::env::temp_dir().join(format!(
+            "antani-legacy-injectables-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        fs::write(
+            &path,
+            br##"{"projects":[{"id":"a","name":"A","path":"/a","color":"#ef4444","customCommands":[]}],"activeProjectId":"a"}"##,
+        )
+        .unwrap();
+        let loaded: AppData = load(&path);
+        assert_eq!(loaded.projects[0].injectables, Vec::new());
         let _ = fs::remove_file(&path);
     }
 

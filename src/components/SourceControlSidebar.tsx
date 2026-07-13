@@ -1,10 +1,12 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { openDiffInIde } from "../lib/api.ipc";
+import { fileDrag } from "../lib/fileDrag";
 import { buildFileTree, type TreeNode } from "../lib/fileTree";
 import * as git from "../lib/git.ipc";
 import { isNotGitRepoError } from "../lib/git.ipc";
 import type { FileChangeKind, GitFileEntry, GitStatus, Project } from "../lib/types";
+import { ConfirmPopover } from "./ConfirmPopover";
 import { ContextMenu } from "./ContextMenu";
 import {
   ChevronRightIcon,
@@ -15,7 +17,6 @@ import {
   ProjectsIcon,
   SourceControlIcon,
 } from "./Icons";
-import { RevertFileModal } from "./RevertFileModal";
 
 interface SourceControlSidebarProps {
   project: Project | null;
@@ -101,6 +102,11 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
   const [toggledFolders, setToggledFolders] = useState<Set<string>>(new Set());
   const [revertTarget, setRevertTarget] = useState<GitFileEntry | null>(null);
   const [revertAllPending, setRevertAllPending] = useState(false);
+  const [revertFolderTarget, setRevertFolderTarget] = useState<{
+    folderPath: string;
+    entries: GitFileEntry[];
+  } | null>(null);
+  const [revertAnchor, setRevertAnchor] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     try {
@@ -234,6 +240,7 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
     if (!project || !revertTarget) return;
     void git.gitRevertFile(project.path, revertTarget.path, revertTarget.kind).then(() => {
       setRevertTarget(null);
+      setRevertAnchor(null);
       refresh();
     });
   }, [project, revertTarget, refresh]);
@@ -241,9 +248,20 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
     if (!project) return;
     void git.gitRevertAll(project.path).then(() => {
       setRevertAllPending(false);
+      setRevertAnchor(null);
       refresh();
     });
   }, [project, refresh]);
+  const confirmRevertFolder = useCallback(() => {
+    if (!project || !revertFolderTarget) return;
+    Promise.all(
+      revertFolderTarget.entries.map((e) => git.gitRevertFile(project.path, e.path, e.kind)),
+    ).then(() => {
+      setRevertFolderTarget(null);
+      setRevertAnchor(null);
+      refresh();
+    });
+  }, [project, revertFolderTarget, refresh]);
   const openDiff = useCallback(
     (path: string) => {
       if (!project) return;
@@ -390,11 +408,17 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
                 nodes={staged}
                 depth={0}
                 staged
+                allEntries={status.staged}
+                projectPath={project.path}
                 toggledFolders={toggledFolders}
                 onToggleFolder={toggleFolder}
                 onStage={stageOne}
                 onUnstage={unstageOne}
-                onRevert={setRevertTarget}
+                onRevert={(entry, x, y) => {
+                  setRevertTarget(entry);
+                  setRevertAnchor({ x, y });
+                }}
+                onRevertFolder={null}
                 onOpenDiff={openDiff}
                 onReveal={onReveal}
               />
@@ -409,7 +433,10 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
                 {
                   icon: <DiscardIcon size={11} />,
                   title: "Revert all",
-                  onAction: () => setRevertAllPending(true),
+                  onAction: (e) => {
+                    setRevertAllPending(true);
+                    setRevertAnchor({ x: e.clientX, y: e.clientY });
+                  },
                 },
                 { icon: <PlusIcon size={11} />, title: "Stage all", onAction: stageAll },
               ]}
@@ -418,11 +445,20 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
                 nodes={unstaged}
                 depth={0}
                 staged={false}
+                allEntries={status.unstaged}
+                projectPath={project.path}
                 toggledFolders={toggledFolders}
                 onToggleFolder={toggleFolder}
                 onStage={stageOne}
                 onUnstage={unstageOne}
-                onRevert={setRevertTarget}
+                onRevert={(entry, x, y) => {
+                  setRevertTarget(entry);
+                  setRevertAnchor({ x, y });
+                }}
+                onRevertFolder={(target, x, y) => {
+                  setRevertFolderTarget(target);
+                  setRevertAnchor({ x, y });
+                }}
                 onOpenDiff={openDiff}
                 onReveal={onReveal}
               />
@@ -431,8 +467,10 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
         </div>
       )}
 
-      {revertTarget && (
-        <RevertFileModal
+      {revertTarget && revertAnchor && (
+        <ConfirmPopover
+          x={revertAnchor.x}
+          y={revertAnchor.y}
           message={
             <>
               This will permanently discard changes to{" "}
@@ -443,12 +481,39 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
             </>
           }
           onConfirm={confirmRevert}
-          onCancel={() => setRevertTarget(null)}
+          onCancel={() => {
+            setRevertTarget(null);
+            setRevertAnchor(null);
+          }}
         />
       )}
 
-      {revertAllPending && (
-        <RevertFileModal
+      {revertFolderTarget && revertAnchor && (
+        <ConfirmPopover
+          x={revertAnchor.x}
+          y={revertAnchor.y}
+          message={
+            <>
+              This will permanently discard all changes in{" "}
+              <span className="text-foreground">
+                {revertFolderTarget.folderPath.split("/").pop() ?? revertFolderTarget.folderPath}
+              </span>{" "}
+              ({revertFolderTarget.entries.length} file
+              {revertFolderTarget.entries.length === 1 ? "" : "s"}). This action cannot be undone.
+            </>
+          }
+          onConfirm={confirmRevertFolder}
+          onCancel={() => {
+            setRevertFolderTarget(null);
+            setRevertAnchor(null);
+          }}
+        />
+      )}
+
+      {revertAllPending && revertAnchor && (
+        <ConfirmPopover
+          x={revertAnchor.x}
+          y={revertAnchor.y}
           message={
             <>
               This will permanently discard all{" "}
@@ -457,7 +522,10 @@ export function SourceControlSidebar({ project, onOpenIde }: SourceControlSideba
             </>
           }
           onConfirm={confirmRevertAll}
-          onCancel={() => setRevertAllPending(false)}
+          onCancel={() => {
+            setRevertAllPending(false);
+            setRevertAnchor(null);
+          }}
         />
       )}
 
@@ -487,7 +555,11 @@ function Section({
 }: {
   title: string;
   count: number;
-  actions: { icon: ReactNode; title: string; onAction: () => void }[];
+  actions: {
+    icon: ReactNode;
+    title: string;
+    onAction: (e: MouseEvent<HTMLButtonElement>) => void;
+  }[];
   children: ReactNode;
 }) {
   return (
@@ -520,22 +592,30 @@ function Tree({
   nodes,
   depth,
   staged,
+  allEntries,
+  projectPath,
   toggledFolders,
   onToggleFolder,
   onStage,
   onUnstage,
   onRevert,
+  onRevertFolder,
   onOpenDiff,
   onReveal,
 }: {
   nodes: TreeNode[];
   depth: number;
   staged: boolean;
+  allEntries: GitFileEntry[];
+  projectPath: string;
   toggledFolders: Set<string>;
   onToggleFolder: (path: string) => void;
   onStage: (path: string) => void;
   onUnstage: (path: string) => void;
-  onRevert: (entry: GitFileEntry) => void;
+  onRevert: (entry: GitFileEntry, x: number, y: number) => void;
+  onRevertFolder:
+    | ((target: { folderPath: string; entries: GitFileEntry[] }, x: number, y: number) => void)
+    | null;
   onOpenDiff: (path: string) => void;
   onReveal: (path: string, x: number, y: number) => void;
 }) {
@@ -566,29 +646,51 @@ function Tree({
                 />
                 <span className="truncate">{node.name}</span>
               </div>
-              <button
-                type="button"
-                title={staged ? "Unstage folder" : "Stage folder"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (staged) onUnstage(node.path);
-                  else onStage(node.path);
-                }}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground group-hover:opacity-100 transition-opacity"
-              >
-                {staged ? <MinusIcon size={11} /> : <PlusIcon size={11} />}
-              </button>
+              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                {!staged && onRevertFolder && (
+                  <button
+                    type="button"
+                    title="Discard folder changes"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const prefix = `${node.path}/`;
+                      const entries = allEntries.filter(
+                        (entry) => entry.path === node.path || entry.path.startsWith(prefix),
+                      );
+                      onRevertFolder({ folderPath: node.path, entries }, e.clientX, e.clientY);
+                    }}
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                  >
+                    <DiscardIcon size={11} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  title={staged ? "Unstage folder" : "Stage folder"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (staged) onUnstage(node.path);
+                    else onStage(node.path);
+                  }}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                >
+                  {staged ? <MinusIcon size={11} /> : <PlusIcon size={11} />}
+                </button>
+              </div>
             </div>
             {isExpanded && (
               <Tree
                 nodes={node.children}
                 depth={depth + 1}
                 staged={staged}
+                allEntries={allEntries}
+                projectPath={projectPath}
                 toggledFolders={toggledFolders}
                 onToggleFolder={onToggleFolder}
                 onStage={onStage}
                 onUnstage={onUnstage}
                 onRevert={onRevert}
+                onRevertFolder={onRevertFolder}
                 onOpenDiff={onOpenDiff}
                 onReveal={onReveal}
               />
@@ -597,6 +699,48 @@ function Tree({
         ) : (
           <div
             key={node.path}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              e.preventDefault();
+              fileDrag.path = `${projectPath}/${node.path}`;
+              document.body.style.userSelect = "none";
+              document.body.style.cursor = "copy";
+
+              const ghost = document.createElement("div");
+              ghost.textContent = node.name;
+              ghost.style.cssText = [
+                "position:fixed",
+                "pointer-events:none",
+                "z-index:9999",
+                "padding:3px 8px",
+                "border-radius:4px",
+                "font-size:11px",
+                "font-family:Menlo,monospace",
+                "white-space:nowrap",
+                "background:rgba(40,42,54,0.95)",
+                "border:1px solid rgba(255,255,255,0.12)",
+                "color:rgba(255,255,255,0.85)",
+                "box-shadow:0 2px 8px rgba(0,0,0,0.4)",
+              ].join(";");
+              ghost.style.left = `${e.clientX + 14}px`;
+              ghost.style.top = `${e.clientY + 6}px`;
+              document.body.appendChild(ghost);
+
+              function onMove(ev: PointerEvent) {
+                ghost.style.left = `${ev.clientX + 14}px`;
+                ghost.style.top = `${ev.clientY + 6}px`;
+              }
+              function onUp() {
+                fileDrag.path = null;
+                document.body.style.userSelect = "";
+                document.body.style.cursor = "";
+                ghost.remove();
+                window.removeEventListener("pointermove", onMove);
+                window.removeEventListener("pointerup", onUp);
+              }
+              window.addEventListener("pointermove", onMove);
+              window.addEventListener("pointerup", onUp);
+            }}
             onClick={() => onOpenDiff(node.path)}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -645,7 +789,7 @@ function Tree({
                       title="Discard changes"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onRevert({ path: node.path, kind: node.kind });
+                        onRevert({ path: node.path, kind: node.kind }, e.clientX, e.clientY);
                       }}
                       className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
                     >

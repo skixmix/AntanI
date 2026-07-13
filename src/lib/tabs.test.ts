@@ -25,6 +25,7 @@ const SETTINGS: Settings = {
   soundEnabled: true,
   soundReady: "Glass",
   soundWaiting: "Ping",
+  terminalFontSize: 14,
 };
 const PROJECT = "proj-1";
 
@@ -50,7 +51,7 @@ describe("defaultTitle", () => {
     expect(defaultTitle("terminal")).toBe("Terminal");
     expect(defaultTitle("claude")).toBe("Claude");
     expect(defaultTitle("opencode")).toBe("opencode");
-    expect(defaultTitle("ide")).toBe("IDE");
+    expect(defaultTitle("ide")).toBe("VS Code");
   });
 });
 

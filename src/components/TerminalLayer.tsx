@@ -6,18 +6,15 @@ interface TerminalLayerProps {
   projects: Project[];
   tabs: TabsState;
   activeProjectId: string | null;
+  fontSize: number;
   onStatusChange: (tabId: string, status: TabStatus) => void;
 }
 
-/**
- * Renders the PTY-backed tabs of every project at once and toggles visibility,
- * so a terminal keeps running (and its xterm buffer stays intact) when the user
- * switches projects. Tabs are never unmounted on switch — only hidden.
- */
 export function TerminalLayer({
   projects,
   tabs,
   activeProjectId,
+  fontSize,
   onStatusChange,
 }: TerminalLayerProps) {
   return (
@@ -33,6 +30,7 @@ export function TerminalLayer({
               cwd={project.path}
               startupCommand={tab.startupCommand}
               visible={project.id === activeProjectId && tab.id === activeTabId}
+              fontSize={fontSize}
               isAi={tab.kind === "claude" || tab.kind === "opencode"}
               onStatusChange={onStatusChange}
             />

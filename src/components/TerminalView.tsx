@@ -7,9 +7,10 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { killPty, onPtyExit, resizePty, spawnPty, writePty } from "../lib/api.ipc";
 import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_SCROLLBACK } from "../lib/constants";
+import { fileDrag } from "../lib/fileDrag";
 import type { TabStatus } from "../lib/tabs";
 
 // Deliberately excludes bare, common words ("confirm", "Trust", "Press enter")
@@ -26,9 +27,6 @@ const WAITING_RE =
 // back, restarting its CSS animation and making it look like it never
 // settles into a smooth spin.
 const SILENCE_MS = 3500;
-const DEFAULT_FONT_SIZE = 14;
-const MIN_FONT_SIZE = 8;
-const MAX_FONT_SIZE = 32;
 
 // Same convention as Terminal.app/iTerm2: wrap each dropped path in single
 // quotes so spaces and other shell-special characters survive as literal
@@ -42,6 +40,7 @@ interface TerminalViewProps {
   cwd: string;
   startupCommand: string | null;
   visible: boolean;
+  fontSize: number;
   isAi?: boolean;
   onStatusChange?: (tabId: string, status: TabStatus) => void;
 }
@@ -51,15 +50,17 @@ export function TerminalView({
   cwd,
   startupCommand,
   visible,
+  fontSize,
   isAi,
   onStatusChange,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
-  const fontSizeRef = useRef(DEFAULT_FONT_SIZE);
 
+  // fontSize is only read here as the initial size; live changes are applied
+  // by the dedicated fontSize effect below without respawning the PTY.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see comment above
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -70,7 +71,7 @@ export function TerminalView({
       theme: { background: "#252830" },
       lineHeight: 1,
       fontFamily: "Menlo, monospace",
-      fontSize: fontSizeRef.current,
+      fontSize,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -300,6 +301,19 @@ export function TerminalView({
     };
   }, [tabId, cwd, startupCommand, isAi, onStatusChange]);
 
+  // Kept separate from the spawn effect above: fontSize changing must not
+  // respawn the PTY, since the old effect's cleanup kills it asynchronously
+  // (spawned.finally(() => killPty(tabId))) and can race past a fresh spawn
+  // of the same tabId, killing the new process instead of the old one.
+  useEffect(() => {
+    const term = termRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit) return;
+    term.options.fontSize = fontSize;
+    fit.fit();
+    void resizePty(tabId, term.cols, term.rows);
+  }, [tabId, fontSize]);
+
   useEffect(() => {
     if (!visible) return;
     const term = termRef.current;
@@ -310,6 +324,18 @@ export function TerminalView({
     void resizePty(tabId, term.cols, term.rows);
   }, [visible, tabId]);
 
+  // Refocus after the injection bar writes a snippet into this tab's PTY, so
+  // the user can immediately edit or submit the freshly-injected draft.
+  useEffect(() => {
+    if (!visible) return;
+    function onFocusRequest(e: Event) {
+      if ((e as CustomEvent<string>).detail !== tabId) return;
+      termRef.current?.focus();
+    }
+    window.addEventListener("antani:focus-terminal", onFocusRequest);
+    return () => window.removeEventListener("antani:focus-terminal", onFocusRequest);
+  }, [visible, tabId]);
+
   useEffect(() => {
     if (!visible) return;
     // The webview's native drag-drop handler is window-scoped, not
@@ -317,43 +343,39 @@ export function TerminalView({
     // registers a handler) rather than hit-testing the drop position.
     const unlisten = getCurrentWebview().onDragDropEvent((event) => {
       if (event.payload.type !== "drop") return;
+      if (event.payload.paths.length === 0) return;
       const text = event.payload.paths.map(shellEscapePath).join(" ");
       void writePty(tabId, `${text} `);
     });
+
+    // In-app file drags from the source control sidebar use pointer events
+    // (HTML5 drag API is unreliable in Tauri/WKWebView). On pointerup, if
+    // the cursor is over this terminal's container and a file drag is in
+    // flight, write the path.
+    const container = containerRef.current;
+    function onPointerUp(e: PointerEvent) {
+      if (!fileDrag.path) return;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right) return;
+      if (e.clientY < rect.top || e.clientY > rect.bottom) return;
+      void writePty(tabId, `${shellEscapePath(fileDrag.path)} `);
+    }
+    window.addEventListener("pointerup", onPointerUp);
+
     return () => {
       void unlisten.then((fn) => fn());
+      window.removeEventListener("pointerup", onPointerUp);
     };
   }, [visible, tabId]);
 
-  function zoom(delta: number) {
-    setFontSize((s) => {
-      const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, s + delta));
-      fontSizeRef.current = next;
-      const term = termRef.current;
-      const fit = fitRef.current;
-      if (term && fit) {
-        term.options.fontSize = next;
-        fit.fit();
-        void resizePty(tabId, term.cols, term.rows);
-      }
-      return next;
-    });
-  }
-
   return (
     <div className="absolute inset-0" style={{ display: visible ? "block" : "none" }}>
-      <div className="absolute inset-0 p-1.5">
-        <div ref={containerRef} className="h-full w-full overflow-hidden" />
-      </div>
-      <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded bg-black/40 px-2 py-1 text-[11px] text-white/60">
-        <button type="button" className="hover:text-white" onClick={() => zoom(-1)}>
-          −
-        </button>
-        <span className="tabular-nums w-8 text-center text-white/80">{fontSize}px</span>
-        <button type="button" className="hover:text-white" onClick={() => zoom(1)}>
-          +
-        </button>
-      </div>
+      <div
+        ref={containerRef}
+        className="absolute inset-0 overflow-hidden"
+        style={{ backgroundColor: "#252830" }}
+      />
     </div>
   );
 }

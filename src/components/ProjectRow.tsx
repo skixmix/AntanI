@@ -13,6 +13,7 @@ interface ProjectRowProps {
   status?: "busy" | "waiting";
   needsAttention?: "ready" | "waiting";
   rowRef?: React.Ref<HTMLDivElement>;
+  dragScope?: string;
   onSelect: () => void;
   onRename: (name: string) => void;
   onRecolor: (color: string) => void;
@@ -28,6 +29,7 @@ export function ProjectRow({
   status,
   needsAttention,
   rowRef,
+  dragScope = "projects",
   onSelect,
   onRename,
   onRecolor,
@@ -60,13 +62,14 @@ export function ProjectRow({
   return (
     <div
       ref={rowRef}
-      data-drag-scope="projects"
+      data-drag-scope={dragScope}
       data-drag-id={project.id}
       onPointerDown={onPointerDown}
       onClick={onSelect}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
+        window.dispatchEvent(new CustomEvent("antani:close-ctx-menus"));
         setCtxMenu({ x: e.clientX, y: e.clientY });
       }}
       title={project.path}

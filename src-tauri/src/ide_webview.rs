@@ -78,6 +78,9 @@ pub fn create_ide_webview(
     let webview = window
         .add_child(
             WebviewBuilder::new(&label, WebviewUrl::External(url))
+                // Tauri's OS-level drag-drop handler otherwise swallows `dragstart`
+                // inside the webview, killing VS Code's file-explorer HTML5 DnD.
+                .disable_drag_drop_handler()
                 // Paint the webview dark before the first pixel, eliminating the
                 // white flash while VS Code's own theme stylesheet loads.
                 .initialization_script(
@@ -182,34 +185,5 @@ pub fn close_ide_webview(app: AppHandle, project_id: String) -> Result<(), Strin
     if empty {
         app.state::<VscodeServer>().stop();
     }
-    Ok(())
-}
-
-/// Close every open IDE webview at once and stop the server, freeing all RAM.
-/// Called from the "free up RAM" action in the UI.
-#[tauri::command]
-pub fn close_all_ide_webviews(app: AppHandle) -> Result<(), String> {
-    let ids: Vec<String> = app
-        .state::<IdeWebviews>()
-        .open
-        .lock()
-        .map_err(|e| e.to_string())?
-        .iter()
-        .cloned()
-        .collect();
-
-    for id in &ids {
-        if let Some(webview) = app.get_webview(&label_for(id)) {
-            let _ = webview.close();
-        }
-    }
-
-    app.state::<IdeWebviews>()
-        .open
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clear();
-
-    app.state::<VscodeServer>().stop();
     Ok(())
 }
