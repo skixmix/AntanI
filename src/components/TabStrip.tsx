@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { projectInitials } from "../lib/constants";
 import type { Tab, TabKind, TabStatus } from "../lib/tabs";
 import type { CustomCommand, Project } from "../lib/types";
@@ -58,13 +58,19 @@ export function TabStrip({
     const cr = container.getBoundingClientRect();
     const er = el.getBoundingClientRect();
     const PEEK = 48;
-    container.scrollTo({ left: Math.max(0, container.scrollLeft + er.left - cr.left - PEEK), behavior: "smooth" });
+    container.scrollTo({
+      left: Math.max(0, container.scrollLeft + er.left - cr.left - PEEK),
+      behavior: "smooth",
+    });
   }, [activeTabId]);
 
   return (
     <div className="flex flex-col border-b border-border shrink-0">
       {/* Tab row */}
-      <div className="flex items-stretch" style={{ borderBottom: "1px solid var(--color-border)", height: 52 }}>
+      <div
+        className="flex items-stretch"
+        style={{ borderBottom: "1px solid var(--color-border)", height: 52 }}
+      >
         {/* Project avatar — extra left padding clears room for the projects
             sidebar's floating collapse toggle, which pokes in from the left edge */}
         <div

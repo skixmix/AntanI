@@ -112,6 +112,7 @@ button,
    visible, leaving a gap on the right. Hide it — xterm's own .xterm-scroll-area
    handles overflow internally. */
 .xterm .xterm-viewport {
+  /* biome-ignore lint/complexity/noImportantStyles: overrides xterm.js inline style */
   overflow-y: hidden !important;
 }
 

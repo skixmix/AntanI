@@ -343,7 +343,11 @@ export function TerminalView({
 
   return (
     <div className="absolute inset-0" style={{ display: visible ? "block" : "none" }}>
-      <div ref={containerRef} className="absolute inset-0 overflow-hidden" style={{ backgroundColor: "#252830" }} />
+      <div
+        ref={containerRef}
+        className="absolute inset-0 overflow-hidden"
+        style={{ backgroundColor: "#252830" }}
+      />
     </div>
   );
 }
