@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PROJECT_COLORS } from "../lib/constants";
 import { playSystemSound, SYSTEM_SOUNDS } from "../lib/sound.ipc";
-import type { CustomCommand, Project, Settings } from "../lib/types";
+import type { CustomCommand, Injectable, InjectTarget, Project, Settings } from "../lib/types";
 import { ColorPicker } from "./ColorPicker";
 import { CloseIcon, TerminalIcon, VSCodeIcon } from "./Icons";
 
@@ -10,6 +10,7 @@ interface SettingsPageProps {
   settings: Settings;
   project: Project | null;
   initialTab?: TabId;
+  initialCommandsSubTab?: CommandsSubTab;
   onClose: () => void;
   onImportVscode: () => void;
   onUpdateSettings: (patch: Partial<Settings>) => void;
@@ -22,9 +23,34 @@ interface SettingsPageProps {
     command: string,
     color: string,
   ) => void;
+  onAddInjectable: (
+    projectId: string,
+    name: string,
+    text: string,
+    target: InjectTarget,
+    color: string,
+  ) => void;
+  onRemoveInjectable: (projectId: string, injectableId: string) => void;
+  onUpdateInjectable: (
+    projectId: string,
+    injectableId: string,
+    name: string,
+    text: string,
+    target: InjectTarget,
+    color: string,
+  ) => void;
 }
 
 export type TabId = "general" | "commands" | "vscode";
+
+export type CommandsSubTab = "launch" | "custom" | "snippets" | "prompts";
+
+const COMMANDS_SUB_TABS: { id: CommandsSubTab; label: string }[] = [
+  { id: "launch", label: "Launch" },
+  { id: "custom", label: "Custom commands" },
+  { id: "snippets", label: "Snippets" },
+  { id: "prompts", label: "Prompts" },
+];
 
 const TABS: { id: TabId; label: string; icon: (className: string) => ReactNode }[] = [
   {
@@ -240,7 +266,7 @@ function CustomCommandForm({
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-dashed border-border p-2.5">
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
         <button
           ref={swatchRef}
           type="button"
@@ -255,12 +281,13 @@ function CustomCommandForm({
           placeholder="Name"
           className="w-28 min-w-0 rounded-md bg-tertiary px-2 py-1.5 text-xs text-foreground outline-none ring-1 ring-border transition-shadow focus:ring-primary/60"
         />
-        <input
+        <textarea
           value={command}
           onChange={(e) => setCommand(e.currentTarget.value)}
-          placeholder="Shell command"
+          placeholder="Shell command (multiple lines allowed)"
           spellCheck={false}
-          className="min-w-0 flex-1 rounded-md bg-tertiary px-2 py-1.5 font-mono text-xs text-foreground outline-none ring-1 ring-border transition-shadow focus:ring-primary/60"
+          rows={3}
+          className="min-w-0 flex-1 resize-y rounded-md bg-tertiary px-2 py-1.5 font-mono text-xs text-foreground outline-none ring-1 ring-border transition-shadow focus:ring-primary/60"
         />
       </div>
       <div className="flex items-center justify-end gap-2">
@@ -294,18 +321,213 @@ function CustomCommandForm({
   );
 }
 
+function InjectableRow({
+  inj,
+  onEdit,
+  onRemove,
+}: {
+  inj: Injectable;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-md bg-tertiary px-2.5 py-1.5">
+      <button
+        type="button"
+        onClick={onEdit}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <span
+          className="h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: inj.color }}
+        />
+        <span className="shrink-0 text-xs font-medium text-foreground">{inj.name}</span>
+        <span className="truncate font-mono text-[11px] text-muted-foreground">
+          {inj.text.replace(/\s+/g, " ")}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onRemove}
+        title="Remove"
+        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
+      >
+        <CloseIcon size={11} />
+      </button>
+    </div>
+  );
+}
+
+function InjectableForm({
+  target,
+  editing,
+  onSave,
+  onCancel,
+}: {
+  target: InjectTarget;
+  editing: Injectable | null;
+  onSave: (name: string, text: string, color: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(editing?.name ?? "");
+  const [text, setText] = useState(editing?.text ?? "");
+  const [color, setColor] = useState(editing?.color ?? PROJECT_COLORS[0]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const swatchRef = useRef<HTMLButtonElement>(null);
+
+  function submit() {
+    const trimmedName = name.trim();
+    const trimmedText = text.trim();
+    if (!trimmedName || !trimmedText) return;
+    onSave(trimmedName, trimmedText, color);
+    if (!editing) {
+      setName("");
+      setText("");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-dashed border-border p-2.5">
+      <div className="flex items-start gap-2">
+        <button
+          ref={swatchRef}
+          type="button"
+          title="Color"
+          onClick={() => setPickerOpen(true)}
+          className="h-6 w-6 shrink-0 rounded-full ring-1 ring-border transition-transform hover:scale-110"
+          style={{ backgroundColor: color }}
+        />
+        <input
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+          placeholder="Name"
+          className="w-28 min-w-0 rounded-md bg-tertiary px-2 py-1.5 text-xs text-foreground outline-none ring-1 ring-border transition-shadow focus:ring-primary/60"
+        />
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.currentTarget.value)}
+          placeholder={
+            target === "ai"
+              ? "Prompt text (multiple lines allowed)"
+              : "Snippet (multiple lines allowed)"
+          }
+          spellCheck={false}
+          rows={3}
+          className="min-w-0 flex-1 resize-y rounded-md bg-tertiary px-2 py-1.5 font-mono text-xs text-foreground outline-none ring-1 ring-border transition-shadow focus:ring-primary/60"
+        />
+      </div>
+      <div className="flex items-center justify-end gap-2">
+        {editing && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md px-2.5 py-1 text-xs text-muted-foreground hover:bg-secondary transition-colors"
+          >
+            Cancel
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!name.trim() || !text.trim()}
+          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          {editing ? "Save" : target === "ai" ? "Add prompt" : "Add snippet"}
+        </button>
+      </div>
+      {pickerOpen && (
+        <ColorPicker
+          anchorEl={swatchRef.current}
+          selected={color}
+          onPick={setColor}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** CRUD list for one injectable target (terminal snippets or AI prompts),
+ *  filtered from the project's full injectable list. */
+function InjectableSection({
+  project,
+  target,
+  onAdd,
+  onRemove,
+  onUpdate,
+}: {
+  project: Project;
+  target: InjectTarget;
+  onAdd: (
+    projectId: string,
+    name: string,
+    text: string,
+    target: InjectTarget,
+    color: string,
+  ) => void;
+  onRemove: (projectId: string, injectableId: string) => void;
+  onUpdate: (
+    projectId: string,
+    injectableId: string,
+    name: string,
+    text: string,
+    target: InjectTarget,
+    color: string,
+  ) => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const items = project.injectables.filter((i) => i.target === target);
+
+  return (
+    <div className="flex flex-col gap-2">
+      {items.map((inj) => (
+        <InjectableRow
+          key={inj.id}
+          inj={inj}
+          onEdit={() => setEditingId(inj.id)}
+          onRemove={() => {
+            if (editingId === inj.id) setEditingId(null);
+            onRemove(project.id, inj.id);
+          }}
+        />
+      ))}
+      <InjectableForm
+        key={editingId ?? "new"}
+        target={target}
+        editing={items.find((i) => i.id === editingId) ?? null}
+        onSave={(name, text, color) => {
+          if (editingId) {
+            onUpdate(project.id, editingId, name, text, target, color);
+            setEditingId(null);
+          } else {
+            onAdd(project.id, name, text, target, color);
+          }
+        }}
+        onCancel={() => setEditingId(null)}
+      />
+    </div>
+  );
+}
+
 export function SettingsPage({
   settings,
   project,
   initialTab,
+  initialCommandsSubTab,
   onClose,
   onImportVscode,
   onUpdateSettings,
   onAddCustomCommand,
   onRemoveCustomCommand,
   onUpdateCustomCommand,
+  onAddInjectable,
+  onRemoveInjectable,
+  onUpdateInjectable,
 }: SettingsPageProps) {
   const [tab, setTab] = useState<TabId>(initialTab ?? "general");
+  const [commandsSubTab, setCommandsSubTab] = useState<CommandsSubTab>(
+    initialCommandsSubTab ?? "launch",
+  );
   const [editingCommandId, setEditingCommandId] = useState<string | null>(null);
 
   // Park native webviews while the page is open — same reason as every other
@@ -342,7 +564,7 @@ export function SettingsPage({
       </div>
 
       <div className="flex flex-1 justify-center overflow-y-auto">
-        <div className="flex w-full max-w-2xl gap-8 px-6 py-10">
+        <div className="flex w-full max-w-4xl gap-8 px-6 py-10">
           {/* Vertical tab rail */}
           <nav className="flex w-40 shrink-0 flex-col gap-0.5">
             {TABS.map((t) => (
@@ -460,73 +682,141 @@ export function SettingsPage({
 
             {tab === "commands" && (
               <>
-                <SectionCard
-                  title="Launch commands"
-                  description="Override the shell command run when opening a Claude or opencode tab — useful for aliases, wrappers, or extra flags."
-                >
-                  <div className="flex flex-col gap-4">
-                    <CommandField
-                      label="Claude command"
-                      value={settings.claudeCommand}
-                      placeholder="claude"
-                      onCommit={(claudeCommand) => onUpdateSettings({ claudeCommand })}
-                    />
-                    <CommandField
-                      label="opencode command"
-                      value={settings.opencodeCommand}
-                      placeholder="opencode"
-                      onCommit={(opencodeCommand) => onUpdateSettings({ opencodeCommand })}
-                    />
-                  </div>
-                </SectionCard>
+                {/* Sub-tab bar — underline style */}
+                <div className="flex items-center gap-5 border-b border-border">
+                  {COMMANDS_SUB_TABS.map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => setCommandsSubTab(st.id)}
+                      className={`relative -mb-px whitespace-nowrap border-b-2 px-0.5 pb-2.5 text-xs font-medium transition-colors ${
+                        commandsSubTab === st.id
+                          ? "border-primary text-foreground"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
 
-                <SectionCard
-                  title="Custom commands"
-                  description="Per-project quick-access commands. Each opens a new tab that runs its shell command."
-                  badge={project && <ProjectBadge project={project} />}
-                >
-                  {!project && (
-                    <p className="text-xs text-muted-foreground">
-                      Open a project to manage its custom commands.
-                    </p>
-                  )}
-                  {project && (
-                    <div className="flex flex-col gap-2">
-                      {project.customCommands.map((cmd) => (
-                        <CustomCommandRow
-                          key={cmd.id}
-                          cmd={cmd}
-                          onEdit={() => setEditingCommandId(cmd.id)}
-                          onRemove={() => {
-                            if (editingCommandId === cmd.id) setEditingCommandId(null);
-                            onRemoveCustomCommand(project.id, cmd.id);
-                          }}
-                        />
-                      ))}
-                      <CustomCommandForm
-                        key={editingCommandId ?? "new"}
-                        editing={
-                          project.customCommands.find((c) => c.id === editingCommandId) ?? null
-                        }
-                        onSave={(name, command, color) => {
-                          if (editingCommandId) {
-                            onUpdateCustomCommand(
-                              project.id,
-                              editingCommandId,
-                              name,
-                              command,
-                              color,
-                            );
-                            setEditingCommandId(null);
-                          } else {
-                            onAddCustomCommand(project.id, name, command, color);
-                          }
-                        }}
-                        onCancel={() => setEditingCommandId(null)}
+                {commandsSubTab === "launch" && (
+                  <SectionCard
+                    title="Launch commands"
+                    description="Override the shell command run when opening a Claude or opencode tab — useful for aliases, wrappers, or extra flags."
+                  >
+                    <div className="flex flex-col gap-4">
+                      <CommandField
+                        label="Claude command"
+                        value={settings.claudeCommand}
+                        placeholder="claude"
+                        onCommit={(claudeCommand) => onUpdateSettings({ claudeCommand })}
+                      />
+                      <CommandField
+                        label="opencode command"
+                        value={settings.opencodeCommand}
+                        placeholder="opencode"
+                        onCommit={(opencodeCommand) => onUpdateSettings({ opencodeCommand })}
                       />
                     </div>
-                  )}
-                </SectionCard>
+                  </SectionCard>
+                )}
+
+                {commandsSubTab === "custom" && (
+                  <SectionCard
+                    title="Custom commands"
+                    description="Per-project quick-access commands. Each opens a new tab that runs its shell command."
+                    badge={project && <ProjectBadge project={project} />}
+                  >
+                    {!project && (
+                      <p className="text-xs text-muted-foreground">
+                        Open a project to manage its custom commands.
+                      </p>
+                    )}
+                    {project && (
+                      <div className="flex flex-col gap-2">
+                        {project.customCommands.map((cmd) => (
+                          <CustomCommandRow
+                            key={cmd.id}
+                            cmd={cmd}
+                            onEdit={() => setEditingCommandId(cmd.id)}
+                            onRemove={() => {
+                              if (editingCommandId === cmd.id) setEditingCommandId(null);
+                              onRemoveCustomCommand(project.id, cmd.id);
+                            }}
+                          />
+                        ))}
+                        <CustomCommandForm
+                          key={editingCommandId ?? "new"}
+                          editing={
+                            project.customCommands.find((c) => c.id === editingCommandId) ?? null
+                          }
+                          onSave={(name, command, color) => {
+                            if (editingCommandId) {
+                              onUpdateCustomCommand(
+                                project.id,
+                                editingCommandId,
+                                name,
+                                command,
+                                color,
+                              );
+                              setEditingCommandId(null);
+                            } else {
+                              onAddCustomCommand(project.id, name, command, color);
+                            }
+                          }}
+                          onCancel={() => setEditingCommandId(null)}
+                        />
+                      </div>
+                    )}
+                  </SectionCard>
+                )}
+
+                {commandsSubTab === "snippets" && (
+                  <SectionCard
+                    title="Terminal snippets"
+                    description="Per-project snippets injected into the current terminal tab — written to the prompt without running, so you review and press Enter yourself."
+                    badge={project && <ProjectBadge project={project} />}
+                  >
+                    {!project && (
+                      <p className="text-xs text-muted-foreground">
+                        Open a project to manage its snippets.
+                      </p>
+                    )}
+                    {project && (
+                      <InjectableSection
+                        project={project}
+                        target="terminal"
+                        onAdd={onAddInjectable}
+                        onRemove={onRemoveInjectable}
+                        onUpdate={onUpdateInjectable}
+                      />
+                    )}
+                  </SectionCard>
+                )}
+
+                {commandsSubTab === "prompts" && (
+                  <SectionCard
+                    title="AI prompts"
+                    description="Per-project prompts injected into the current Claude or opencode tab — inserted without submitting, so you review and send yourself."
+                    badge={project && <ProjectBadge project={project} />}
+                  >
+                    {!project && (
+                      <p className="text-xs text-muted-foreground">
+                        Open a project to manage its prompts.
+                      </p>
+                    )}
+                    {project && (
+                      <InjectableSection
+                        project={project}
+                        target="ai"
+                        onAdd={onAddInjectable}
+                        onRemove={onRemoveInjectable}
+                        onUpdate={onUpdateInjectable}
+                      />
+                    )}
+                  </SectionCard>
+                )}
               </>
             )}
 

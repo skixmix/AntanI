@@ -2,6 +2,8 @@ import { projectTabs, type TabKind, type TabStatus, type TabsState } from "../li
 import type { CustomCommand, Project } from "../lib/types";
 import { EmptyPane } from "./EmptyPane";
 import { IdeLayer } from "./IdeLayer";
+import { InjectBar } from "./InjectBar";
+import type { CommandsSubTab } from "./SettingsPage";
 import { SourceControlSidebar } from "./SourceControlSidebar";
 import { TabStrip } from "./TabStrip";
 import { TerminalLayer } from "./TerminalLayer";
@@ -15,7 +17,7 @@ interface WorkspaceProps {
   terminalFontSize: number;
   onOpenTab: (kind: TabKind) => void;
   onOpenCustomTab: (cmd: CustomCommand) => void;
-  onOpenCommandSettings: () => void;
+  onOpenCommandSettings: (subTab?: CommandsSubTab) => void;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onRenameTab: (tabId: string, title: string) => void;
@@ -57,6 +59,8 @@ export function Workspace({
   const { tabs: projectTabList, activeTabId } = projectTabs(tabs, project.id);
   const ideTabId = projectTabList.find((t) => t.kind === "ide")?.id ?? null;
   const isEmpty = projectTabList.length === 0;
+  const activeTab = projectTabList.find((t) => t.id === activeTabId) ?? null;
+  const showInjectBar = activeTab !== null && activeTab.kind !== "ide";
 
   return (
     <>
@@ -96,6 +100,14 @@ export function Workspace({
             </div>
           )}
         </div>
+
+        {showInjectBar && activeTab && (
+          <InjectBar
+            project={project}
+            activeTab={activeTab}
+            onOpenCommandSettings={onOpenCommandSettings}
+          />
+        )}
       </main>
       <SourceControlSidebar project={project} onOpenIde={onOpenIde} />
     </>

@@ -3,7 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FirstRunVscodeModal } from "./components/FirstRunVscodeModal";
 import { FreeRamModal } from "./components/FreeRamModal";
 import { ImportVscodeModal } from "./components/ImportVscodeModal";
-import { SettingsPage, type TabId as SettingsTabId } from "./components/SettingsPage";
+import {
+  type CommandsSubTab,
+  SettingsPage,
+  type TabId as SettingsTabId,
+} from "./components/SettingsPage";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { Workspace } from "./components/Workspace";
@@ -27,7 +31,7 @@ import {
   type TabStatus,
   type TabsState,
 } from "./lib/tabs";
-import type { AppData, CustomCommand, Settings } from "./lib/types";
+import type { AppData, CustomCommand, InjectTarget, Settings } from "./lib/types";
 
 const MEM_POLL_MS = 10_000;
 
@@ -84,6 +88,7 @@ function App() {
   const [showFreeRamModal, setShowFreeRamModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId | null>(null);
+  const [settingsCommandsSubTab, setSettingsCommandsSubTab] = useState<CommandsSubTab>("custom");
   const [showFirstRunImportModal, setShowFirstRunImportModal] = useState(false);
   const [pendingIdeOpenProjectId, setPendingIdeOpenProjectId] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState("");
@@ -195,6 +200,30 @@ function App() {
   const handleUpdateCustomCommand = useCallback(
     (projectId: string, commandId: string, name: string, command: string, color: string) =>
       run(() => api.updateCustomCommand(projectId, commandId, name, command, color)),
+    [run],
+  );
+
+  const handleAddInjectable = useCallback(
+    (projectId: string, name: string, text: string, target: InjectTarget, color: string) =>
+      run(() => api.addInjectable(projectId, name, text, target, color)),
+    [run],
+  );
+
+  const handleRemoveInjectable = useCallback(
+    (projectId: string, injectableId: string) =>
+      run(() => api.removeInjectable(projectId, injectableId)),
+    [run],
+  );
+
+  const handleUpdateInjectable = useCallback(
+    (
+      projectId: string,
+      injectableId: string,
+      name: string,
+      text: string,
+      target: InjectTarget,
+      color: string,
+    ) => run(() => api.updateInjectable(projectId, injectableId, name, text, target, color)),
     [run],
   );
 
@@ -547,7 +576,10 @@ function App() {
           terminalFontSize={settings.terminalFontSize}
           onOpenTab={openTab}
           onOpenCustomTab={openCustomTab}
-          onOpenCommandSettings={() => setSettingsInitialTab("commands")}
+          onOpenCommandSettings={(subTab) => {
+            setSettingsCommandsSubTab(subTab ?? "custom");
+            setSettingsInitialTab("commands");
+          }}
           onSelectTab={selectTab}
           onCloseTab={handleCloseTab}
           onRenameTab={handleRenameTab}
@@ -565,12 +597,16 @@ function App() {
           settings={settings}
           project={active}
           initialTab={settingsInitialTab}
+          initialCommandsSubTab={settingsCommandsSubTab}
           onClose={() => setSettingsInitialTab(null)}
           onImportVscode={() => setShowImportModal(true)}
           onUpdateSettings={handleUpdateSettings}
           onAddCustomCommand={handleAddCustomCommand}
           onRemoveCustomCommand={handleRemoveCustomCommand}
           onUpdateCustomCommand={handleUpdateCustomCommand}
+          onAddInjectable={handleAddInjectable}
+          onRemoveInjectable={handleRemoveInjectable}
+          onUpdateInjectable={handleUpdateInjectable}
         />
       )}
 

@@ -4,6 +4,7 @@ import type { Tab, TabKind, TabStatus } from "../lib/tabs";
 import type { CustomCommand, Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
 import { AnthropicIcon, CustomCommandIcon, OpenCodeIcon, VSCodeIcon, WrenchIcon } from "./Icons";
+import type { CommandsSubTab } from "./SettingsPage";
 import { TabChip } from "./TabChip";
 
 interface TabStripProps {
@@ -15,7 +16,7 @@ interface TabStripProps {
   ideTabId: string | null;
   onOpen: (kind: TabKind) => void;
   onOpenCustom: (cmd: CustomCommand) => void;
-  onOpenCommandSettings: () => void;
+  onOpenCommandSettings: (subTab?: CommandsSubTab) => void;
   onSelect: (tabId: string) => void;
   onClose: (tabId: string) => void;
   onRename: (tabId: string, title: string) => void;
@@ -137,7 +138,7 @@ export function TabStrip({
         <button
           type="button"
           title="Manage commands"
-          onClick={onOpenCommandSettings}
+          onClick={() => onOpenCommandSettings("custom")}
           className="flex shrink-0 items-center px-3 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
           style={{ borderRight: "1px solid var(--color-border)" }}
         >
@@ -188,7 +189,7 @@ export function TabStrip({
           <button
             type="button"
             title="Add command"
-            onClick={onOpenCommandSettings}
+            onClick={() => onOpenCommandSettings("custom")}
             className="flex items-center justify-center rounded px-2 py-1 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
           >
             +

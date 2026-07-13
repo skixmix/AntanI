@@ -3,7 +3,7 @@ import { type Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AppData, Settings } from "./types";
+import type { AppData, InjectTarget, Settings } from "./types";
 
 /**
  * Typed wrappers around the Rust Tauri commands. Every mutating command
@@ -62,6 +62,38 @@ export function updateCustomCommand(
   color: string,
 ): Promise<AppData> {
   return invoke<AppData>("update_custom_command", { projectId, commandId, name, command, color });
+}
+
+export function addInjectable(
+  projectId: string,
+  name: string,
+  text: string,
+  target: InjectTarget,
+  color: string,
+): Promise<AppData> {
+  return invoke<AppData>("add_injectable", { projectId, name, text, target, color });
+}
+
+export function removeInjectable(projectId: string, injectableId: string): Promise<AppData> {
+  return invoke<AppData>("remove_injectable", { projectId, injectableId });
+}
+
+export function updateInjectable(
+  projectId: string,
+  injectableId: string,
+  name: string,
+  text: string,
+  target: InjectTarget,
+  color: string,
+): Promise<AppData> {
+  return invoke<AppData>("update_injectable", {
+    projectId,
+    injectableId,
+    name,
+    text,
+    target,
+    color,
+  });
 }
 
 export function setActiveProject(id: string | null): Promise<AppData> {

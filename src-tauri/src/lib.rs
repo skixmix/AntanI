@@ -7,7 +7,9 @@ mod sound;
 mod state;
 mod vscode_server;
 
-use state::{AppData, AppState, Settings, SettingsState, PROJECTS_FILE, SETTINGS_FILE};
+use state::{
+    AppData, AppState, InjectTarget, Settings, SettingsState, PROJECTS_FILE, SETTINGS_FILE,
+};
 use tauri::{Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use vscode_server::VscodeServer;
@@ -127,6 +129,44 @@ fn update_custom_command(
 }
 
 #[tauri::command]
+fn add_injectable(
+    state: State<AppState>,
+    project_id: String,
+    name: String,
+    text: String,
+    target: InjectTarget,
+    color: String,
+) -> Result<AppData, String> {
+    mutate(&state, |d| {
+        d.add_injectable(&project_id, name, text, target, color);
+    })
+}
+
+#[tauri::command]
+fn remove_injectable(
+    state: State<AppState>,
+    project_id: String,
+    injectable_id: String,
+) -> Result<AppData, String> {
+    mutate(&state, |d| d.remove_injectable(&project_id, &injectable_id))
+}
+
+#[tauri::command]
+fn update_injectable(
+    state: State<AppState>,
+    project_id: String,
+    injectable_id: String,
+    name: String,
+    text: String,
+    target: InjectTarget,
+    color: String,
+) -> Result<AppData, String> {
+    mutate(&state, |d| {
+        d.update_injectable(&project_id, &injectable_id, name, text, target, color);
+    })
+}
+
+#[tauri::command]
 fn set_active_project(state: State<AppState>, id: Option<String>) -> Result<AppData, String> {
     mutate(&state, |d| d.set_active(id))
 }
@@ -215,6 +255,9 @@ pub fn run() {
             add_custom_command,
             remove_custom_command,
             update_custom_command,
+            add_injectable,
+            remove_injectable,
+            update_injectable,
             set_active_project,
             get_settings,
             update_settings,

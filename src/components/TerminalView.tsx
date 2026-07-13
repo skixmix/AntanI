@@ -308,6 +308,18 @@ export function TerminalView({
     void resizePty(tabId, term.cols, term.rows);
   }, [visible, tabId]);
 
+  // Refocus after the injection bar writes a snippet into this tab's PTY, so
+  // the user can immediately edit or submit the freshly-injected draft.
+  useEffect(() => {
+    if (!visible) return;
+    function onFocusRequest(e: Event) {
+      if ((e as CustomEvent<string>).detail !== tabId) return;
+      termRef.current?.focus();
+    }
+    window.addEventListener("antani:focus-terminal", onFocusRequest);
+    return () => window.removeEventListener("antani:focus-terminal", onFocusRequest);
+  }, [visible, tabId]);
+
   useEffect(() => {
     if (!visible) return;
     // The webview's native drag-drop handler is window-scoped, not
