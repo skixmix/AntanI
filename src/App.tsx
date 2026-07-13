@@ -1,7 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FirstRunVscodeModal } from "./components/FirstRunVscodeModal";
-import { FreeRamModal } from "./components/FreeRamModal";
 import { ImportVscodeModal } from "./components/ImportVscodeModal";
 import {
   type CommandsSubTab,
@@ -33,48 +32,6 @@ import {
 } from "./lib/tabs";
 import type { AppData, CustomCommand, InjectTarget, Settings } from "./lib/types";
 
-const MEM_POLL_MS = 10_000;
-
-function useVscodeMemory() {
-  const [memMb, setMemMb] = useState<number | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      const mb = await api.getVscodeMemoryMb();
-      setMemMb(mb);
-    } catch {
-      setMemMb(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-    timerRef.current = setInterval(() => void refresh(), MEM_POLL_MS);
-    return () => {
-      if (timerRef.current !== null) clearInterval(timerRef.current);
-    };
-  }, [refresh]);
-
-  // Refresh immediately when the server becomes ready — this is the earliest
-  // moment a real RSS value is available; polling would lag by up to MEM_POLL_MS.
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void api
-      .onIdeServerStatus((event) => {
-        if (event.status === "ready") void refresh();
-        // Refresh on stop/fail too so the display snaps to "off" immediately.
-        if (event.status === "failed") void refresh();
-      })
-      .then((fn) => {
-        unlisten = fn;
-      });
-    return () => unlisten?.();
-  }, [refresh]);
-
-  return { memMb, refreshMem: refresh };
-}
-
 function App() {
   const [data, setData] = useState<AppData | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -85,15 +42,12 @@ function App() {
   // tabStatuses: a tab can be "waiting" but no longer need a glow once viewed.
   const [needsAttention, setNeedsAttention] = useState<Record<string, true>>({});
   const [error, setError] = useState<string | null>(null);
-  const [showFreeRamModal, setShowFreeRamModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId | null>(null);
   const [settingsCommandsSubTab, setSettingsCommandsSubTab] = useState<CommandsSubTab>("custom");
   const [showFirstRunImportModal, setShowFirstRunImportModal] = useState(false);
   const [pendingIdeOpenProjectId, setPendingIdeOpenProjectId] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState("");
-
-  const { memMb, refreshMem } = useVscodeMemory();
 
   useEffect(() => {
     void api.getAppVersion().then(setAppVersion);
@@ -362,9 +316,8 @@ function App() {
         if (existing) return setActiveTab(t, id, existing.id);
         return addTab(t, id, createTab("ide", settings));
       });
-      void refreshMem();
     },
-    [settings, refreshMem],
+    [settings],
   );
 
   const requestOpenIde = useCallback(
@@ -415,26 +368,6 @@ function App() {
     },
     [settings],
   );
-
-  const handleKillAllIde = useCallback(async () => {
-    await api.closeAllIdeWebviews();
-    setTabs((t) => {
-      const next = { ...t };
-      for (const [projectId, ptabs] of Object.entries(next)) {
-        const filtered = ptabs.tabs.filter((tab) => tab.kind !== "ide");
-        if (filtered.length !== ptabs.tabs.length) {
-          const activeTabId =
-            ptabs.activeTabId && filtered.some((tab) => tab.id === ptabs.activeTabId)
-              ? ptabs.activeTabId
-              : (filtered[filtered.length - 1]?.id ?? null);
-          next[projectId] = { tabs: filtered, activeTabId };
-        }
-      }
-      return next;
-    });
-    setShowFreeRamModal(false);
-    void refreshMem();
-  }, [refreshMem]);
 
   useEffect(() => {
     function onQuickSwitch(e: Event) {
@@ -538,11 +471,6 @@ function App() {
   }
 
   const active = data.projects.find((p) => p.id === data.activeProjectId) ?? null;
-  const ideInstanceCount = Object.values(tabs).filter((ptabs) =>
-    ptabs.tabs.some((t) => t.kind === "ide"),
-  ).length;
-  const showFreeRamButton = ideInstanceCount > 0 && memMb !== null && memMb >= 1024;
-
   return (
     <div className="flex h-full w-full flex-col bg-background">
       {import.meta.env.DEV && (
@@ -563,8 +491,6 @@ function App() {
           onRecolor={(id, color) => run(() => api.setProjectColor(id, color))}
           onRemove={handleRemove}
           onReorder={(ids) => run(() => api.reorderProjects(ids))}
-          showFreeRamButton={showFreeRamButton}
-          onFreeRam={() => setShowFreeRamModal(true)}
           onOpenSettings={() => setSettingsInitialTab("general")}
         />
         <Workspace
@@ -628,21 +554,11 @@ function App() {
               }
               return next;
             });
-            void refreshMem();
           }}
         />
       )}
 
       {showFirstRunImportModal && <FirstRunVscodeModal onFinish={handleFirstRunFinish} />}
-
-      {showFreeRamModal && memMb !== null && (
-        <FreeRamModal
-          memMb={memMb}
-          instanceCount={ideInstanceCount}
-          onConfirm={handleKillAllIde}
-          onCancel={() => setShowFreeRamModal(false)}
-        />
-      )}
 
       {error && (
         <div className="fixed bottom-3 right-3 z-50 max-w-sm rounded-md border border-destructive bg-destructive/90 px-3 py-2 text-xs text-foreground shadow-lg">

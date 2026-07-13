@@ -21,8 +21,6 @@ interface SidebarProps {
   onRecolor: (id: string, color: string) => void;
   onRemove: (id: string) => void;
   onReorder: (orderedIds: string[]) => void;
-  showFreeRamButton: boolean;
-  onFreeRam: () => void;
   onOpenSettings: () => void;
 }
 
@@ -64,8 +62,6 @@ export function Sidebar({
   onRecolor,
   onRemove,
   onReorder,
-  showFreeRamButton,
-  onFreeRam,
   onOpenSettings,
 }: SidebarProps) {
   const activeProjects = useMemo(
@@ -546,41 +542,6 @@ export function Sidebar({
           <WrenchIcon size={13} className="shrink-0 opacity-60" />
           {!collapsed && "Settings"}
         </button>
-        {showFreeRamButton && (
-          <button
-            type="button"
-            onClick={onFreeRam}
-            title="Free VS Code RAM"
-            className={`flex w-full items-center text-xs text-red-400/80 hover:text-red-400 hover:bg-sidebar-accent transition-colors no-select ${
-              collapsed ? "justify-center py-2.5" : "gap-2.5 px-3 py-2.5"
-            }`}
-            style={{ borderTop: "1px solid var(--color-sidebar-border)" }}
-          >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-              className="shrink-0"
-            >
-              <path
-                d="M8 2v5l3 3"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M13.66 10A6 6 0 1 1 10 2.34"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-            </svg>
-            {!collapsed && "Free VS Code RAM"}
-          </button>
-        )}
       </div>
 
       {/* Resize handle */}

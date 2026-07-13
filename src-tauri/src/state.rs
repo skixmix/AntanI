@@ -208,7 +208,10 @@ impl AppData {
         color: String,
     ) {
         if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
-            if let Some(injectable) = project.injectables.iter_mut().find(|i| i.id == injectable_id)
+            if let Some(injectable) = project
+                .injectables
+                .iter_mut()
+                .find(|i| i.id == injectable_id)
             {
                 injectable.name = name;
                 injectable.text = text;
@@ -644,8 +647,13 @@ mod tests {
     #[test]
     fn add_injectable_unknown_project_returns_none() {
         let mut d = with_three();
-        let result =
-            d.add_injectable("bogus", "X".into(), "x".into(), InjectTarget::Ai, "#fff".into());
+        let result = d.add_injectable(
+            "bogus",
+            "X".into(),
+            "x".into(),
+            InjectTarget::Ai,
+            "#fff".into(),
+        );
         assert!(result.is_none());
     }
 
@@ -654,7 +662,13 @@ mod tests {
         let mut d = with_three();
         let id = d.projects[0].id.clone();
         let a = d
-            .add_injectable(&id, "A".into(), "a".into(), InjectTarget::Terminal, "#fff".into())
+            .add_injectable(
+                &id,
+                "A".into(),
+                "a".into(),
+                InjectTarget::Terminal,
+                "#fff".into(),
+            )
             .unwrap();
         let b = d
             .add_injectable(&id, "B".into(), "b".into(), InjectTarget::Ai, "#000".into())
@@ -667,7 +681,13 @@ mod tests {
     fn remove_injectable_unknown_ids_are_no_ops() {
         let mut d = with_three();
         let id = d.projects[0].id.clone();
-        d.add_injectable(&id, "A".into(), "a".into(), InjectTarget::Terminal, "#fff".into());
+        d.add_injectable(
+            &id,
+            "A".into(),
+            "a".into(),
+            InjectTarget::Terminal,
+            "#fff".into(),
+        );
         d.remove_injectable("bogus-project", "bogus-injectable");
         d.remove_injectable(&id, "bogus-injectable");
         assert_eq!(d.projects[0].injectables.len(), 1);
@@ -678,12 +698,25 @@ mod tests {
         let mut d = with_three();
         let id = d.projects[0].id.clone();
         let a = d
-            .add_injectable(&id, "A".into(), "a".into(), InjectTarget::Terminal, "#fff".into())
+            .add_injectable(
+                &id,
+                "A".into(),
+                "a".into(),
+                InjectTarget::Terminal,
+                "#fff".into(),
+            )
             .unwrap();
         let b = d
             .add_injectable(&id, "B".into(), "b".into(), InjectTarget::Ai, "#000".into())
             .unwrap();
-        d.update_injectable(&id, &a.id, "A2".into(), "a2".into(), InjectTarget::Ai, "#111".into());
+        d.update_injectable(
+            &id,
+            &a.id,
+            "A2".into(),
+            "a2".into(),
+            InjectTarget::Ai,
+            "#111".into(),
+        );
         assert_eq!(d.projects[0].injectables[0].name, "A2");
         assert_eq!(d.projects[0].injectables[0].text, "a2");
         assert_eq!(d.projects[0].injectables[0].target, InjectTarget::Ai);
@@ -696,7 +729,13 @@ mod tests {
         let mut d = with_three();
         let id = d.projects[0].id.clone();
         let a = d
-            .add_injectable(&id, "A".into(), "a".into(), InjectTarget::Terminal, "#fff".into())
+            .add_injectable(
+                &id,
+                "A".into(),
+                "a".into(),
+                InjectTarget::Terminal,
+                "#fff".into(),
+            )
             .unwrap();
         d.update_injectable(
             "bogus-project",

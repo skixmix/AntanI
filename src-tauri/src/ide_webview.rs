@@ -187,32 +187,3 @@ pub fn close_ide_webview(app: AppHandle, project_id: String) -> Result<(), Strin
     }
     Ok(())
 }
-
-/// Close every open IDE webview at once and stop the server, freeing all RAM.
-/// Called from the "free up RAM" action in the UI.
-#[tauri::command]
-pub fn close_all_ide_webviews(app: AppHandle) -> Result<(), String> {
-    let ids: Vec<String> = app
-        .state::<IdeWebviews>()
-        .open
-        .lock()
-        .map_err(|e| e.to_string())?
-        .iter()
-        .cloned()
-        .collect();
-
-    for id in &ids {
-        if let Some(webview) = app.get_webview(&label_for(id)) {
-            let _ = webview.close();
-        }
-    }
-
-    app.state::<IdeWebviews>()
-        .open
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clear();
-
-    app.state::<VscodeServer>().stop();
-    Ok(())
-}

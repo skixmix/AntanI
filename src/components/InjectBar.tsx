@@ -2,7 +2,7 @@ import { writePty } from "../lib/api.ipc";
 import { encodeInjection } from "../lib/inject";
 import type { Tab } from "../lib/tabs";
 import type { Injectable, InjectTarget, Project } from "../lib/types";
-import { CustomCommandIcon, WrenchIcon } from "./Icons";
+import { InjectIcon, PromptIcon, WrenchIcon } from "./Icons";
 import type { CommandsSubTab } from "./SettingsPage";
 
 interface InjectBarProps {
@@ -54,7 +54,7 @@ export function InjectBar({ project, activeTab, onOpenCommandSettings }: InjectB
               className="flex shrink-0 items-center gap-1.5 rounded px-2 py-1 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
             >
               <span style={{ color: inj.color }}>
-                <CustomCommandIcon size={13} />
+                {wanted === "ai" ? <PromptIcon size={13} /> : <InjectIcon size={13} />}
               </span>
               <span>{inj.name}</span>
             </button>
