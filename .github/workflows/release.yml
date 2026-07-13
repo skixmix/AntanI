@@ -23,7 +23,7 @@ jobs:
     if: >-
       startsWith(github.ref, 'refs/tags/') ||
       (github.event.pull_request.merged == true && startsWith(github.event.pull_request.title, 'Release'))
-    runs-on: macos-latest
+    runs-on: macos-26
     permissions:
       contents: write
     steps:
@@ -88,7 +88,10 @@ jobs:
           # Agent GUI prompt that hangs forever on a headless runner, so add it to
           # System.keychain via sudo instead — GitHub-hosted runners have
           # passwordless sudo, so this stays non-interactive.
-          openssl pkcs12 -in "$CERT_P12_PATH" -clcerts -nokeys -passin pass:"$APPLE_CERTIFICATE_PASSWORD" -legacy -out "$CERT_PEM_PATH"
+          # /usr/bin/openssl on the runner is Apple's LibreSSL, which has no
+          # -legacy flag. Use Homebrew's real OpenSSL 3.x instead.
+          OPENSSL_BIN="$(brew --prefix openssl@3)/bin/openssl"
+          "$OPENSSL_BIN" pkcs12 -in "$CERT_P12_PATH" -clcerts -nokeys -passin pass:"$APPLE_CERTIFICATE_PASSWORD" -legacy -out "$CERT_PEM_PATH"
           sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$CERT_PEM_PATH"
 
           security list-keychain -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
