@@ -51,7 +51,7 @@ describe("defaultTitle", () => {
     expect(defaultTitle("terminal")).toBe("Terminal");
     expect(defaultTitle("claude")).toBe("Claude");
     expect(defaultTitle("opencode")).toBe("opencode");
-    expect(defaultTitle("ide")).toBe("IDE");
+    expect(defaultTitle("ide")).toBe("VS Code");
   });
 });
 
