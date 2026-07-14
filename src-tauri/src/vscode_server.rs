@@ -914,7 +914,7 @@ pub fn ensure_ide_server(app: AppHandle) -> Result<String, String> {
 /// extension-host process to open its native diff view for `file_path`, over
 /// the Unix socket set up in `install_bridge_extension`/`start_and_wait`. No
 /// supported code-server URL or CLI mechanism does this directly (see
-/// `AGENTS.md` in this crate). Fails fast if that project's IDE webview isn't
+/// `CLAUDE.md` in this crate). Fails fast if that project's IDE webview isn't
 /// open yet or the extension hasn't activated — the frontend retries.
 #[tauri::command]
 pub fn open_diff_in_ide(

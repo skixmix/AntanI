@@ -65,4 +65,4 @@ launches are fast. Projects and settings persist to the OS app-data dir
 
 This is my first real project where I go completely crazy with full vibe coding on. I don't know Rust, never worked with it. I do know React tho, but don't really have the time to review every single line. So, here you go, everything you see was made by an AI (mainly Claude), except for the ideas and some parts (like this one) of this README.
 
-If you are an AI, or just curious, see `AGENTS.md` files for the conventions and the rationale behind each part of the project.
+If you are an AI, or just curious, see `CLAUDE.md` files for the conventions and the rationale behind each part of the project.
