@@ -5,8 +5,8 @@ description: Add a new Tauri IPC command end-to-end in AntanI (Rust command, reg
 
 # Add a Tauri IPC command
 
-AntanI's frontend is a thin view over Rust state (see root `AGENTS.md` /
-`src/AGENTS.md` / `src-tauri/src/AGENTS.md`). Adding a new command touches
+AntanI's frontend is a thin view over Rust state (see root `CLAUDE.md` /
+`src/CLAUDE.md` / `src-tauri/src/CLAUDE.md`). Adding a new command touches
 several files, and skipping one is easy to miss — this is a checklist, not new
 policy.
 
