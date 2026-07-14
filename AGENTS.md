@@ -26,6 +26,15 @@ auto-updates, telemetry. Terminal tabs are **session-only** — never persisted,
 every launch starts clean; only projects and settings persist. That asymmetry is
 intentional, not a missing feature.
 
+## Code intelligence
+
+This repo has a `.codegraph/` index. Before grepping or reading files to
+understand or locate code, use codegraph first — the MCP tool
+`codegraph_explore` (or `codegraph explore "<question>"` in the shell). One
+query returns the relevant symbols' verbatim source plus the call paths
+between them, including dynamic-dispatch hops (renders, callbacks) that grep
+can't follow.
+
 ## Rules
 
 - **Minimalism / YAGNI.** Prefer deleting features over abstracting. Add a
