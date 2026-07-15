@@ -20,6 +20,7 @@ import type { CustomCommand, Settings } from "./types";
 const SETTINGS: Settings = {
   claudeCommand: "claude --resume",
   opencodeCommand: "oc",
+  codexCommand: "codex --oss",
   notificationsEnabled: true,
   vscodeImportPrompted: true,
   soundEnabled: true,
@@ -41,6 +42,7 @@ describe("startupCommandForKind", () => {
   it("uses the configured commands for agent tabs and none for plain terminals", () => {
     expect(startupCommandForKind("claude", SETTINGS)).toBe("claude --resume");
     expect(startupCommandForKind("opencode", SETTINGS)).toBe("oc");
+    expect(startupCommandForKind("codex", SETTINGS)).toBe("codex --oss");
     expect(startupCommandForKind("terminal", SETTINGS)).toBeNull();
     expect(startupCommandForKind("ide", SETTINGS)).toBeNull();
   });
@@ -50,7 +52,8 @@ describe("defaultTitle", () => {
   it("labels each tab kind", () => {
     expect(defaultTitle("terminal")).toBe("Terminal");
     expect(defaultTitle("claude")).toBe("Claude");
-    expect(defaultTitle("opencode")).toBe("opencode");
+    expect(defaultTitle("opencode")).toBe("OpenCode");
+    expect(defaultTitle("codex")).toBe("Codex");
     expect(defaultTitle("ide")).toBe("VS Code");
   });
 });

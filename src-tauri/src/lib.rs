@@ -192,28 +192,41 @@ fn update_settings(state: State<SettingsState>, settings: Settings) -> Result<Se
 
 #[tauri::command]
 fn export_backup(
-    state: State<AppState>,
+    app: tauri::AppHandle,
     path: String,
     selection: backup::BackupSelection,
 ) -> Result<(), String> {
+    let maintenance = app.state::<backup::BackupMaintenance>();
+    let _maintenance_guard = maintenance.lock()?;
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsState>();
+    let server = app.state::<VscodeServer>();
+    let app_data = state.data.lock().map_err(|error| error.to_string())?;
+    let app_settings = settings.data.lock().map_err(|error| error.to_string())?;
     let app_data_dir = state
         .file_path
         .parent()
         .ok_or_else(|| "AntanI data directory is unavailable".to_string())?;
-    backup::export_backup(app_data_dir, Path::new(&path), selection)
-        .map_err(|error| error.to_string())
+    let restart_server = selection.includes_vscode() && server.stop_for_maintenance();
+    let result = backup::export_backup(app_data_dir, Path::new(&path), selection)
+        .map_err(|error| error.to_string());
+    drop(app_data);
+    drop(app_settings);
+    if restart_server {
+        server.ensure_started(&app);
+    }
+    result
 }
 
 #[tauri::command]
-fn import_backup(
-    app: tauri::AppHandle,
-    state: State<AppState>,
-    settings: State<SettingsState>,
-    server: State<VscodeServer>,
-    path: String,
-) -> Result<(), String> {
+fn import_backup(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let archive_path = Path::new(&path);
     backup::validate_backup(archive_path).map_err(|error| error.to_string())?;
+    let maintenance = app.state::<backup::BackupMaintenance>();
+    let _maintenance_guard = maintenance.lock()?;
+    let state = app.state::<AppState>();
+    let settings = app.state::<SettingsState>();
+    let server = app.state::<VscodeServer>();
     let mut app_data = state.data.lock().map_err(|error| error.to_string())?;
     let mut app_settings = settings.data.lock().map_err(|error| error.to_string())?;
     let app_data_dir = state
@@ -221,9 +234,18 @@ fn import_backup(
         .parent()
         .ok_or_else(|| "AntanI data directory is unavailable".to_string())?;
 
-    server.stop();
-    let imported =
-        backup::import_backup(app_data_dir, archive_path).map_err(|error| error.to_string())?;
+    let restart_server = server.stop_for_maintenance();
+    let imported = match backup::import_backup(app_data_dir, archive_path) {
+        Ok(imported) => imported,
+        Err(error) => {
+            drop(app_data);
+            drop(app_settings);
+            if restart_server {
+                server.ensure_started(&app);
+            }
+            return Err(error.to_string());
+        }
+    };
     *app_data = imported.app_data;
     *app_settings = imported.settings;
     drop(app_data);
@@ -242,6 +264,8 @@ pub fn run() {
             app.set_menu(menu::build(app.handle())?)?;
 
             let dir = app.path().app_data_dir()?;
+            backup::recover_interrupted_import(&dir)?;
+            app.manage(backup::BackupMaintenance::default());
             app.manage(AppState::new(dir.join(PROJECTS_FILE)));
             app.manage(SettingsState::new(dir.join(SETTINGS_FILE)));
             app.manage(pty::PtyManager::default());

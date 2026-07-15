@@ -1,18 +1,16 @@
 use super::{BackupError, BackupSelection};
 use crate::state::{AppData, Settings, PROJECTS_FILE, SETTINGS_FILE};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 const SCHEMA_VERSION: u16 = 1;
 const APP_ID: &str = "com.antani.app";
-const MANIFEST_FILE: &str = "manifest.json";
+pub(super) const MANIFEST_FILE: &str = "manifest.json";
 pub const DATA_DIR: &str = "data";
 const EXCLUDED_NAMES: [&str; 2] = ["vscode-server.pid", "diff-bridge-sockets"];
 
@@ -45,43 +43,111 @@ pub fn write(
         },
     )?;
     add_tree(&mut writer, source, source, categories)?;
-    writer.finish()?;
+    let file = writer.finish()?;
+    if file.metadata()?.len() > 4_294_967_295 {
+        return Err(BackupError::invalid("Backup archive is too large"));
+    }
     Ok(())
 }
 
 pub fn validate(source: &Path) -> Result<BackupSelection, BackupError> {
+    super::archive_validation::preflight(source)?;
     let mut archive = ZipArchive::new(File::open(source)?)?;
-    inspect_entries(&mut archive)?;
-    let categories = validate_manifest(read_entry_json(&mut archive, MANIFEST_FILE)?)?;
+    super::archive_validation::inspect(&mut archive)?;
+    let categories = validate_manifest(super::archive_validation::read_json(
+        &mut archive,
+        MANIFEST_FILE,
+        super::archive_validation::MAX_MANIFEST_SIZE,
+    )?)?;
     validate_contents(&mut archive, categories)?;
     Ok(categories)
 }
 
 pub fn extract(source: &Path, destination: &Path) -> Result<BackupSelection, BackupError> {
+    super::archive_validation::preflight(source)?;
     let mut archive = ZipArchive::new(File::open(source)?)?;
-    inspect_entries(&mut archive)?;
-    let categories = validate_manifest(read_entry_json(&mut archive, MANIFEST_FILE)?)?;
+    super::archive_validation::inspect(&mut archive)?;
+    let categories = validate_manifest(super::archive_validation::read_json(
+        &mut archive,
+        MANIFEST_FILE,
+        super::archive_validation::MAX_MANIFEST_SIZE,
+    )?)?;
     validate_contents(&mut archive, categories)?;
+    fs::create_dir_all(destination)?;
+    let mut total_size = 0u64;
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index)?;
+        let entry = archive.by_index(index)?;
         let relative = entry
             .enclosed_name()
             .ok_or_else(|| BackupError::invalid("Backup contains an unsafe path"))?;
-        let output = destination.join(relative);
         if entry.is_dir() {
-            fs::create_dir_all(&output)?;
+            ensure_directory(destination, &relative)?;
             continue;
         }
-        if let Some(parent) = output.parent() {
-            fs::create_dir_all(parent)?;
+        if let Some(parent) = relative.parent() {
+            ensure_directory(destination, parent)?;
         }
-        let mut file = File::create(&output)?;
-        io::copy(&mut entry, &mut file)?;
-        if let Some(mode) = entry.unix_mode() {
+        let output = destination.join(&relative);
+        let mode = entry.unix_mode();
+        let expected_size = entry.size();
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&output)
+            .map_err(|error| {
+                if error.kind() == io::ErrorKind::AlreadyExists {
+                    BackupError::invalid("Backup contains colliding paths")
+                } else {
+                    error.into()
+                }
+            })?;
+        let copied = io::copy(&mut entry.take(expected_size + 1), &mut file)?;
+        if copied != expected_size {
+            return Err(BackupError::invalid(
+                "Backup entry size does not match extracted data",
+            ));
+        }
+        total_size = total_size
+            .checked_add(copied)
+            .ok_or_else(|| BackupError::invalid("Backup is too large"))?;
+        if copied > super::archive_validation::MAX_ENTRY_SIZE
+            || total_size > super::archive_validation::MAX_TOTAL_SIZE
+        {
+            return Err(BackupError::invalid("Backup is too large"));
+        }
+        if let Some(mode) = mode {
             fs::set_permissions(&output, fs::Permissions::from_mode(mode & 0o777))?;
         }
     }
     Ok(categories)
+}
+
+fn ensure_directory(root: &Path, relative: &Path) -> Result<(), BackupError> {
+    let mut current = PathBuf::from(root);
+    for component in relative.components() {
+        let name = component.as_os_str();
+        let next = current.join(name);
+        match fs::create_dir(&next) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                if !has_exact_entry(&current, name)? || !next.is_dir() {
+                    return Err(BackupError::invalid("Backup contains colliding paths"));
+                }
+            }
+            Err(error) => return Err(error.into()),
+        }
+        current = next;
+    }
+    Ok(())
+}
+
+fn has_exact_entry(parent: &Path, name: &std::ffi::OsStr) -> Result<bool, BackupError> {
+    for entry in fs::read_dir(parent)? {
+        if entry?.file_name() == name {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn add_tree(
@@ -121,36 +187,6 @@ fn add_tree(
     Ok(())
 }
 
-fn inspect_entries(archive: &mut ZipArchive<File>) -> Result<(), BackupError> {
-    let mut paths = HashSet::new();
-    for index in 0..archive.len() {
-        let entry = archive.by_index(index)?;
-        let path = entry
-            .enclosed_name()
-            .ok_or_else(|| BackupError::invalid("Backup contains an unsafe path"))?;
-        if !paths.insert(path.clone()) || entry.is_symlink() || entry.encrypted() {
-            return Err(BackupError::invalid("Backup contains an unsafe entry"));
-        }
-        if !is_allowed_archive_path(&path) {
-            return Err(BackupError::invalid("Backup contains an unexpected file"));
-        }
-    }
-    Ok(())
-}
-
-fn read_entry(archive: &mut ZipArchive<File>, name: &str) -> Result<Vec<u8>, BackupError> {
-    let mut bytes = Vec::new();
-    archive.by_name(name)?.read_to_end(&mut bytes)?;
-    Ok(bytes)
-}
-
-fn read_entry_json<T: DeserializeOwned>(
-    archive: &mut ZipArchive<File>,
-    name: &str,
-) -> Result<T, BackupError> {
-    Ok(serde_json::from_slice(&read_entry(archive, name)?)?)
-}
-
 fn validate_manifest(manifest: BackupManifest) -> Result<BackupSelection, BackupError> {
     if manifest.schema_version == SCHEMA_VERSION
         && manifest.app_id == APP_ID
@@ -182,10 +218,18 @@ fn validate_contents(
         }
     }
     if categories.projects {
-        read_entry_json::<AppData>(archive, &format!("{DATA_DIR}/{PROJECTS_FILE}"))?;
+        super::archive_validation::read_json::<AppData>(
+            archive,
+            &format!("{DATA_DIR}/{PROJECTS_FILE}"),
+            super::archive_validation::MAX_JSON_SIZE,
+        )?;
     }
     if categories.preferences {
-        read_entry_json::<Settings>(archive, &format!("{DATA_DIR}/{SETTINGS_FILE}"))?;
+        super::archive_validation::read_json::<Settings>(
+            archive,
+            &format!("{DATA_DIR}/{SETTINGS_FILE}"),
+            super::archive_validation::MAX_JSON_SIZE,
+        )?;
     }
     Ok(())
 }
@@ -200,11 +244,4 @@ pub(super) fn is_excluded(path: &Path) -> bool {
     path.components().next().is_some_and(|component| {
         EXCLUDED_NAMES.contains(&component.as_os_str().to_string_lossy().as_ref())
     })
-}
-
-fn is_allowed_archive_path(path: &Path) -> bool {
-    path == Path::new(MANIFEST_FILE)
-        || path
-            .strip_prefix(DATA_DIR)
-            .is_ok_and(|relative| !relative.as_os_str().is_empty() && !is_excluded(relative))
 }

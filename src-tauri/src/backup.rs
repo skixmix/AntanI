@@ -1,4 +1,6 @@
 mod archive;
+mod archive_validation;
+mod transaction;
 
 use crate::state::{AppData, Settings, PROJECTS_FILE, SETTINGS_FILE};
 use serde::de::DeserializeOwned;
@@ -7,9 +9,23 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard};
+
+#[cfg(test)]
+use transaction::rollback_path;
+pub use transaction::{import_backup, recover_interrupted_import};
 
 #[derive(Debug)]
 pub struct BackupError(String);
+
+#[derive(Default)]
+pub struct BackupMaintenance(Mutex<()>);
+
+impl BackupMaintenance {
+    pub fn lock(&self) -> Result<MutexGuard<'_, ()>, String> {
+        self.0.lock().map_err(|error| error.to_string())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -33,6 +49,10 @@ impl BackupSelection {
 
     const fn any(self) -> bool {
         self.projects || self.preferences || self.vscode_profile || self.vscode_extensions
+    }
+
+    pub const fn includes_vscode(self) -> bool {
+        self.vscode_profile || self.vscode_extensions
     }
 
     fn includes(self, path: &Path) -> bool {
@@ -124,110 +144,6 @@ pub fn export_backup(
 
 pub fn validate_backup(archive_path: &Path) -> Result<(), BackupError> {
     archive::validate(archive_path).map(|_| ())
-}
-
-pub fn import_backup(
-    app_data_dir: &Path,
-    archive_path: &Path,
-) -> Result<ImportedBackup, BackupError> {
-    let parent = app_data_dir
-        .parent()
-        .ok_or_else(|| BackupError::invalid("AntanI data directory has no parent"))?;
-    fs::create_dir_all(parent)?;
-    let workspace = parent.join(format!(".antani-import-{}", uuid::Uuid::new_v4()));
-
-    let categories = match archive::extract(archive_path, &workspace) {
-        Ok(categories) => categories,
-        Err(error) => {
-            let _ = fs::remove_dir_all(&workspace);
-            return Err(error);
-        }
-    };
-    let staged_data = workspace.join(archive::DATA_DIR);
-    let merged_data = workspace.join("merged");
-    if app_data_dir.exists() {
-        copy_managed_tree(app_data_dir, &merged_data)?;
-    } else {
-        fs::create_dir_all(&merged_data)?;
-    }
-    remove_selected(&merged_data, categories)?;
-    if staged_data.exists() {
-        copy_managed_tree(&staged_data, &merged_data)?;
-    }
-    let imported = ImportedBackup {
-        app_data: read_json(&merged_data.join(PROJECTS_FILE))?,
-        settings: read_json(&merged_data.join(SETTINGS_FILE))?,
-    };
-    let rollback = parent.join(format!(".antani-rollback-{}", uuid::Uuid::new_v4()));
-    let had_existing_data = app_data_dir.exists();
-
-    if had_existing_data {
-        fs::rename(app_data_dir, &rollback)?;
-    }
-    if let Err(error) = fs::rename(&merged_data, app_data_dir) {
-        if had_existing_data {
-            fs::rename(&rollback, app_data_dir).map_err(|rollback_error| {
-                BackupError::invalid(format!(
-                    "Import failed: {error}. Restoring current data also failed: {rollback_error}"
-                ))
-            })?;
-        }
-        let _ = fs::remove_dir_all(&workspace);
-        return Err(error.into());
-    }
-
-    let _ = fs::remove_dir_all(&rollback);
-    let _ = fs::remove_dir_all(&workspace);
-    Ok(imported)
-}
-
-fn copy_managed_tree(source: &Path, destination: &Path) -> Result<(), BackupError> {
-    fs::create_dir_all(destination)?;
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let relative = Path::new(&entry.file_name()).to_path_buf();
-        if archive::is_excluded(&relative) {
-            continue;
-        }
-        copy_entry(&entry.path(), &destination.join(relative))?;
-    }
-    Ok(())
-}
-
-fn copy_entry(source: &Path, destination: &Path) -> Result<(), BackupError> {
-    let metadata = fs::symlink_metadata(source)?;
-    if metadata.file_type().is_symlink() {
-        return Err(BackupError::invalid(format!(
-            "Cannot restore symbolic link {}",
-            source.display()
-        )));
-    }
-    if metadata.is_dir() {
-        fs::create_dir_all(destination)?;
-        for entry in fs::read_dir(source)? {
-            let entry = entry?;
-            copy_entry(&entry.path(), &destination.join(entry.file_name()))?;
-        }
-    } else if metadata.is_file() {
-        fs::copy(source, destination)?;
-        fs::set_permissions(destination, metadata.permissions())?;
-    }
-    Ok(())
-}
-
-fn remove_selected(root: &Path, categories: BackupSelection) -> Result<(), BackupError> {
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
-        if categories.includes(Path::new(&entry.file_name())) {
-            let metadata = entry.metadata()?;
-            if metadata.is_dir() {
-                fs::remove_dir_all(entry.path())?;
-            } else {
-                fs::remove_file(entry.path())?;
-            }
-        }
-    }
-    Ok(())
 }
 
 pub(super) fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, BackupError> {

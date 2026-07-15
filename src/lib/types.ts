@@ -35,6 +35,7 @@ export interface AppData {
 export interface Settings {
   claudeCommand: string;
   opencodeCommand: string;
+  codexCommand: string;
   notificationsEnabled: boolean;
   vscodeImportPrompted: boolean;
   soundEnabled: boolean;

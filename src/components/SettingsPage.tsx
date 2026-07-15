@@ -687,9 +687,15 @@ export function SettingsPage({
                 {commandsSubTab === "launch" && (
                   <SectionCard
                     title="Launch commands"
-                    description="Override the shell command run when opening a Claude or opencode tab — useful for aliases, wrappers, or extra flags."
+                    description="Override the shell command run when opening an agent tab — useful for aliases, wrappers, or extra flags."
                   >
                     <div className="flex flex-col gap-4">
+                      <CommandField
+                        label="OpenCode command"
+                        value={settings.opencodeCommand}
+                        placeholder="opencode"
+                        onCommit={(opencodeCommand) => onUpdateSettings({ opencodeCommand })}
+                      />
                       <CommandField
                         label="Claude command"
                         value={settings.claudeCommand}
@@ -697,10 +703,10 @@ export function SettingsPage({
                         onCommit={(claudeCommand) => onUpdateSettings({ claudeCommand })}
                       />
                       <CommandField
-                        label="opencode command"
-                        value={settings.opencodeCommand}
-                        placeholder="opencode"
-                        onCommit={(opencodeCommand) => onUpdateSettings({ opencodeCommand })}
+                        label="Codex command"
+                        value={settings.codexCommand}
+                        placeholder="codex"
+                        onCommit={(codexCommand) => onUpdateSettings({ codexCommand })}
                       />
                     </div>
                   </SectionCard>
@@ -782,7 +788,7 @@ export function SettingsPage({
                 {commandsSubTab === "prompts" && (
                   <SectionCard
                     title="AI prompts"
-                    description="Per-project prompts injected into the current Claude or opencode tab — inserted without submitting, so you review and send yourself."
+                    description="Per-project prompts injected into the current agent tab — inserted without submitting, so you review and send yourself."
                     badge={project && <ProjectBadge project={project} />}
                   >
                     {!project && (

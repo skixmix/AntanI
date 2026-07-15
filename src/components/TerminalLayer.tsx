@@ -1,4 +1,4 @@
-import { projectTabs, type TabStatus, type TabsState } from "../lib/tabs";
+import { isAgentKind, projectTabs, type TabStatus, type TabsState } from "../lib/tabs";
 import type { Project } from "../lib/types";
 import { TerminalView } from "./TerminalView";
 
@@ -33,7 +33,7 @@ export function TerminalLayer({
               startupCommand={tab.startupCommand}
               visible={project.id === activeProjectId && tab.id === activeTabId}
               fontSize={fontSize}
-              isAi={tab.kind === "claude" || tab.kind === "opencode"}
+              agentKind={isAgentKind(tab.kind) ? tab.kind : undefined}
               onStatusChange={onStatusChange}
               onRunningChange={onRunningChange}
             />

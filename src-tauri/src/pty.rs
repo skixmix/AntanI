@@ -124,7 +124,7 @@ pub struct SpawnOptions {
 
 /// Spawn a login shell in `cwd`, wired to a new PTY. Output is streamed to the
 /// frontend over `on_data`; `startup_command`, if given, is typed into the shell
-/// (used by the Claude and opencode tab types to launch their CLI).
+/// (used by agent tab types to launch their CLI).
 #[tauri::command]
 pub fn pty_spawn(
     manager: State<PtyManager>,

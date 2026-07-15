@@ -1,6 +1,6 @@
 import { writePty } from "../lib/api.ipc";
 import { encodeInjection } from "../lib/inject";
-import type { Tab } from "../lib/tabs";
+import { isAgentKind, type Tab } from "../lib/tabs";
 import type { Injectable, InjectTarget, Project } from "../lib/types";
 import { InjectIcon, PromptIcon, WrenchIcon } from "./Icons";
 import type { CommandsSubTab } from "./SettingsPage";
@@ -14,8 +14,7 @@ interface InjectBarProps {
 /** Bottom bar shown only on terminal/AI tabs. Each chip writes its snippet into
  *  the current tab's PTY without submitting, then refocuses the terminal. */
 export function InjectBar({ project, activeTab, onOpenCommandSettings }: InjectBarProps) {
-  const wanted: InjectTarget =
-    activeTab.kind === "claude" || activeTab.kind === "opencode" ? "ai" : "terminal";
+  const wanted: InjectTarget = isAgentKind(activeTab.kind) ? "ai" : "terminal";
   const injectables = project.injectables.filter((i) => i.target === wanted);
   const settingsSubTab: CommandsSubTab = wanted === "ai" ? "prompts" : "snippets";
 

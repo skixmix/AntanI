@@ -3,7 +3,14 @@ import { projectInitials } from "../lib/constants";
 import type { Tab, TabKind, TabStatus } from "../lib/tabs";
 import type { CustomCommand, Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
-import { AnthropicIcon, CustomCommandIcon, OpenCodeIcon, VSCodeIcon, WrenchIcon } from "./Icons";
+import {
+  AnthropicIcon,
+  CodexIcon,
+  CustomCommandIcon,
+  OpenCodeIcon,
+  VSCodeIcon,
+  WrenchIcon,
+} from "./Icons";
 import type { CommandsSubTab } from "./SettingsPage";
 import { TabChip } from "./TabChip";
 
@@ -29,6 +36,7 @@ interface TabStripProps {
 const QUICK_OPEN: { kind: TabKind; label: string; icon: ReactNode }[] = [
   { kind: "opencode", label: "OpenCode", icon: <OpenCodeIcon size={13} /> },
   { kind: "claude", label: "Claude", icon: <AnthropicIcon size={13} /> },
+  { kind: "codex", label: "Codex", icon: <CodexIcon size={13} /> },
 ];
 
 export function TabStrip({

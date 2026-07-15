@@ -5,7 +5,7 @@
 ## What this is, and why
 
 AntanI is a **personal** macOS desktop app that orchestrates CLI coding agents
-(Claude Code, opencode), terminals, and an embedded VS Code across local project
+(OpenCode, Claude Code, Codex), terminals, and an embedded VS Code across local project
 folders — one window, a sidebar of projects, a tabbed workspace per project. It
 exists because the tool it replaces (Superset) is heavy: **low RAM is the whole
 point.**

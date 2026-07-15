@@ -89,12 +89,19 @@ itself.
   belongs to one of the other three categories.
 - `vscode-server.pid` and `diff-bridge-sockets/` are always excluded because
   restoring stale process metadata could target an unrelated PID or dead socket.
+- Archive validation rejects traversal, symlinks, encryption, duplicate or
+  case-conflicting reserved paths, invalid reserved path types, undeclared
+  category contents, and excessive entry counts or expanded sizes.
 - Import validates and extracts beside the app-data directory, merges selected
   categories with the current unselected data in staging, stops code-server,
   swaps the merged directory into place with rollback protection, updates both
   in-memory state locks, and restarts AntanI. Do not import individual files into
   the live directory or remove the restart; either change can leave Rust state and
   disk state disagreeing.
+- `BackupMaintenance` serializes backup work with VS Code startup and desktop
+  VS Code import. Export stops and restores a running embedded server when its
+  files are selected. A fixed sibling rollback directory makes an interrupted
+  two-rename import recoverable before persisted state is loaded at startup.
 
 ## Testing: behavior, not brittle
 

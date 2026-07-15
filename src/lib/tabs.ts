@@ -1,9 +1,14 @@
 import type { CustomCommand, Settings } from "./types";
 
-export type TabKind = "terminal" | "claude" | "opencode" | "ide";
+export type AgentKind = "claude" | "opencode" | "codex";
+export type TabKind = "terminal" | AgentKind | "ide";
 
-/** Runtime-only status for AI tabs (claude / opencode). Never persisted. */
+/** Runtime-only status for agent tabs. Never persisted. */
 export type TabStatus = "idle" | "busy" | "ready" | "waiting";
+
+export function isAgentKind(kind: TabKind): kind is AgentKind {
+  return kind === "claude" || kind === "opencode" || kind === "codex";
+}
 
 export interface Tab {
   id: string;
@@ -29,7 +34,8 @@ const EMPTY_PROJECT_TABS: ProjectTabs = { tabs: [], activeTabId: null };
 const TAB_TITLES: Record<TabKind, string> = {
   terminal: "Terminal",
   claude: "Claude",
-  opencode: "opencode",
+  opencode: "OpenCode",
+  codex: "Codex",
   ide: "VS Code",
 };
 
@@ -40,6 +46,7 @@ export function defaultTitle(kind: TabKind): string {
 export function startupCommandForKind(kind: TabKind, settings: Settings): string | null {
   if (kind === "claude") return settings.claudeCommand;
   if (kind === "opencode") return settings.opencodeCommand;
+  if (kind === "codex") return settings.codexCommand;
   return null;
 }
 

@@ -84,3 +84,15 @@ any `src/lib` file that's purely `invoke`/`listen`/plugin-API wrapping with an
 excludes `src/lib/**/*.ipc.ts` from coverage by that pattern, so new wrapper
 files are excluded automatically and can't silently break CI the way an
 unlisted file would.
+
+Agent waiting detection lives in `src/lib/agentStatus.ts` because each CLI has
+different permission and question UI. Keep its patterns provider-specific and
+high-signal: broad words such as “confirm”, “trust”, or “press enter” regularly
+appear in ordinary assistant output and cause false waiting notifications. Add
+pure-logic fixtures for both recognized prompts and provider mismatches whenever
+a CLI changes its wording.
+
+Agent composers use Ctrl+J for soft-newlines. Do not send CSI-u Shift+Enter
+through xterm/WKWebView: Codex can interpret it as its clipboard-image action.
+Plain shells still need Ctrl-V + Ctrl-J. Keep both physical Shift+Enter handling
+and injectable multiline text routed through `softNewlineForKind`.

@@ -3,6 +3,9 @@ use crate::state::{self, AppData, Settings};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[path = "backup_tests/security.rs"]
+mod security;
+
 fn temp_path(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!("antani-{label}-{}", uuid::Uuid::new_v4()))
 }
