@@ -14,7 +14,7 @@ const PROVIDER_PROMPT_SIGNATURES: Record<AgentKind, readonly PromptSignature[]> 
     ],
   ],
   opencode: [
-    [/Permission required/i, /Allow once/i, /Allow always/i, /enter confirm/i],
+    [/Permission required/i, /Allow once/i, /Allow always/i, /Reject/i],
     [/Type your own answer/i, /enter submit/i, /esc dismiss/i],
     [/select all that apply/i, /enter (?:submit|toggle)/i, /esc dismiss/i],
   ],

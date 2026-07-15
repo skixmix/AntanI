@@ -34,6 +34,11 @@ $ curl -I https://example.com
 Allow once  Allow always  Reject
 ctrl+f fullscreen  ← select  enter confirm`;
 
+const OPENCODE_COMPACT_PERMISSION = `Permission required
+# Shell command
+$ printf 'safe test\\n'
+Allow once  Allow always  Reject`;
+
 const OPENCODE_MULTISELECT_QUESTION = `Scope of go-ahead  Confirm
 What should I do now? (select all that apply)
 1. [ ] Post a clarification
@@ -64,6 +69,7 @@ describe("settledAgentStatus", () => {
     ["claude", CLAUDE_NETWORK_PERMISSION],
     ["opencode", OPENCODE_QUESTION],
     ["opencode", OPENCODE_PERMISSION],
+    ["opencode", OPENCODE_COMPACT_PERMISSION],
     ["opencode", OPENCODE_MULTISELECT_QUESTION],
     ["codex", CODEX_QUESTION],
     ["codex", CODEX_PERMISSION],
@@ -85,6 +91,7 @@ describe("settledAgentStatus", () => {
     ["claude", "The assistant asked: Do you want to allow this connection?"],
     ["opencode", "The documentation calls this Permission required."],
     ["opencode", "Choose Allow once if you want to continue."],
+    ["opencode", "Reject is one possible decision."],
     ["opencode", "The form says to select all that apply."],
     ["codex", "The prompt says: Would you like to run the following command?"],
     ["codex", "Question 1/1 (1 unanswered) is the heading used in the screenshot."],
