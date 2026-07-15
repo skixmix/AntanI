@@ -43,6 +43,13 @@ export interface Settings {
   terminalFontSize: number;
 }
 
+export interface BackupSelection {
+  readonly projects: boolean;
+  readonly preferences: boolean;
+  readonly vscodeProfile: boolean;
+  readonly vscodeExtensions: boolean;
+}
+
 export type FileChangeKind = "added" | "modified" | "deleted";
 
 export interface GitFileEntry {

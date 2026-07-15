@@ -3,8 +3,10 @@ import { createPortal } from "react-dom";
 import { PROJECT_COLORS } from "../lib/constants";
 import { playSystemSound, SYSTEM_SOUNDS } from "../lib/sound.ipc";
 import type { CustomCommand, Injectable, InjectTarget, Project, Settings } from "../lib/types";
+import { BackupSettings } from "./BackupSettings";
 import { ColorPicker } from "./ColorPicker";
 import { CloseIcon, TerminalIcon, VSCodeIcon } from "./Icons";
+import { SettingsSection as SectionCard } from "./SettingsSection";
 
 interface SettingsPageProps {
   settings: Settings;
@@ -86,31 +88,6 @@ const TABS: { id: TabId; label: string; icon: (className: string) => ReactNode }
     icon: (className) => <VSCodeIcon size={14} className={className} />,
   },
 ];
-
-function SectionCard({
-  title,
-  description,
-  badge,
-  children,
-}: {
-  title: string;
-  description: string;
-  badge?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-foreground">{title}</h2>
-          {badge}
-        </div>
-        <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
-      </div>
-      {children}
-    </section>
-  );
-}
 
 /** Color dot + name — makes which project a per-project section applies to
  *  unmissable, since Settings is a full-screen overlay with no project sidebar. */
@@ -570,7 +547,7 @@ export function SettingsPage({
       </div>
 
       <div className="flex flex-1 justify-center overflow-y-auto">
-        <div className="flex w-full max-w-4xl gap-8 px-6 py-10">
+        <div className="flex w-full max-w-4xl gap-8 px-6 pt-10">
           {/* Vertical tab rail */}
           <nav className="flex w-40 shrink-0 flex-col gap-0.5">
             {TABS.map((t) => (
@@ -591,7 +568,7 @@ export function SettingsPage({
           </nav>
 
           {/* Tab content */}
-          <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <div className="flex min-w-0 flex-1 flex-col gap-4 pb-16">
             {tab === "general" && (
               <>
                 <SectionCard title="Terminal" description="Appearance settings for terminal tabs.">
@@ -683,6 +660,7 @@ export function SettingsPage({
                     )}
                   </div>
                 </SectionCard>
+                <BackupSettings />
               </>
             )}
 

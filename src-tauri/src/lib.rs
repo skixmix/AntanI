@@ -1,3 +1,4 @@
+mod backup;
 mod git;
 mod git_watcher;
 mod ide_webview;
@@ -10,6 +11,7 @@ mod vscode_server;
 use state::{
     AppData, AppState, InjectTarget, Settings, SettingsState, PROJECTS_FILE, SETTINGS_FILE,
 };
+use std::path::Path;
 use tauri::{Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use vscode_server::VscodeServer;
@@ -188,6 +190,47 @@ fn update_settings(state: State<SettingsState>, settings: Settings) -> Result<Se
     Ok(data.clone())
 }
 
+#[tauri::command]
+fn export_backup(
+    state: State<AppState>,
+    path: String,
+    selection: backup::BackupSelection,
+) -> Result<(), String> {
+    let app_data_dir = state
+        .file_path
+        .parent()
+        .ok_or_else(|| "AntanI data directory is unavailable".to_string())?;
+    backup::export_backup(app_data_dir, Path::new(&path), selection)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn import_backup(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    settings: State<SettingsState>,
+    server: State<VscodeServer>,
+    path: String,
+) -> Result<(), String> {
+    let archive_path = Path::new(&path);
+    backup::validate_backup(archive_path).map_err(|error| error.to_string())?;
+    let mut app_data = state.data.lock().map_err(|error| error.to_string())?;
+    let mut app_settings = settings.data.lock().map_err(|error| error.to_string())?;
+    let app_data_dir = state
+        .file_path
+        .parent()
+        .ok_or_else(|| "AntanI data directory is unavailable".to_string())?;
+
+    server.stop();
+    let imported =
+        backup::import_backup(app_data_dir, archive_path).map_err(|error| error.to_string())?;
+    *app_data = imported.app_data;
+    *app_settings = imported.settings;
+    drop(app_data);
+    drop(app_settings);
+    app.restart()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -261,6 +304,8 @@ pub fn run() {
             set_active_project,
             get_settings,
             update_settings,
+            export_backup,
+            import_backup,
             sound::play_system_sound,
             pty::pty_spawn,
             pty::pty_write,

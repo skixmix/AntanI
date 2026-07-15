@@ -2,8 +2,8 @@ import { getVersion } from "@tauri-apps/api/app";
 import { type Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open } from "@tauri-apps/plugin-dialog";
-import type { AppData, InjectTarget, Settings } from "./types";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import type { AppData, BackupSelection, InjectTarget, Settings } from "./types";
 
 /**
  * Typed wrappers around the Rust Tauri commands. Every mutating command
@@ -106,6 +106,27 @@ export function getSettings(): Promise<Settings> {
 
 export function updateSettings(settings: Settings): Promise<Settings> {
   return invoke<Settings>("update_settings", { settings });
+}
+
+export async function exportBackup(selection: BackupSelection): Promise<boolean> {
+  const path = await save({
+    defaultPath: "AntanI Backup.antani-backup",
+    filters: [{ name: "AntanI Backup", extensions: ["antani-backup"] }],
+  });
+  if (path === null) return false;
+  await invoke<void>("export_backup", { path, selection });
+  return true;
+}
+
+export async function importBackup(): Promise<boolean> {
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    filters: [{ name: "AntanI Backup", extensions: ["antani-backup"] }],
+  });
+  if (typeof selected !== "string") return false;
+  await invoke<void>("import_backup", { path: selected });
+  return true;
 }
 
 /** Open the native folder picker. Returns the chosen absolute path, or null if cancelled. */

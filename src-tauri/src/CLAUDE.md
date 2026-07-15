@@ -77,6 +77,25 @@ itself.
   open the IDE tab (`SourceControlSidebar.tsx`), since the server/webview/
   extension may still be starting up the first time a project's IDE tab opens.
 
+## Backup archives
+
+- Export categories own paths by their first app-data component: Projects &
+  customizations owns `projects.json` (including colors, quick actions, and custom
+  prompts); App preferences owns `settings.json` plus every unclassified path;
+  VS Code profile owns `vscode-server-data/` and
+  `imported-user-settings.json`; VS Code extensions owns `extensions/`. Keep App
+  preferences as the catch-all so future persisted settings are backed up
+  automatically. Add an explicit category mapping only when a new path clearly
+  belongs to one of the other three categories.
+- `vscode-server.pid` and `diff-bridge-sockets/` are always excluded because
+  restoring stale process metadata could target an unrelated PID or dead socket.
+- Import validates and extracts beside the app-data directory, merges selected
+  categories with the current unselected data in staging, stops code-server,
+  swaps the merged directory into place with rollback protection, updates both
+  in-memory state locks, and restarts AntanI. Do not import individual files into
+  the live directory or remove the restart; either change can leave Rust state and
+  disk state disagreeing.
+
 ## Testing: behavior, not brittle
 
 Unit-test the **state and merge logic** by asserting observable outcomes: which
