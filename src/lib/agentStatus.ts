@@ -7,6 +7,11 @@ const PROVIDER_PROMPT_SIGNATURES: Record<AgentKind, readonly PromptSignature[]> 
     [/Do you want to proceed\?/i, /(?:Tab to amend|ctrl\+e to explain)/i],
     [/Allow Claude to/i, /(?:Yes, and (?:don't ask again|always allow)|Esc to cancel)/i],
     [/Chat about this/i, /Enter to select/i, /to navigate/i],
+    [
+      /Network request outside of sandbox/i,
+      /Do you want to allow this connection\?/i,
+      /No, and tell Claude what to do differently/i,
+    ],
   ],
   opencode: [
     [/Permission required/i, /Allow once/i, /Allow always/i, /enter confirm/i],

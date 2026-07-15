@@ -16,6 +16,13 @@ Do you want to proceed?
 3. No
 Esc to cancel · Tab to amend · ctrl+e to explain`;
 
+const CLAUDE_NETWORK_PERMISSION = `Network request outside of sandbox
+Host: example.com
+Do you want to allow this connection?
+1. Yes
+2. Yes, and don't ask again for example.com
+3. No, and tell Claude what to do differently (esc)`;
+
 const OPENCODE_QUESTION = `Which harmless permission test should we run?
 1. Create a marker on Desktop
 4. Type your own answer
@@ -45,6 +52,7 @@ describe("settledAgentStatus", () => {
   it.each([
     ["claude", CLAUDE_QUESTION],
     ["claude", CLAUDE_PERMISSION],
+    ["claude", CLAUDE_NETWORK_PERMISSION],
     ["opencode", OPENCODE_QUESTION],
     ["opencode", OPENCODE_PERMISSION],
     ["codex", CODEX_QUESTION],
@@ -64,6 +72,7 @@ describe("settledAgentStatus", () => {
   it.each([
     ["claude", "The assistant asked: Do you want to proceed?"],
     ["claude", "You can press Tab to amend the command."],
+    ["claude", "The assistant asked: Do you want to allow this connection?"],
     ["opencode", "The documentation calls this Permission required."],
     ["opencode", "Choose Allow once if you want to continue."],
     ["codex", "The prompt says: Would you like to run the following command?"],
