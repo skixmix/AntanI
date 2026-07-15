@@ -114,6 +114,71 @@ fn interrupted_import_restores_the_previous_app_data() -> Result<(), BackupError
 }
 
 #[test]
+fn interrupted_import_discards_stale_rollback_when_current_data_exists() -> Result<(), BackupError>
+{
+    let app_data = temp_path("recovery-target-existing");
+    fs::create_dir_all(&app_data)?;
+    fs::write(app_data.join("marker"), b"current data")?;
+    let rollback = rollback_path(&app_data)?;
+    fs::create_dir_all(&rollback)?;
+    fs::write(rollback.join("marker"), b"stale data")?;
+
+    recover_interrupted_import(&app_data)?;
+
+    assert_eq!(fs::read(app_data.join("marker"))?, b"current data");
+    assert!(!rollback.exists());
+
+    let _ = fs::remove_dir_all(app_data);
+    Ok(())
+}
+
+#[test]
+fn import_backup_into_fresh_directory_has_no_previous_data_to_roll_back() -> Result<(), BackupError>
+{
+    let source = temp_path("fresh-import-source");
+    let target = temp_path("fresh-import-target");
+    let archive = temp_path("fresh-import.antani-backup");
+    let (expected_app_data, expected_settings) = write_fixture(&source)?;
+
+    export_backup(&source, &archive, BackupSelection::all())?;
+    let imported = import_backup(&target, &archive)?;
+
+    assert_eq!(imported.app_data, expected_app_data);
+    assert_eq!(imported.settings, expected_settings);
+    assert!(!rollback_path(&target)?.exists());
+
+    let _ = fs::remove_dir_all(source);
+    let _ = fs::remove_dir_all(target);
+    let _ = fs::remove_file(archive);
+    Ok(())
+}
+
+#[test]
+fn import_backup_rejects_symlinks_in_existing_app_data() -> Result<(), BackupError> {
+    use std::os::unix::fs::symlink;
+
+    let source = temp_path("symlink-import-source");
+    let target = temp_path("symlink-import-target");
+    let archive = temp_path("symlink-import.antani-backup");
+    write_fixture(&source)?;
+    fs::create_dir_all(&target)?;
+    let outside = temp_path("symlink-import-outside");
+    fs::write(&outside, b"outside")?;
+    symlink(&outside, target.join("linked-file"))?;
+
+    export_backup(&source, &archive, BackupSelection::all())?;
+    let result = import_backup(&target, &archive);
+
+    assert!(result.is_err());
+
+    let _ = fs::remove_dir_all(source);
+    let _ = fs::remove_dir_all(target);
+    let _ = fs::remove_file(archive);
+    let _ = fs::remove_file(outside);
+    Ok(())
+}
+
+#[test]
 fn fake_eocd_in_comment_cannot_bypass_index_limits() -> Result<(), BackupError> {
     let archive = temp_path("fake-eocd.antani-backup");
     let mut writer = ZipWriter::new(fs::File::create(&archive)?);

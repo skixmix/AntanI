@@ -188,6 +188,120 @@ fn preferences_include_future_files_and_profile_is_independent() -> Result<(), B
 }
 
 #[test]
+fn backup_selection_excludes_paths_with_no_components() {
+    let categories = BackupSelection::all();
+
+    assert!(!categories.includes(Path::new("")));
+}
+
+#[test]
+fn backup_maintenance_lock_succeeds() {
+    let maintenance = BackupMaintenance::default();
+
+    let guard = maintenance.lock();
+
+    assert!(guard.is_ok());
+}
+
+#[test]
+fn backup_selection_includes_vscode_reflects_either_vscode_category() {
+    assert!(BackupSelection {
+        projects: false,
+        preferences: false,
+        vscode_profile: true,
+        vscode_extensions: false,
+    }
+    .includes_vscode());
+    assert!(BackupSelection {
+        projects: false,
+        preferences: false,
+        vscode_profile: false,
+        vscode_extensions: true,
+    }
+    .includes_vscode());
+    assert!(!BackupSelection {
+        projects: true,
+        preferences: true,
+        vscode_profile: false,
+        vscode_extensions: false,
+    }
+    .includes_vscode());
+}
+
+#[test]
+fn export_backup_rejects_empty_category_selection() -> Result<(), BackupError> {
+    let source = temp_path("empty-selection-source");
+    let archive = temp_path("empty-selection.antani-backup");
+    write_fixture(&source)?;
+
+    let result = export_backup(
+        &source,
+        &archive,
+        BackupSelection {
+            projects: false,
+            preferences: false,
+            vscode_profile: false,
+            vscode_extensions: false,
+        },
+    );
+
+    assert!(result.is_err());
+    assert!(!archive.exists());
+
+    let _ = fs::remove_dir_all(source);
+    Ok(())
+}
+
+#[test]
+fn export_backup_rejects_destination_inside_app_data_dir() -> Result<(), BackupError> {
+    let source = temp_path("inside-app-data-source");
+    write_fixture(&source)?;
+    let destination = source.join("backup.antani-backup");
+
+    let result = export_backup(&source, &destination, BackupSelection::all());
+
+    assert!(result.is_err());
+
+    let _ = fs::remove_dir_all(source);
+    Ok(())
+}
+
+#[test]
+fn export_backup_cleans_up_temp_file_when_archive_write_fails() -> Result<(), BackupError> {
+    use std::os::unix::fs::symlink;
+
+    let source = temp_path("symlink-source");
+    let archive = temp_path("symlink-source.antani-backup");
+    write_fixture(&source)?;
+    let target = temp_path("symlink-target");
+    fs::write(&target, b"outside")?;
+    symlink(&target, source.join("projects.json.link"))?;
+
+    let result = export_backup(&source, &archive, BackupSelection::all());
+
+    assert!(result.is_err());
+    assert!(!archive.exists());
+
+    let _ = fs::remove_dir_all(source);
+    let _ = fs::remove_file(target);
+    Ok(())
+}
+
+#[test]
+fn backup_error_display_and_conversions() {
+    let error = BackupError::invalid("something went wrong");
+    assert_eq!(error.to_string(), "something went wrong");
+
+    let io_error: BackupError = io::Error::new(io::ErrorKind::NotFound, "missing").into();
+    assert!(!io_error.to_string().is_empty());
+
+    let json_error: BackupError = serde_json::from_str::<Settings>("not json")
+        .unwrap_err()
+        .into();
+    assert!(!json_error.to_string().is_empty());
+}
+
+#[test]
 fn invalid_backup_leaves_current_data_untouched() -> Result<(), BackupError> {
     let target = temp_path("invalid-target");
     let archive = temp_path("invalid.antani-backup");
