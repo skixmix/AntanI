@@ -17,6 +17,9 @@ pub const DEFAULT_CLAUDE_COMMAND: &str = "claude";
 /// Default launch command for an opencode tab (overridable in settings).
 pub const DEFAULT_OPENCODE_COMMAND: &str = "opencode";
 
+/// Default launch command for a Codex tab (overridable in settings).
+pub const DEFAULT_CODEX_COMMAND: &str = "codex";
+
 /// A user-defined quick-access command, scoped to a single project. Opening it
 /// spawns a terminal-kind tab that runs `command` as its startup shell command.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -31,7 +34,7 @@ pub struct CustomCommand {
 }
 
 /// Which kind of tab an injectable's text is meant for. Terminal snippets go to
-/// plain shell tabs; AI prompts go to Claude/opencode tabs.
+/// plain shell tabs; AI prompts go to agent tabs.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum InjectTarget {
@@ -303,6 +306,7 @@ impl AppState {
 pub struct Settings {
     pub claude_command: String,
     pub opencode_command: String,
+    pub codex_command: String,
     pub notifications_enabled: bool,
     /// Whether the one-time "import your VS Code setup?" prompt has already
     /// been shown (regardless of the user's answer). Must only ever flip
@@ -319,6 +323,7 @@ impl Default for Settings {
         Self {
             claude_command: DEFAULT_CLAUDE_COMMAND.to_string(),
             opencode_command: DEFAULT_OPENCODE_COMMAND.to_string(),
+            codex_command: DEFAULT_CODEX_COMMAND.to_string(),
             notifications_enabled: true,
             vscode_import_prompted: false,
             sound_enabled: true,
@@ -468,6 +473,7 @@ mod tests {
         let s = Settings {
             claude_command: "custom".into(),
             opencode_command: "oc".into(),
+            codex_command: "codex --profile work".into(),
             notifications_enabled: false,
             vscode_import_prompted: true,
             sound_enabled: false,
@@ -504,6 +510,7 @@ mod tests {
         let s = Settings::default();
         assert_eq!(s.claude_command, "claude");
         assert_eq!(s.opencode_command, "opencode");
+        assert_eq!(s.codex_command, "codex");
         assert!(s.notifications_enabled);
         assert!(!s.vscode_import_prompted);
         assert!(s.sound_enabled);
@@ -516,6 +523,7 @@ mod tests {
         let s = Settings {
             claude_command: "my-claude --flag".into(),
             opencode_command: "oc".into(),
+            codex_command: "codex --oss".into(),
             notifications_enabled: false,
             vscode_import_prompted: true,
             sound_enabled: false,
@@ -815,6 +823,7 @@ mod tests {
         let loaded: Settings = load(&path);
         assert_eq!(loaded.claude_command, "oc-claude");
         assert_eq!(loaded.opencode_command, "opencode");
+        assert_eq!(loaded.codex_command, "codex");
         assert!(loaded.notifications_enabled);
         assert!(!loaded.vscode_import_prompted);
         let _ = fs::remove_file(&path);
@@ -832,6 +841,7 @@ mod tests {
         )
         .unwrap();
         let loaded: Settings = load(&path);
+        assert_eq!(loaded.codex_command, "codex");
         assert!(!loaded.vscode_import_prompted);
         assert!(loaded.notifications_enabled);
         let _ = fs::remove_file(&path);

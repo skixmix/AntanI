@@ -35,12 +35,20 @@ export interface AppData {
 export interface Settings {
   claudeCommand: string;
   opencodeCommand: string;
+  codexCommand: string;
   notificationsEnabled: boolean;
   vscodeImportPrompted: boolean;
   soundEnabled: boolean;
   soundReady: string;
   soundWaiting: string;
   terminalFontSize: number;
+}
+
+export interface BackupSelection {
+  readonly projects: boolean;
+  readonly preferences: boolean;
+  readonly vscodeProfile: boolean;
+  readonly vscodeExtensions: boolean;
 }
 
 export type FileChangeKind = "added" | "modified" | "deleted";

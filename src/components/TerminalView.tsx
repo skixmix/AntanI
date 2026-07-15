@@ -8,18 +8,26 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
-import { killPty, onPtyExit, onPtyRunning, resizePty, spawnPty, writePty } from "../lib/api.ipc";
+import { settledAgentStatus } from "../lib/agentStatus";
+import {
+  killPty,
+  onPtyExit,
+  onPtyRunning,
+  resizePty,
+  resolveTerminalFileLink,
+  spawnPty,
+  writePty,
+} from "../lib/api.ipc";
 import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_SCROLLBACK } from "../lib/constants";
 import { fileDrag } from "../lib/fileDrag";
-import type { TabStatus } from "../lib/tabs";
-
-// Deliberately excludes bare, common words ("confirm", "Trust", "Press enter")
-// that show up constantly in ordinary assistant prose or persistent footer
-// hints — matching those turned nearly every idle screen into a false
-// "waiting" read. Only patterns that are reliably interactive-prompt-shaped
-// (a "(y/n)" choice, a first-run trust dialog, ...) belong here.
-const WAITING_RE =
-  /(\[y\/n\]|\(y\/n\)|\(Y\/n\)|\(N\/y\)|yes\/no|Do you want|Allow once|Allow always|Permission required|Do you trust|Proceed\?|Continue\?|press any key to continue|Esc to cancel)/i;
+import { softNewlineForKind } from "../lib/inject";
+import type { AgentKind, TabStatus } from "../lib/tabs";
+import type { Project } from "../lib/types";
+import {
+  createTerminalFileLinkProvider,
+  type TerminalFileDestination,
+  type TerminalFileOpenTarget,
+} from "./terminalFileLinkProvider";
 
 // Long enough that a mid-response pause (waiting on a tool call, network
 // latency between streamed chunks, ...) doesn't get misread as "done" —
@@ -37,31 +45,39 @@ function shellEscapePath(path: string): string {
 
 interface TerminalViewProps {
   tabId: string;
+  projects: readonly Project[];
   cwd: string;
   startupCommand: string | null;
   visible: boolean;
   fontSize: number;
-  isAi?: boolean;
+  agentKind?: AgentKind;
   onStatusChange?: (tabId: string, status: TabStatus) => void;
   /** Foreground-process-group signal, independent of the AI busy/ready/waiting
    *  pipeline above: fires for any tab kind, driven by the pty itself rather
    *  than output heuristics. */
   onRunningChange?: (tabId: string, running: boolean) => void;
+  onOpenFile: (target: TerminalFileOpenTarget) => void;
 }
 
 export function TerminalView({
   tabId,
+  projects,
   cwd,
   startupCommand,
   visible,
   fontSize,
-  isAi,
+  agentKind,
   onStatusChange,
   onRunningChange,
+  onOpenFile,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const onOpenFileRef = useRef(onOpenFile);
+  onOpenFileRef.current = onOpenFile;
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
 
   // fontSize is only read here as the initial size; live changes are applied
   // by the dedicated fontSize effect below without respawning the PTY.
@@ -92,6 +108,28 @@ export function TerminalView({
       new WebLinksAddon((event, uri) => {
         if (!event.metaKey) return;
         void openUrl(uri);
+      }),
+    );
+    term.registerLinkProvider(
+      createTerminalFileLinkProvider({
+        terminal: term,
+        resolveFile: async (referencePath): Promise<TerminalFileDestination | null> => {
+          const availableProjects = projectsRef.current;
+          const resolved = await resolveTerminalFileLink(cwd, referencePath);
+          if (!resolved) return null;
+          if (!resolved.projectId) return { kind: "finder", filePath: resolved.filePath };
+          const project = availableProjects.find(
+            (candidate) => candidate.id === resolved.projectId,
+          );
+          if (!project) return null;
+          return {
+            kind: "ide",
+            projectId: project.id,
+            projectPath: project.path,
+            filePath: resolved.filePath,
+          };
+        },
+        onOpenFile: (target) => onOpenFileRef.current(target),
       }),
     );
     fit.fit();
@@ -156,7 +194,8 @@ export function TerminalView({
         // user's own typed text as a permission prompt. Bail and let the
         // eventual submit (which triggers real output) re-drive this timer.
         if (composing) return;
-        const status: TabStatus = WAITING_RE.test(visibleScreenText()) ? "waiting" : "ready";
+        if (!agentKind) return;
+        const status = settledAgentStatus(agentKind, visibleScreenText());
         setStatus(status);
         if (status === "ready") {
           armed = false;
@@ -171,7 +210,7 @@ export function TerminalView({
     // term.write()'s completion callback, keeps the busy/ready cadence
     // accurate no matter which tab is currently visible.
     function onOutputArrived() {
-      if (disposed || !isAi || !onStatusChange || !armed) return;
+      if (disposed || !agentKind || !onStatusChange || !armed) return;
       // While composing, the ready-check timer must still (re)schedule here,
       // otherwise output that lands mid-draft can leave the tab stuck on
       // "busy" with no timer left to resolve it once the draft is sent.
@@ -194,12 +233,12 @@ export function TerminalView({
     // than immediately — a bit of lag here (vs. onOutputArrived above) only
     // delays waiting-prompt detection slightly, it doesn't cause flicker.
     function onWriteFlushed() {
-      if (disposed || !isAi || !onStatusChange || !armed || composing) return;
+      if (disposed || !agentKind || !onStatusChange || !armed || composing) return;
       // This is the path that scans the *whole* visible screen, so without
       // the composing check above, the terminal's own echo of the user's
       // still-being-typed message (e.g. containing "confirm" or "continue?")
-      // can trip WAITING_RE before anything was ever sent.
-      if (WAITING_RE.test(visibleScreenText())) {
+      // can trip prompt detection before anything was ever sent.
+      if (settledAgentStatus(agentKind, visibleScreenText()) === "waiting") {
         seenBusy = true;
         window.clearTimeout(silenceTimer);
         setStatus("waiting");
@@ -231,12 +270,9 @@ export function TerminalView({
       // submitting) is the one keystroke that ends a draft.
       composing = !(domEvent.key === "Enter" && !domEvent.shiftKey);
     });
-    // xterm.js sends the same "\r" for Enter and Shift+Enter, so CLIs that
-    // distinguish them (e.g. Claude Code, which uses Shift+Enter to insert a
-    // newline instead of submitting) never see the difference. AI CLI tabs
-    // opt into the CSI u extended-key sequence for Shift+Enter, the same way
-    // iTerm2/Kitty report it. Plain shells don't parse CSI u (it would just
-    // echo back as text), so instead we send Ctrl-V + Ctrl-J there: readline's
+    // xterm.js sends the same "\r" for Enter and Shift+Enter, so the PTY never
+    // sees the modifier unless we encode it ourselves. Agent composers use
+    // Ctrl-J, and plain shells use Ctrl-V + Ctrl-J: readline's
     // default "quoted-insert" binding in bash/zsh inserts the following key
     // literally, turning a would-be Enter into a real newline in the line
     // buffer instead of submitting it. It must be Ctrl-J (line feed), not
@@ -251,7 +287,7 @@ export function TerminalView({
         event.preventDefault();
         armed = true;
         composing = true;
-        void writePty(tabId, isAi ? "\x1b[13;2u" : "\x16\n");
+        void writePty(tabId, softNewlineForKind(agentKind ?? "terminal"));
         return false;
       }
       return true;
@@ -315,7 +351,7 @@ export function TerminalView({
       }
       void spawned.finally(() => killPty(tabId));
     };
-  }, [tabId, cwd, startupCommand, isAi, onStatusChange, onRunningChange]);
+  }, [tabId, cwd, startupCommand, agentKind, onStatusChange, onRunningChange]);
 
   // Kept separate from the spawn effect above: fontSize changing must not
   // respawn the PTY, since the old effect's cleanup kills it asynchronously

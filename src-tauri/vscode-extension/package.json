@@ -1,13 +1,18 @@
 {
   "name": "antani-diff-bridge",
-  "displayName": "AntanI Diff Bridge",
-  "description": "Internal bridge letting the AntanI shell open the native diff view.",
+  "displayName": "AntanI IDE Bridge",
+  "description": "Internal bridge for AntanI file navigation and native diff views.",
   "version": "0.1.0",
   "publisher": "antani",
   "engines": {
     "vscode": "^1.85.0"
   },
   "main": "./extension.js",
+  "files": [
+    "bridge.js",
+    "extension.js",
+    "README.md"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],

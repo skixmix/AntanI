@@ -8,7 +8,7 @@ I know, I know. There are plenty of AI orchestrators out there:
 
 Been there, done that. But you know what? I built my own, just for me. That's the world we live in 🤷‍♂️
 
-[AntanI](https://www.youtube.com/watch?v=IoEK2Z3-JH8) is my minimal, performance-focused, macOS desktop app that orchestrates CLI coding agents (Claude Code, opencode), terminals, and an **embedded VS Code** across local project folders: one window, one sidebar of projects, tabbed workspaces per project. 
+[AntanI](https://www.youtube.com/watch?v=IoEK2Z3-JH8) is my minimal, performance-focused, macOS desktop app that orchestrates CLI coding agents (OpenCode, Claude Code, Codex), terminals, and an **embedded VS Code** across local project folders: one window, one sidebar of projects, tabbed workspaces per project.
 
 Built with Tauri v2 + React. And AI.
 

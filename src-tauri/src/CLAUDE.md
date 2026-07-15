@@ -40,16 +40,13 @@ belongs here.
   foreground process group, so a shell's children (e.g. `htop`) die with it — don't
   downgrade this to killing only the shell pid.
 
-## Embedded VS Code: the `antani-diff-bridge` extension
+## Embedded VS Code: the bundled IDE bridge extension
 
-code-server has no supported URL or CLI mechanism to deep-link straight into
-VS Code's native SCM diff editor (`--diff` isn't in code-server's CLI; the
-`payload` query param some `openFile` deep links rely on is undocumented and
-confirmed unreliable for this in upstream `coder/code-server` discussions). So
-`open_diff_in_ide` (`vscode_server.rs`) reaches a small bundled VS Code
-extension — `src-tauri/vscode-extension/` — that runs *inside* the running
-code-server process and calls `vscode.commands.executeCommand('git.openChange', uri)`
-itself.
+The commands in `ide_bridge.rs` reach a small bundled VS Code extension in
+`src-tauri/vscode-extension/`. It runs inside code-server and uses public VS Code
+APIs to open files and native SCM diffs without reloading the editor. Diff
+requests await `git.refresh` before `git.openChange`, otherwise the Git extension
+can silently miss a newly changed file because its repository model is stale.
 
 - **Self-healing install, not hand-rolled bookkeeping.** The extension is
   reinstalled via code-server's own `--install-extension --force` CLI flag on
@@ -76,6 +73,32 @@ itself.
 - The frontend retries `open_diff_in_ide` for a few seconds after asking to
   open the IDE tab (`SourceControlSidebar.tsx`), since the server/webview/
   extension may still be starting up the first time a project's IDE tab opens.
+
+## Backup archives
+
+- Export categories own paths by their first app-data component: Projects &
+  customizations owns `projects.json` (including colors, quick actions, and custom
+  prompts); App preferences owns `settings.json` plus every unclassified path;
+  VS Code profile owns `vscode-server-data/` and
+  `imported-user-settings.json`; VS Code extensions owns `extensions/`. Keep App
+  preferences as the catch-all so future persisted settings are backed up
+  automatically. Add an explicit category mapping only when a new path clearly
+  belongs to one of the other three categories.
+- `vscode-server.pid` and `diff-bridge-sockets/` are always excluded because
+  restoring stale process metadata could target an unrelated PID or dead socket.
+- Archive validation rejects traversal, symlinks, encryption, duplicate or
+  case-conflicting reserved paths, invalid reserved path types, undeclared
+  category contents, and excessive entry counts or expanded sizes.
+- Import validates and extracts beside the app-data directory, merges selected
+  categories with the current unselected data in staging, stops code-server,
+  swaps the merged directory into place with rollback protection, updates both
+  in-memory state locks, and restarts AntanI. Do not import individual files into
+  the live directory or remove the restart; either change can leave Rust state and
+  disk state disagreeing.
+- `BackupMaintenance` serializes backup work with VS Code startup and desktop
+  VS Code import. Export stops and restores a running embedded server when its
+  files are selected. A fixed sibling rollback directory makes an interrupted
+  two-rename import recoverable before persisted state is loaded at startup.
 
 ## Testing: behavior, not brittle
 

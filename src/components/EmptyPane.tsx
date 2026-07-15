@@ -1,7 +1,7 @@
 import { projectInitials } from "../lib/constants";
 import type { TabKind } from "../lib/tabs";
 import type { Project } from "../lib/types";
-import { AnthropicIcon, OpenCodeIcon, TerminalIcon, VSCodeIcon } from "./Icons";
+import { AnthropicIcon, CodexIcon, OpenCodeIcon, TerminalIcon, VSCodeIcon } from "./Icons";
 
 interface EmptyPaneProps {
   project: Project;
@@ -22,8 +22,9 @@ export function EmptyPane({ project, onOpen, onOpenIde }: EmptyPaneProps) {
       icon: <TerminalIcon size={15} className="text-muted-foreground" />,
       onClick: () => onOpen("terminal"),
     },
-    { label: "Open Claude", icon: <AnthropicIcon size={15} />, onClick: () => onOpen("claude") },
     { label: "Open OpenCode", icon: <OpenCodeIcon size={15} />, onClick: () => onOpen("opencode") },
+    { label: "Open Claude", icon: <AnthropicIcon size={15} />, onClick: () => onOpen("claude") },
+    { label: "Open Codex", icon: <CodexIcon size={15} />, onClick: () => onOpen("codex") },
     {
       label: "Open VS Code",
       icon: <VSCodeIcon size={15} className="text-[#007ACC]" />,

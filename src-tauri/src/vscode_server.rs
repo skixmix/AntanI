@@ -1,6 +1,5 @@
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
@@ -88,6 +87,7 @@ struct StatusPayload {
 
 struct Inner {
     phase: Phase,
+    start_generation: u64,
     /// The serve-web child, kept so we can reap it. `None` once reaped.
     child: Option<Child>,
     /// Process-group id (== child pid, thanks to `setsid`) for group-kill.
@@ -113,6 +113,7 @@ impl VscodeServer {
         Self {
             inner: Mutex::new(Inner {
                 phase: Phase::Stopped,
+                start_generation: 0,
                 child: None,
                 pgid: None,
                 stderr_tail: Arc::new(Mutex::new(Vec::new())),
@@ -144,7 +145,7 @@ impl VscodeServer {
 
     /// Same hash the extension computes from its workspace folder path
     /// (`vscode-extension/extension.js`) — see `BRIDGE_SOCKET_DIR`.
-    fn bridge_socket_path_for(&self, project_path: &str) -> PathBuf {
+    pub(crate) fn bridge_socket_path_for(&self, project_path: &str) -> PathBuf {
         self.bridge_socket_dir()
             .join(format!("{:08x}.sock", fnv1a(project_path.as_bytes())))
     }
@@ -162,7 +163,7 @@ impl VscodeServer {
     /// the returned status lets a caller that finds it already `Ready` proceed at
     /// once (it would otherwise miss the one-shot event).
     pub fn ensure_started(&self, app: &AppHandle) -> String {
-        {
+        let generation = {
             let mut inner = match self.inner.lock() {
                 Ok(inner) => inner,
                 Err(_) => return "failed".to_string(),
@@ -172,23 +173,35 @@ impl VscodeServer {
                 Phase::Starting => return "starting".to_string(),
                 Phase::Stopped | Phase::Failed => inner.phase = Phase::Starting,
             }
-        }
+            inner.start_generation = inner.start_generation.wrapping_add(1);
+            inner.start_generation
+        };
         emit_status(app, "starting", None);
         let app = app.clone();
-        thread::spawn(move || start_and_wait(app));
+        thread::spawn(move || start_and_wait(app, generation));
         "starting".to_string()
     }
 
     /// Terminate the server and its whole process group so no Node child survives.
     /// Called when the last IDE webview closes and on app exit.
     pub fn stop(&self) {
-        let (child, pgid) = {
+        self.stop_inner();
+    }
+
+    pub fn stop_for_maintenance(&self) -> bool {
+        self.stop_inner()
+    }
+
+    fn stop_inner(&self) -> bool {
+        let (was_active, child, pgid) = {
             let mut inner = match self.inner.lock() {
                 Ok(inner) => inner,
-                Err(_) => return,
+                Err(_) => return false,
             };
+            let was_active = matches!(inner.phase, Phase::Starting | Phase::Ready);
             inner.phase = Phase::Stopped;
-            (inner.child.take(), inner.pgid.take())
+            inner.start_generation = inner.start_generation.wrapping_add(1);
+            (was_active, inner.child.take(), inner.pgid.take())
         };
         if let Some(pgid) = pgid {
             // PID-reuse guard: only signal a group that is still our serve-web.
@@ -216,6 +229,7 @@ impl VscodeServer {
         }
         let _ = std::fs::remove_file(self.pid_path());
         let _ = std::fs::remove_dir_all(self.bridge_socket_dir());
+        was_active
     }
 
     /// Crash-only recovery: if a PID file survives from a previous run, an app
@@ -238,8 +252,23 @@ impl VscodeServer {
 /// Launch code-server and poll until the port is up (or we time out / it dies).
 /// Runs on its own thread; stores the child into managed state and spawns the
 /// output-drain threads that also detect a crash.
-fn start_and_wait(app: AppHandle) {
+fn start_and_wait(app: AppHandle, generation: u64) {
     let server = app.state::<VscodeServer>();
+    let maintenance = app.state::<crate::backup::BackupMaintenance>();
+    let _maintenance_guard = match maintenance.lock() {
+        Ok(guard) => guard,
+        Err(error) => {
+            fail(&app, &server, generation, &error);
+            return;
+        }
+    };
+    let is_current = server
+        .inner
+        .lock()
+        .is_ok_and(|inner| inner.phase == Phase::Starting && inner.start_generation == generation);
+    if !is_current {
+        return;
+    }
 
     let path = login_path();
     let code_server = match resolve_code_server(path.as_deref()) {
@@ -248,6 +277,7 @@ fn start_and_wait(app: AppHandle) {
             fail(
                 &app,
                 &server,
+                generation,
                 "`code-server` not found on your PATH. Install it with:\n  brew install code-server\nor see https://coder.com/docs/code-server/install",
             );
             return;
@@ -264,6 +294,7 @@ fn start_and_wait(app: AppHandle) {
             fail(
                 &app,
                 &server,
+                generation,
                 &format!("could not create dir {}: {err}", dir.display()),
             );
             return;
@@ -309,6 +340,7 @@ fn start_and_wait(app: AppHandle) {
             fail(
                 &app,
                 &server,
+                generation,
                 &format!("failed to start VS Code server: {err}"),
             );
             return;
@@ -324,7 +356,7 @@ fn start_and_wait(app: AppHandle) {
             Err(_) => return,
         };
         // Stopped while we were spawning (last IDE tab closed): abandon this child.
-        if inner.phase != Phase::Starting {
+        if inner.phase != Phase::Starting || inner.start_generation != generation {
             drop(inner);
             unsafe {
                 libc::killpg(pgid, libc::SIGKILL);
@@ -350,7 +382,7 @@ fn start_and_wait(app: AppHandle) {
     }
     if let Some(stdout) = stdout {
         let app = app.clone();
-        thread::spawn(move || watch_for_exit(app, stdout));
+        thread::spawn(move || watch_for_exit(app, stdout, generation, pgid));
     }
 
     // Readiness = the pinned port accepting connections. The port is fixed, so a
@@ -363,13 +395,13 @@ fn start_and_wait(app: AppHandle) {
                 Err(_) => return,
             };
             // Resolved by stop() or the crash watcher; nothing left to do.
-            if inner.phase != Phase::Starting {
+            if inner.phase != Phase::Starting || inner.start_generation != generation {
                 return;
             }
         }
         if tcp_ready(server.port) {
             if let Ok(mut inner) = server.inner.lock() {
-                if inner.phase == Phase::Starting {
+                if inner.phase == Phase::Starting && inner.start_generation == generation {
                     inner.phase = Phase::Ready;
                     drop(inner);
                     emit_status(&app, "ready", None);
@@ -378,16 +410,23 @@ fn start_and_wait(app: AppHandle) {
             return;
         }
         if Instant::now() >= deadline {
-            if let Ok(mut inner) = server.inner.lock() {
-                if inner.phase == Phase::Starting {
+            let timed_out = if let Ok(mut inner) = server.inner.lock() {
+                if inner.phase == Phase::Starting && inner.start_generation == generation {
                     inner.phase = Phase::Failed;
+                    true
+                } else {
+                    false
                 }
+            } else {
+                false
+            };
+            if timed_out {
+                emit_status(
+                    &app,
+                    "failed",
+                    Some("Timed out waiting for the VS Code server to start.".to_string()),
+                );
             }
-            emit_status(
-                &app,
-                "failed",
-                Some("Timed out waiting for the VS Code server to start.".to_string()),
-            );
             return;
         }
         thread::sleep(TCP_POLL_INTERVAL);
@@ -411,23 +450,24 @@ fn capture_stderr<R: Read>(pipe: R, tail: Arc<Mutex<Vec<String>>>) {
 /// Drain stdout to EOF; EOF means the process is exiting. Reap it and, if it died
 /// while we thought it was starting or ready, mark the server failed and tell the
 /// frontend so it can offer a restart, including the last stderr lines.
-fn watch_for_exit(app: AppHandle, stdout: ChildStdout) {
+fn watch_for_exit(app: AppHandle, stdout: ChildStdout, generation: u64, pgid: i32) {
     let reader = BufReader::new(stdout);
     for _ in reader.lines().map_while(Result::ok) {}
 
     let server = app.state::<VscodeServer>();
-    let (was, tail_lines) = {
+    let (was, child, tail_lines) = {
         let mut inner = match server.inner.lock() {
             Ok(inner) => inner,
             Err(_) => return,
         };
+        if inner.start_generation != generation || inner.pgid != Some(pgid) {
+            return;
+        }
         let was = inner.phase.clone();
         if was == Phase::Starting || was == Phase::Ready {
             inner.phase = Phase::Failed;
         }
-        if let Some(mut child) = inner.child.take() {
-            let _ = child.wait();
-        }
+        let child = inner.child.take();
         inner.pgid = None;
         let tail = inner
             .stderr_tail
@@ -435,8 +475,11 @@ fn watch_for_exit(app: AppHandle, stdout: ChildStdout) {
             .ok()
             .map(|t| t.join("\n"))
             .unwrap_or_default();
-        (was, tail)
+        (was, child, tail)
     };
+    if let Some(mut child) = child {
+        let _ = child.wait();
+    }
     let _ = std::fs::remove_file(server.pid_path());
 
     let detail = |prefix: &str| -> String {
@@ -464,13 +507,20 @@ fn watch_for_exit(app: AppHandle, stdout: ChildStdout) {
 
 /// Mark the server failed and notify the frontend. Only downgrades from an
 /// in-flight `Starting`, so it never clobbers a concurrent clean stop.
-fn fail(app: &AppHandle, server: &VscodeServer, message: &str) {
-    if let Ok(mut inner) = server.inner.lock() {
-        if inner.phase == Phase::Starting {
+fn fail(app: &AppHandle, server: &VscodeServer, generation: u64, message: &str) {
+    let failed = if let Ok(mut inner) = server.inner.lock() {
+        if inner.phase == Phase::Starting && inner.start_generation == generation {
             inner.phase = Phase::Failed;
+            true
+        } else {
+            false
         }
+    } else {
+        false
+    };
+    if failed {
+        emit_status(app, "failed", Some(message.to_string()));
     }
-    emit_status(app, "failed", Some(message.to_string()));
 }
 
 fn emit_status(app: &AppHandle, status: &str, message: Option<String>) {
@@ -820,6 +870,8 @@ fn sync_extensions_manifest(vscode_ext_dir: &Path, dest_ext_dir: &Path) {
 
 #[tauri::command]
 pub fn import_from_vscode(app: AppHandle) -> Result<String, String> {
+    let maintenance = app.state::<crate::backup::BackupMaintenance>();
+    let _maintenance_guard = maintenance.lock()?;
     let server = app.state::<VscodeServer>();
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
 
@@ -908,26 +960,4 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
 pub fn ensure_ide_server(app: AppHandle) -> Result<String, String> {
     let server = app.state::<VscodeServer>();
     Ok(server.ensure_started(&app))
-}
-
-/// Ask the bundled diff-bridge extension running inside `project_path`'s own
-/// extension-host process to open its native diff view for `file_path`, over
-/// the Unix socket set up in `install_bridge_extension`/`start_and_wait`. No
-/// supported code-server URL or CLI mechanism does this directly (see
-/// `CLAUDE.md` in this crate). Fails fast if that project's IDE webview isn't
-/// open yet or the extension hasn't activated — the frontend retries.
-#[tauri::command]
-pub fn open_diff_in_ide(
-    app: AppHandle,
-    project_path: String,
-    file_path: String,
-) -> Result<(), String> {
-    let server = app.state::<VscodeServer>();
-    let socket = server.bridge_socket_path_for(&project_path);
-    let mut conn = UnixStream::connect(&socket).map_err(|e| format!("IDE not ready yet: {e}"))?;
-    conn.write_all(file_path.as_bytes())
-        .map_err(|e| e.to_string())?;
-    conn.shutdown(std::net::Shutdown::Write)
-        .map_err(|e| e.to_string())?;
-    Ok(())
 }

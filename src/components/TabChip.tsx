@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import type { Tab, TabStatus } from "../lib/tabs";
+import { isAgentKind, type Tab, type TabStatus } from "../lib/tabs";
 import { ColorPicker } from "./ColorPicker";
 import { ConfirmPopover } from "./ConfirmPopover";
-import { AnthropicIcon, OpenCodeIcon, TerminalIcon, VSCodeIcon } from "./Icons";
+import { AnthropicIcon, CodexIcon, OpenCodeIcon, TerminalIcon, VSCodeIcon } from "./Icons";
 
 interface TabChipProps {
   tab: Tab;
@@ -25,6 +25,7 @@ interface TabChipProps {
 const KIND_ICON: Record<string, ReactNode> = {
   opencode: <OpenCodeIcon size={12} className="opacity-80" />,
   claude: <AnthropicIcon size={12} className="text-[#d4622a]" />,
+  codex: <CodexIcon size={12} className="opacity-80" />,
   ide: <VSCodeIcon size={12} className="text-[#007ACC] opacity-80" />,
 };
 
@@ -59,9 +60,7 @@ export function TabChip({
   const inputRef = useRef<HTMLInputElement>(null);
   const chipRef = useRef<HTMLDivElement>(null);
 
-  const isAiRunning =
-    (tab.kind === "claude" || tab.kind === "opencode") &&
-    (status === "busy" || status === "waiting");
+  const isAiRunning = isAgentKind(tab.kind) && (status === "busy" || status === "waiting");
   const isTerminalRunning = tab.kind === "terminal" && !!running;
 
   function requestClose(x: number, y: number) {

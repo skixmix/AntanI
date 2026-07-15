@@ -7,6 +7,7 @@ import type { CommandsSubTab } from "./SettingsPage";
 import { SourceControlSidebar } from "./SourceControlSidebar";
 import { TabStrip } from "./TabStrip";
 import { TerminalLayer } from "./TerminalLayer";
+import type { TerminalFileOpenTarget } from "./terminalFileLinkProvider";
 
 interface WorkspaceProps {
   project: Project | null;
@@ -27,6 +28,7 @@ interface WorkspaceProps {
   onOpenIde: () => void;
   onStatusChange: (tabId: string, status: TabStatus) => void;
   onRunningChange: (tabId: string, running: boolean) => void;
+  onOpenFile: (target: TerminalFileOpenTarget) => void;
 }
 
 export function Workspace({
@@ -48,6 +50,7 @@ export function Workspace({
   onOpenIde,
   onStatusChange,
   onRunningChange,
+  onOpenFile,
 }: WorkspaceProps) {
   if (!project) {
     return (
@@ -98,6 +101,7 @@ export function Workspace({
             fontSize={terminalFontSize}
             onStatusChange={onStatusChange}
             onRunningChange={onRunningChange}
+            onOpenFile={onOpenFile}
           />
           <IdeLayer projects={projects} tabs={tabs} activeProjectId={project.id} />
           {isEmpty && (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeInjection } from "./inject";
+import { encodeInjection, softNewlineForKind } from "./inject";
 
 describe("encodeInjection", () => {
   it("leaves single-line text untouched", () => {
@@ -11,17 +11,26 @@ describe("encodeInjection", () => {
     expect(encodeInjection("a\nb", "terminal")).toBe("a\x16\nb");
   });
 
-  it("translates newlines to the CSI-u soft-newline for AI tabs", () => {
-    expect(encodeInjection("a\nb", "claude")).toBe("a\x1b[13;2ub");
-    expect(encodeInjection("a\nb", "opencode")).toBe("a\x1b[13;2ub");
+  it.each(["claude", "opencode", "codex"] as const)("uses Ctrl-J soft-newlines for %s", (kind) => {
+    expect(encodeInjection("a\nb", kind)).toBe("a\nb");
   });
 
   it("normalizes CRLF and CR to the same soft-newline", () => {
+    expect(encodeInjection("a\r\nb\rc", "codex")).toBe("a\nb\nc");
     expect(encodeInjection("a\r\nb\rc", "terminal")).toBe("a\x16\nb\x16\nc");
   });
 
   it("never appends a trailing newline (nothing is submitted)", () => {
-    expect(encodeInjection("run", "claude").endsWith("\x1b[13;2u")).toBe(false);
+    expect(encodeInjection("run", "claude").endsWith("\n")).toBe(false);
     expect(encodeInjection("run", "terminal").endsWith("\n")).toBe(false);
+  });
+});
+
+describe("softNewlineForKind", () => {
+  it("selects the agent or shell key sequence", () => {
+    expect(softNewlineForKind("claude")).toBe("\n");
+    expect(softNewlineForKind("opencode")).toBe("\n");
+    expect(softNewlineForKind("codex")).toBe("\n");
+    expect(softNewlineForKind("terminal")).toBe("\x16\n");
   });
 });

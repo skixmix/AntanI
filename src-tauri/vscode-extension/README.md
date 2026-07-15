@@ -1,9 +1,11 @@
-# antani-diff-bridge
+# AntanI IDE bridge
 
 Internal VS Code extension, bundled into the app and auto-installed into
 code-server on every launch (see `vscode_server.rs::install_bridge_extension`).
-Listens on a Unix socket (path from `$ANTANI_BRIDGE_SOCKET`) for a file path and
-opens VS Code's native diff view for it via `git.openChange`.
+Listens on a Unix socket (path from `$ANTANI_BRIDGE_SOCKET`) for JSON requests.
+It opens files at exact locations and refreshes Git before opening native diff
+views. The extension ID and VSIX filename retain `antani-diff-bridge` for
+compatibility with existing installations.
 
 `antani-diff-bridge.vsix` is a committed, prebuilt binary — there is no build step
 in the app's normal dev/build flow. If you change `extension.js` or `package.json`,
