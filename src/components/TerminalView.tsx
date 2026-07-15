@@ -9,11 +9,25 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
 import { settledAgentStatus } from "../lib/agentStatus";
-import { killPty, onPtyExit, onPtyRunning, resizePty, spawnPty, writePty } from "../lib/api.ipc";
+import {
+  killPty,
+  onPtyExit,
+  onPtyRunning,
+  resizePty,
+  resolveTerminalFileLink,
+  spawnPty,
+  writePty,
+} from "../lib/api.ipc";
 import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_SCROLLBACK } from "../lib/constants";
 import { fileDrag } from "../lib/fileDrag";
 import { softNewlineForKind } from "../lib/inject";
 import type { AgentKind, TabStatus } from "../lib/tabs";
+import type { Project } from "../lib/types";
+import {
+  createTerminalFileLinkProvider,
+  type TerminalFileDestination,
+  type TerminalFileOpenTarget,
+} from "./terminalFileLinkProvider";
 
 // Long enough that a mid-response pause (waiting on a tool call, network
 // latency between streamed chunks, ...) doesn't get misread as "done" —
@@ -31,6 +45,7 @@ function shellEscapePath(path: string): string {
 
 interface TerminalViewProps {
   tabId: string;
+  projects: readonly Project[];
   cwd: string;
   startupCommand: string | null;
   visible: boolean;
@@ -41,10 +56,12 @@ interface TerminalViewProps {
    *  pipeline above: fires for any tab kind, driven by the pty itself rather
    *  than output heuristics. */
   onRunningChange?: (tabId: string, running: boolean) => void;
+  onOpenFile: (target: TerminalFileOpenTarget) => void;
 }
 
 export function TerminalView({
   tabId,
+  projects,
   cwd,
   startupCommand,
   visible,
@@ -52,10 +69,15 @@ export function TerminalView({
   agentKind,
   onStatusChange,
   onRunningChange,
+  onOpenFile,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const onOpenFileRef = useRef(onOpenFile);
+  onOpenFileRef.current = onOpenFile;
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
 
   // fontSize is only read here as the initial size; live changes are applied
   // by the dedicated fontSize effect below without respawning the PTY.
@@ -86,6 +108,28 @@ export function TerminalView({
       new WebLinksAddon((event, uri) => {
         if (!event.metaKey) return;
         void openUrl(uri);
+      }),
+    );
+    term.registerLinkProvider(
+      createTerminalFileLinkProvider({
+        terminal: term,
+        resolveFile: async (referencePath): Promise<TerminalFileDestination | null> => {
+          const availableProjects = projectsRef.current;
+          const resolved = await resolveTerminalFileLink(cwd, referencePath);
+          if (!resolved) return null;
+          if (!resolved.projectId) return { kind: "finder", filePath: resolved.filePath };
+          const project = availableProjects.find(
+            (candidate) => candidate.id === resolved.projectId,
+          );
+          if (!project) return null;
+          return {
+            kind: "ide",
+            projectId: project.id,
+            projectPath: project.path,
+            filePath: resolved.filePath,
+          };
+        },
+        onOpenFile: (target) => onOpenFileRef.current(target),
       }),
     );
     fit.fit();

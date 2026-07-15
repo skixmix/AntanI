@@ -40,16 +40,13 @@ belongs here.
   foreground process group, so a shell's children (e.g. `htop`) die with it — don't
   downgrade this to killing only the shell pid.
 
-## Embedded VS Code: the `antani-diff-bridge` extension
+## Embedded VS Code: the bundled IDE bridge extension
 
-code-server has no supported URL or CLI mechanism to deep-link straight into
-VS Code's native SCM diff editor (`--diff` isn't in code-server's CLI; the
-`payload` query param some `openFile` deep links rely on is undocumented and
-confirmed unreliable for this in upstream `coder/code-server` discussions). So
-`open_diff_in_ide` (`vscode_server.rs`) reaches a small bundled VS Code
-extension — `src-tauri/vscode-extension/` — that runs *inside* the running
-code-server process and calls `vscode.commands.executeCommand('git.openChange', uri)`
-itself.
+The commands in `ide_bridge.rs` reach a small bundled VS Code extension in
+`src-tauri/vscode-extension/`. It runs inside code-server and uses public VS Code
+APIs to open files and native SCM diffs without reloading the editor. Diff
+requests await `git.refresh` before `git.openChange`, otherwise the Git extension
+can silently miss a newly changed file because its repository model is stale.
 
 - **Self-healing install, not hand-rolled bookkeeping.** The extension is
   reinstalled via code-server's own `--install-extension --force` CLI flag on

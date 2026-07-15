@@ -1,6 +1,7 @@
 import { isAgentKind, projectTabs, type TabStatus, type TabsState } from "../lib/tabs";
 import type { Project } from "../lib/types";
 import { TerminalView } from "./TerminalView";
+import type { TerminalFileOpenTarget } from "./terminalFileLinkProvider";
 
 interface TerminalLayerProps {
   projects: Project[];
@@ -9,6 +10,7 @@ interface TerminalLayerProps {
   fontSize: number;
   onStatusChange: (tabId: string, status: TabStatus) => void;
   onRunningChange: (tabId: string, running: boolean) => void;
+  onOpenFile: (target: TerminalFileOpenTarget) => void;
 }
 
 export function TerminalLayer({
@@ -18,6 +20,7 @@ export function TerminalLayer({
   fontSize,
   onStatusChange,
   onRunningChange,
+  onOpenFile,
 }: TerminalLayerProps) {
   return (
     <>
@@ -29,6 +32,7 @@ export function TerminalLayer({
             <TerminalView
               key={tab.id}
               tabId={tab.id}
+              projects={projects}
               cwd={project.path}
               startupCommand={tab.startupCommand}
               visible={project.id === activeProjectId && tab.id === activeTabId}
@@ -36,6 +40,7 @@ export function TerminalLayer({
               agentKind={isAgentKind(tab.kind) ? tab.kind : undefined}
               onStatusChange={onStatusChange}
               onRunningChange={onRunningChange}
+              onOpenFile={onOpenFile}
             />
           ));
       })}

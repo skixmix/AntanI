@@ -1,6 +1,7 @@
 mod backup;
 mod git;
 mod git_watcher;
+mod ide_bridge;
 mod ide_webview;
 mod menu;
 mod pty;
@@ -346,7 +347,9 @@ pub fn run() {
             git_watcher::git_watch_stop,
             vscode_server::ensure_ide_server,
             vscode_server::import_from_vscode,
-            vscode_server::open_diff_in_ide,
+            ide_bridge::resolve_terminal_file_link,
+            ide_bridge::open_diff_in_ide,
+            ide_bridge::open_file_in_ide,
             ide_webview::create_ide_webview,
             ide_webview::set_ide_bounds,
             ide_webview::show_ide_webview,

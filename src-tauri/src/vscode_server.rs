@@ -1,6 +1,5 @@
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
@@ -146,7 +145,7 @@ impl VscodeServer {
 
     /// Same hash the extension computes from its workspace folder path
     /// (`vscode-extension/extension.js`) — see `BRIDGE_SOCKET_DIR`.
-    fn bridge_socket_path_for(&self, project_path: &str) -> PathBuf {
+    pub(crate) fn bridge_socket_path_for(&self, project_path: &str) -> PathBuf {
         self.bridge_socket_dir()
             .join(format!("{:08x}.sock", fnv1a(project_path.as_bytes())))
     }
@@ -961,26 +960,4 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
 pub fn ensure_ide_server(app: AppHandle) -> Result<String, String> {
     let server = app.state::<VscodeServer>();
     Ok(server.ensure_started(&app))
-}
-
-/// Ask the bundled diff-bridge extension running inside `project_path`'s own
-/// extension-host process to open its native diff view for `file_path`, over
-/// the Unix socket set up in `install_bridge_extension`/`start_and_wait`. No
-/// supported code-server URL or CLI mechanism does this directly (see
-/// `CLAUDE.md` in this crate). Fails fast if that project's IDE webview isn't
-/// open yet or the extension hasn't activated — the frontend retries.
-#[tauri::command]
-pub fn open_diff_in_ide(
-    app: AppHandle,
-    project_path: String,
-    file_path: String,
-) -> Result<(), String> {
-    let server = app.state::<VscodeServer>();
-    let socket = server.bridge_socket_path_for(&project_path);
-    let mut conn = UnixStream::connect(&socket).map_err(|e| format!("IDE not ready yet: {e}"))?;
-    conn.write_all(file_path.as_bytes())
-        .map_err(|e| e.to_string())?;
-    conn.shutdown(std::net::Shutdown::Write)
-        .map_err(|e| e.to_string())?;
-    Ok(())
 }

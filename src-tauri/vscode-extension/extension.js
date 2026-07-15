@@ -2,6 +2,7 @@ const vscode = require("vscode");
 const net = require("node:net");
 const fs = require("node:fs");
 const path = require("node:path");
+const { handleBridgeRequest, parseBridgeRequest } = require("./bridge");
 
 // Mirrored byte-for-byte in `src-tauri/src/vscode_server.rs::fnv1a`.
 function fnv1a(str) {
@@ -34,21 +35,20 @@ function activate(context) {
       payload += chunk;
     });
     conn.on("end", async () => {
-      const file = payload.trim();
-      if (!file) {
+      const request = payload.trim();
+      if (!request) {
         return;
       }
       try {
-        await vscode.commands.executeCommand("workbench.view.scm");
-        await vscode.commands.executeCommand("git.openChange", vscode.Uri.file(file));
+        await handleBridgeRequest(vscode, parseBridgeRequest(request));
       } catch (err) {
-        console.error("antani-diff-bridge:", err);
+        console.error("antani-ide-bridge:", err);
       }
     });
   });
 
   server.on("error", (err) => {
-    console.error("antani-diff-bridge: socket listen failed:", err);
+    console.error("antani-ide-bridge: socket listen failed:", err);
   });
   server.listen(socketPath);
   context.subscriptions.push({ dispose: () => server.close() });

@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FirstRunVscodeModal } from "./components/FirstRunVscodeModal";
 import { ImportVscodeModal } from "./components/ImportVscodeModal";
@@ -9,6 +10,8 @@ import {
 } from "./components/SettingsPage";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
+import type { TerminalFileOpenTarget } from "./components/terminalFileLinkProvider";
+import { useIdeFileOpen } from "./components/useIdeFileOpen";
 import { Workspace } from "./components/Workspace";
 import * as api from "./lib/api.ipc";
 import { basename, defaultColorForIndex, MAX_QUICK_SWITCH } from "./lib/constants";
@@ -356,6 +359,27 @@ function App() {
     if (!activeId) return;
     requestOpenIde(activeId);
   }, [activeId, requestOpenIde]);
+  const openFileInIde = useIdeFileOpen(tabs, requestOpenIde);
+  const handleOpenFile = useCallback(
+    (target: TerminalFileOpenTarget) => {
+      switch (target.kind) {
+        case "ide":
+          if (activeProjectIdRef.current !== target.projectId) {
+            void run(() => api.setActiveProject(target.projectId));
+          }
+          openFileInIde(target.projectId, target.projectPath, target.file);
+          break;
+        case "finder":
+          void revealItemInDir(target.filePath).catch((error: unknown) => setError(String(error)));
+          break;
+        default: {
+          const unexpected: never = target;
+          return unexpected;
+        }
+      }
+    },
+    [openFileInIde, run],
+  );
 
   const markVscodeImportPrompted = useCallback(async () => {
     if (!settings || settings.vscodeImportPrompted) return;
@@ -535,6 +559,7 @@ function App() {
           onOpenIde={handleOpenIde}
           onStatusChange={handleStatusChange}
           onRunningChange={handleRunningChange}
+          onOpenFile={handleOpenFile}
         />
       </div>
 
