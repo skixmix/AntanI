@@ -5,6 +5,7 @@ type PromptSignature = readonly RegExp[];
 const PROVIDER_PROMPT_SIGNATURES: Record<AgentKind, readonly PromptSignature[]> = {
   claude: [
     [/Do you want to proceed\?/i, /(?:Tab to amend|ctrl\+e to explain)/i],
+    [/Do you want to make this edit to/i, /Tab to amend/i],
     [/Allow Claude to/i, /(?:Yes, and (?:don't ask again|always allow)|Esc to cancel)/i],
     [/Chat about this/i, /Enter to select/i, /to navigate/i],
     [

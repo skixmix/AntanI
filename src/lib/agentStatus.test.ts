@@ -16,6 +16,14 @@ Do you want to proceed?
 3. No
 Esc to cancel · Tab to amend · ctrl+e to explain`;
 
+const CLAUDE_EDIT_PERMISSION = `Edit file
+app/.server/repositories/game/game.repository.ts
+Do you want to make this edit to game.repository.ts?
+1. Yes
+2. Yes, allow all edits during this session (shift+tab)
+3. No
+Esc to cancel · Tab to amend`;
+
 const CLAUDE_NETWORK_PERMISSION = `Network request outside of sandbox
 Host: example.com
 Do you want to allow this connection?
@@ -66,6 +74,7 @@ describe("settledAgentStatus", () => {
   it.each([
     ["claude", CLAUDE_QUESTION],
     ["claude", CLAUDE_PERMISSION],
+    ["claude", CLAUDE_EDIT_PERMISSION],
     ["claude", CLAUDE_NETWORK_PERMISSION],
     ["opencode", OPENCODE_QUESTION],
     ["opencode", OPENCODE_PERMISSION],
