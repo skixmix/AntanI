@@ -730,6 +730,17 @@ describe("closeTab with split state", () => {
     expect(p.tabs.some((t) => t.id === a.id)).toBe(false);
   });
 
+  it("dissolves a split without touching activeTabId or viewingSplitId when parked elsewhere", () => {
+    const { state, a, b, c } = seedSplit();
+    const parked = setActiveTab(state, PROJECT, c.id);
+    const next = closeTab(parked, PROJECT, b.id);
+    const p = projectTabs(next, PROJECT);
+    expect(p.splits).toHaveLength(0);
+    expect(p.viewingSplitId).toBeNull();
+    expect(p.activeTabId).toBe(c.id);
+    expect(p.tabs.map((t) => t.id)).toEqual([a.id, c.id]);
+  });
+
   it("returns to the split when the last non-member solo tab is closed", () => {
     const { state, a, b, c, splitId } = seedSplit();
     const parked = setActiveTab(state, PROJECT, c.id);
@@ -739,6 +750,19 @@ describe("closeTab with split state", () => {
     expect(p.tabs.map((t) => t.id)).toEqual([a.id, b.id]);
     expect(p.viewingSplitId).toBe(splitId);
     expect(p.activeTabId).toBeNull();
+  });
+
+  it("skips a member neighbor and picks a farther solo tab instead", () => {
+    const s = mkTab("s", "terminal");
+    const m1 = mkTab("m1", "terminal");
+    const m2 = mkTab("m2", "terminal");
+    const y = mkTab("y", "terminal");
+    const split = mkSplit([m1.id, m2.id]);
+    const state: TabsState = { [PROJECT]: pt([s, m1, m2, y], s.id, [split]) };
+    const next = closeTab(state, PROJECT, s.id);
+    const p = projectTabs(next, PROJECT);
+    expect(p.activeTabId).toBe(y.id);
+    expect(p.viewingSplitId).toBeNull();
   });
 
   it("picks a non-member solo neighbor when other solo tabs remain", () => {
@@ -848,6 +872,16 @@ describe("closeTab shrinking a multi-member split", () => {
     const p = projectTabs(next, PROJECT);
     expect(p.splits[0]).toEqual(expect.objectContaining({ memberIds: [a.id, b.id] }));
     expect(p.viewingSplitId).toBe(splitId);
+  });
+
+  it("keeps focus on the surviving member when a non-focused member is closed", () => {
+    const { state, a, b, c, splitId } = seedSplit();
+    const withThree = addToSplit(state, PROJECT, splitId, c.id);
+    const focusedOnA = setFocusedPane(withThree, PROJECT, splitId, "primary");
+    const next = closeTab(focusedOnA, PROJECT, c.id);
+    const p = projectTabs(next, PROJECT);
+    expect(p.splits[0]).toEqual(expect.objectContaining({ memberIds: [a.id, b.id] }));
+    expect(p.splits[0].focusedPane).toBe("primary");
   });
 
   it("falls back to a nearby pane when the focused member of a 3-member split is closed", () => {
