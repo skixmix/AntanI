@@ -59,4 +59,9 @@ describe("buildFileTree", () => {
     const tree = buildFileTree([entry("b.ts"), entry("a/file.ts")]);
     expect(tree.map((n) => n.name)).toEqual(["a", "b.ts"]);
   });
+
+  it("sorts a folder before a file regardless of insertion order", () => {
+    const tree = buildFileTree([entry("a/file.ts"), entry("b.ts")]);
+    expect(tree.map((n) => n.name)).toEqual(["a", "b.ts"]);
+  });
 });
