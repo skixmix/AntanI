@@ -51,6 +51,9 @@ interface TerminalViewProps {
   visible: boolean;
   fontSize: number;
   agentKind?: AgentKind;
+  rect?: { left: number; width: number; top?: number };
+  focused?: boolean;
+  onFocus?: () => void;
   onStatusChange?: (tabId: string, status: TabStatus) => void;
   /** Foreground-process-group signal, independent of the AI busy/ready/waiting
    *  pipeline above: fires for any tab kind, driven by the pty itself rather
@@ -67,6 +70,9 @@ export function TerminalView({
   visible,
   fontSize,
   agentKind,
+  rect,
+  focused,
+  onFocus,
   onStatusChange,
   onRunningChange,
   onOpenFile,
@@ -378,9 +384,13 @@ export function TerminalView({
     const fit = fitRef.current;
     if (!term || !fit) return;
     fit.fit();
-    term.focus();
     void resizePty(tabId, term.cols, term.rows);
   }, [visible, tabId]);
+
+  useEffect(() => {
+    if (!visible || !focused) return;
+    termRef.current?.focus();
+  }, [focused, visible]);
 
   // Refocus after the injection bar writes a snippet into this tab's PTY, so
   // the user can immediately edit or submit the freshly-injected draft.
@@ -402,6 +412,13 @@ export function TerminalView({
     const unlisten = getCurrentWebview().onDragDropEvent((event) => {
       if (event.payload.type !== "drop") return;
       if (event.payload.paths.length === 0) return;
+      const c = containerRef.current;
+      if (!c) return;
+      const r = c.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const x = event.payload.position.x / dpr;
+      const y = event.payload.position.y / dpr;
+      if (x < r.left || x > r.right || y < r.top || y > r.bottom) return;
       const text = event.payload.paths.map(shellEscapePath).join(" ");
       void writePty(tabId, `${text} `);
     });
@@ -428,7 +445,17 @@ export function TerminalView({
   }, [visible, tabId]);
 
   return (
-    <div className="absolute inset-0" style={{ display: visible ? "block" : "none" }}>
+    <div
+      style={{
+        display: visible ? "block" : "none",
+        position: "absolute",
+        top: rect?.top ?? 0,
+        bottom: 0,
+        left: rect ? `${rect.left * 100}%` : 0,
+        width: rect ? `${rect.width * 100}%` : "100%",
+      }}
+      onPointerDown={() => onFocus?.()}
+    >
       <div
         ref={containerRef}
         className="absolute inset-0 overflow-hidden pb-3 pl-2"

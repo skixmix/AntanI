@@ -416,6 +416,27 @@ export function TrashIcon({ size = 13, className = "" }: IconProps) {
   );
 }
 
+/** Two-column split glyph — labels the collapsed split-pair chip in the tab strip */
+export function SplitColumnsIcon({ size = 13, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect x="2" y="2.5" width="12" height="11" rx="1.4" />
+      <path d="M8 2.5v11" />
+    </svg>
+  );
+}
+
 /** OpenCode — PNG raster logo */
 export function OpenCodeIcon({ size = 14, className = "" }: IconProps) {
   return (

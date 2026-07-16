@@ -13,9 +13,14 @@ export default defineConfig({
       reporter: ["text", "lcov"],
       include: ["src/lib/**/*.ts"],
       // *.ipc.ts files are pure Tauri invoke/listen wrappers (naming convention,
-      // see CLAUDE.md); useDragReorder.ts is DOM-coupled. Both categories are
-      // excluded from the pure-logic testing policy above.
-      exclude: ["src/**/*.{test,spec}.ts", "src/lib/**/*.ipc.ts", "src/lib/useDragReorder.ts"],
+      // see CLAUDE.md); useDragReorder.ts and usePaneSwapDrag.ts are DOM-coupled.
+      // Both categories are excluded from the pure-logic testing policy above.
+      exclude: [
+        "src/**/*.{test,spec}.ts",
+        "src/lib/**/*.ipc.ts",
+        "src/lib/useDragReorder.ts",
+        "src/lib/usePaneSwapDrag.ts",
+      ],
       thresholds: {
         lines: 90,
         statements: 90,

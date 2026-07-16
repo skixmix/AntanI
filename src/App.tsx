@@ -18,20 +18,30 @@ import { basename, defaultColorForIndex, MAX_QUICK_SWITCH } from "./lib/constant
 import { initNotifications, notifyAgentReady, notifyAgentWaiting } from "./lib/notifications.ipc";
 import { playSystemSound } from "./lib/sound.ipc";
 import {
+  activePaneTabs,
   addTab,
   closeTab,
   createCustomTab,
   createTab,
   findTabOwner,
+  openTabToSide,
+  type PaneId,
   projectTabs,
+  recolorSplit,
   recolorTab,
   removeProjectTabs,
+  renameSplit,
   renameTab,
   reorderTabs,
   setActiveTab,
+  setFocusedPane,
+  setSplitRatio,
+  swapPanes,
   type TabKind,
   type TabStatus,
   type TabsState,
+  unsplit,
+  viewSplit,
 } from "./lib/tabs";
 import type { AppData, CustomCommand, InjectTarget, Settings } from "./lib/types";
 
@@ -118,6 +128,7 @@ function App() {
   useEffect(() => {
     void initNotifications((projectId, tabId) => {
       const owner = findTabOwner(tabsRef.current, tabId);
+      // setActiveTab parks any split to show a solo tab, or views the split and focuses that pane if the tab is a split member
       if (owner) setTabs((t) => setActiveTab(t, projectId, owner.tab.id));
       void run(() => api.setActiveProject(projectId));
     });
@@ -220,6 +231,7 @@ function App() {
         const waitingTab = projectTabs(tabs, id).tabs.find(
           (tab) => tabStatuses[tab.id] === "waiting",
         );
+        // setActiveTab views the split and focuses the tab's pane if it is a split member, else parks the split to show it solo
         if (waitingTab) setTabs((t) => setActiveTab(t, id, waitingTab.id));
       }
       void run(() => api.setActiveProject(id));
@@ -275,25 +287,27 @@ function App() {
     if (notify) {
       const owner = findTabOwner(tabsRef.current, tabId);
       const project = projectsRef.current.find((p) => p.id === owner?.projectId);
+      const ownerPt = owner ? tabsRef.current[owner.projectId] : undefined;
+      const panes = ownerPt ? activePaneTabs(ownerPt) : { primary: null, secondary: null };
+      const isVisiblePaneTab = panes.primary?.id === tabId || panes.secondary?.id === tabId;
       const isOpenTab =
-        owner &&
-        activeProjectIdRef.current === owner.projectId &&
-        tabsRef.current[owner.projectId]?.activeTabId === tabId;
-      // Already looking right at this tab with the window focused — no glow,
-      // no system notification needed.
-      if (owner && project && !(isOpenTab && windowFocusedRef.current)) {
-        setNeedsAttention((s) => (s[tabId] ? s : { ...s, [tabId]: true }));
-        // System notifications are for when the user isn't looking at the app
-        // at all — while it's focused, the glow above is the "look at me"
-        // signal instead, even for a background tab/project.
-        const notificationsEnabled = settingsRef.current?.notificationsEnabled ?? true;
-        if (notificationsEnabled && !windowFocusedRef.current) {
-          const notifyFn = status === "ready" ? notifyAgentReady : notifyAgentWaiting;
-          notifyFn(project.name, owner.tab.title, owner.projectId, tabId);
+        !!owner && activeProjectIdRef.current === owner.projectId && isVisiblePaneTab;
+      if (owner && project) {
+        const focusedOnTab = isOpenTab && windowFocusedRef.current;
+        // No glow or system notification when already looking at this tab.
+        if (!focusedOnTab) {
+          setNeedsAttention((s) => (s[tabId] ? s : { ...s, [tabId]: true }));
+          // System notifications are for when the user isn't looking at the app
+          // at all — while it's focused, the glow above is the "look at me"
+          // signal instead, even for a background tab/project.
+          const notificationsEnabled = settingsRef.current?.notificationsEnabled ?? true;
+          if (notificationsEnabled && !windowFocusedRef.current) {
+            const notifyFn = status === "ready" ? notifyAgentReady : notifyAgentWaiting;
+            notifyFn(project.name, owner.tab.title, owner.projectId, tabId);
+          }
         }
-        // Unlike the OS notification above, sound isn't gated on window
-        // focus — it's the "look at me" signal even while the app itself is
-        // the focused app, just not on this exact tab.
+        // Sound plays for any tab transition when enabled — including the
+        // currently open tab.
         if (settingsRef.current?.soundEnabled ?? true) {
           const soundName =
             status === "ready"
@@ -330,6 +344,61 @@ function App() {
       activeId && setTabs((t) => reorderTabs(t, activeId, fromId, insertBeforeId)),
     [activeId],
   );
+
+  const handleOpenToSide = useCallback(
+    (tabId: string) => {
+      if (!activeId) return;
+      setTabs((t) => openTabToSide(t, activeId, tabId));
+    },
+    [activeId],
+  );
+
+  const handleUnsplit = useCallback(() => {
+    if (!activeId) return;
+    setTabs((t) => unsplit(t, activeId));
+  }, [activeId]);
+
+  const handleFocusPane = useCallback(
+    (pane: PaneId) => {
+      if (!activeId) return;
+      setTabs((t) => setFocusedPane(t, activeId, pane));
+    },
+    [activeId],
+  );
+
+  const handleSetSplitRatio = useCallback(
+    (ratio: number) => {
+      if (!activeId) return;
+      setTabs((t) => setSplitRatio(t, activeId, ratio));
+    },
+    [activeId],
+  );
+
+  const handleViewSplit = useCallback(() => {
+    if (!activeId) return;
+    setTabs((t) => viewSplit(t, activeId));
+  }, [activeId]);
+
+  const handleRenameSplit = useCallback(
+    (title: string) => {
+      if (!activeId) return;
+      setTabs((t) => renameSplit(t, activeId, title));
+    },
+    [activeId],
+  );
+
+  const handleRecolorSplit = useCallback(
+    (color: string) => {
+      if (!activeId) return;
+      setTabs((t) => recolorSplit(t, activeId, color));
+    },
+    [activeId],
+  );
+
+  const handleSwapPanes = useCallback(() => {
+    if (!activeId) return;
+    setTabs((t) => swapPanes(t, activeId));
+  }, [activeId]);
 
   const openIdeNow = useCallback(
     (id: string) => {
@@ -427,23 +496,30 @@ function App() {
   // Clear a tab's attention glow as soon as the user is actually looking at
   // it (visible tab + window focused) — on mount, whenever the visible tab
   // changes, and when the window regains focus while already parked on it.
-  const visibleTabId = activeId ? (tabs[activeId]?.activeTabId ?? null) : null;
-  const visibleTabIdRef = useRef(visibleTabId);
-  visibleTabIdRef.current = visibleTabId;
+  const activePt = activeId ? tabs[activeId] : undefined;
+  const { primary: visiblePrimary, secondary: visibleSecondary } = activePt
+    ? activePaneTabs(activePt)
+    : { primary: null, secondary: null };
+  const visibleTabIds = [visiblePrimary?.id, visibleSecondary?.id].filter(
+    (x): x is string => x !== undefined,
+  );
+  const visibleTabIdsRef = useRef(visibleTabIds);
+  visibleTabIdsRef.current = visibleTabIds;
 
-  const clearAttentionIfFocused = useCallback((tabId: string | null) => {
-    if (!tabId || !windowFocusedRef.current) return;
+  const clearAttentionIfFocused = useCallback((tabIds: string[]) => {
+    if (!windowFocusedRef.current || tabIds.length === 0) return;
     setNeedsAttention((s) => {
-      if (!s[tabId]) return s;
+      const toRemove = tabIds.filter((id) => id in s);
+      if (toRemove.length === 0) return s;
       const next = { ...s };
-      delete next[tabId];
+      for (const id of toRemove) delete next[id];
       return next;
     });
   }, []);
 
   useEffect(() => {
-    clearAttentionIfFocused(visibleTabId);
-  }, [visibleTabId, clearAttentionIfFocused]);
+    clearAttentionIfFocused(visibleTabIds);
+  }, [visibleTabIds, clearAttentionIfFocused]);
 
   // Native window focus, not document.hasFocus(): the embedded VS Code IDE is
   // a separate child webview, so DOM focus can be elsewhere in the app while
@@ -457,7 +533,7 @@ function App() {
     void win
       .onFocusChanged(({ payload: focused }) => {
         windowFocusedRef.current = focused;
-        if (focused) clearAttentionIfFocused(visibleTabIdRef.current);
+        if (focused) clearAttentionIfFocused(visibleTabIdsRef.current);
       })
       .then((fn) => {
         unlisten = fn;
@@ -560,6 +636,14 @@ function App() {
           onStatusChange={handleStatusChange}
           onRunningChange={handleRunningChange}
           onOpenFile={handleOpenFile}
+          onOpenToSide={handleOpenToSide}
+          onUnsplit={handleUnsplit}
+          onFocusPane={handleFocusPane}
+          onSetSplitRatio={handleSetSplitRatio}
+          onSwapPanes={handleSwapPanes}
+          onViewSplit={handleViewSplit}
+          onRenameSplit={handleRenameSplit}
+          onRecolorSplit={handleRecolorSplit}
         />
       </div>
 
@@ -596,7 +680,7 @@ function App() {
                     ptabs.activeTabId && filtered.some((tab) => tab.id === ptabs.activeTabId)
                       ? ptabs.activeTabId
                       : (filtered[filtered.length - 1]?.id ?? null);
-                  next[projectId] = { tabs: filtered, activeTabId };
+                  next[projectId] = { ...ptabs, tabs: filtered, activeTabId };
                 }
               }
               return next;

@@ -50,3 +50,6 @@ export const TERMINAL_SCROLLBACK = 10_000;
 
 /** Debounce before pushing a resize to the PTY; fit() itself runs immediately. */
 export const PTY_RESIZE_DEBOUNCE_MS = 150;
+
+/** Height (px) of a pane's identity header bar shown while a split is active. */
+export const SPLIT_HEADER_H = 28;

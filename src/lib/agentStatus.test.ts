@@ -31,6 +31,17 @@ Do you want to allow this connection?
 2. Yes, and don't ask again for example.com
 3. No, and tell Claude what to do differently (esc)`;
 
+const CLAUDE_WORKING_WITH_TODOS = `✻ Implementing tab status detection…
+  ⎿  ☒ Trace the current status pipeline
+     ☐ Add active task detection
+esc to interrupt · ctrl+t to show todos · 1m 19s · ↑ 3.2k tokens`;
+
+const CLAUDE_WORKING_WITH_VISIBLE_TODOS = `Tasks
+☒ Trace the current status pipeline
+◼ Add active task detection
+☐ Run the focused tests
+esc to interrupt · ctrl+t to hide todos`;
+
 const OPENCODE_QUESTION = `Which harmless permission test should we run?
 1. Create a marker on Desktop
 4. Type your own answer
@@ -96,6 +107,13 @@ describe("settledAgentStatus", () => {
   });
 
   it.each([
+    CLAUDE_WORKING_WITH_TODOS,
+    CLAUDE_WORKING_WITH_VISIBLE_TODOS,
+  ])("keeps Claude busy while its todo task UI is active", (screenText) => {
+    expect(settledAgentStatus("claude", screenText)).toBe("busy");
+  });
+
+  it.each([
     ["claude", OPENCODE_PERMISSION],
     ["opencode", CODEX_PERMISSION],
     ["codex", CLAUDE_PERMISSION],
@@ -131,6 +149,13 @@ describe("settledAgentStatus", () => {
     expect(settledAgentStatus("claude", "Build completed. Esc to cancel was shown earlier.")).toBe(
       "ready",
     );
+  });
+
+  it.each([
+    "The help text says esc to interrupt a running turn.",
+    "Use ctrl+t to show todos while Claude works.",
+  ])("does not treat a lone Claude busy cue as active work", (screenText) => {
+    expect(settledAgentStatus("claude", screenText)).toBe("ready");
   });
 
   it.each([
