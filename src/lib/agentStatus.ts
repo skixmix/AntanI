@@ -34,9 +34,19 @@ const PROVIDER_PROMPT_SIGNATURES: Record<AgentKind, readonly PromptSignature[]> 
   ],
 };
 
+const PROVIDER_BUSY_SIGNATURES: Record<AgentKind, readonly PromptSignature[]> = {
+  claude: [[/esc to interrupt/i, /ctrl\+t to (?:show|hide) todos/i]],
+  opencode: [],
+  codex: [],
+};
+
 export function settledAgentStatus(kind: AgentKind, screenText: string): TabStatus {
   const isPrompt = PROVIDER_PROMPT_SIGNATURES[kind].some((signature) =>
     signature.every((pattern) => pattern.test(screenText)),
   );
-  return isPrompt ? "waiting" : "ready";
+  if (isPrompt) return "waiting";
+  const isBusy = PROVIDER_BUSY_SIGNATURES[kind].some((signature) =>
+    signature.every((pattern) => pattern.test(screenText)),
+  );
+  return isBusy ? "busy" : "ready";
 }

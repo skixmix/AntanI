@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef } from "react";
 import { projectInitials } from "../lib/constants";
-import type { Tab, TabKind, TabStatus } from "../lib/tabs";
+import type { Split, Tab, TabKind, TabStatus } from "../lib/tabs";
 import type { CustomCommand, Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
 import {
@@ -12,11 +12,14 @@ import {
   WrenchIcon,
 } from "./Icons";
 import type { CommandsSubTab } from "./SettingsPage";
+import { SplitGroupChip } from "./SplitGroupChip";
 import { TabChip } from "./TabChip";
 
 interface TabStripProps {
   tabs: Tab[];
   activeTabId: string | null;
+  split: Split | null;
+  viewingSplit: boolean;
   tabStatuses: Record<string, TabStatus>;
   runningTabs: Record<string, true>;
   needsAttention: Record<string, true>;
@@ -31,6 +34,11 @@ interface TabStripProps {
   onRecolor: (tabId: string, color: string) => void;
   onReorder: (fromId: string, insertBeforeId: string | null) => void;
   onOpenIde: () => void;
+  onOpenToSide?: (tabId: string) => void;
+  onUnsplit?: () => void;
+  onViewSplit?: () => void;
+  onRenameSplit?: (title: string) => void;
+  onRecolorSplit?: (color: string) => void;
 }
 
 const QUICK_OPEN: { kind: TabKind; label: string; icon: ReactNode }[] = [
@@ -42,6 +50,8 @@ const QUICK_OPEN: { kind: TabKind; label: string; icon: ReactNode }[] = [
 export function TabStrip({
   tabs,
   activeTabId,
+  split,
+  viewingSplit,
   tabStatuses,
   runningTabs,
   needsAttention,
@@ -56,10 +66,18 @@ export function TabStrip({
   onRecolor,
   onReorder,
   onOpenIde,
+  onOpenToSide,
+  onUnsplit,
+  onViewSplit,
+  onRenameSplit,
+  onRecolorSplit,
 }: TabStripProps) {
   const { draggingId, insertBeforeId, startDrag } = useDragReorder("tabs", false, onReorder);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const currentTab = tabs.find((t) => t.id === activeTabId);
+  const canSplitWithCurrent = currentTab != null && currentTab.kind !== "ide";
 
   useEffect(() => {
     if (!activeTabId || !scrollRef.current) return;
@@ -102,23 +120,52 @@ export function TabStrip({
           ref={scrollRef}
           className="flex items-stretch flex-1 min-w-0 overflow-x-auto scrollbar-hidden"
         >
-          {tabs.map((tab) => (
-            <TabChip
-              key={tab.id}
-              tab={tab}
-              active={tab.id === activeTabId}
-              status={tabStatuses[tab.id]}
-              running={!!runningTabs[tab.id]}
-              needsAttention={!!needsAttention[tab.id]}
-              isDragging={draggingId === tab.id}
-              showInsertBefore={insertBeforeId === tab.id && draggingId !== tab.id}
-              onSelect={() => onSelect(tab.id)}
-              onClose={() => onClose(tab.id)}
-              onRename={(title) => onRename(tab.id, title)}
-              onRecolor={(color) => onRecolor(tab.id, color)}
-              onPointerDown={(e) => startDrag(e, tab.id)}
-            />
-          ))}
+          {tabs.map((tab) => {
+            if (split && tab.id === split.rightId) return null;
+
+            if (split && tab.id === split.leftId) {
+              return (
+                <SplitGroupChip
+                  key={tab.id}
+                  split={split}
+                  viewingSplit={viewingSplit}
+                  primaryStatus={tabStatuses[split.leftId]}
+                  secondaryStatus={tabStatuses[split.rightId]}
+                  primaryRunning={!!runningTabs[split.leftId]}
+                  secondaryRunning={!!runningTabs[split.rightId]}
+                  needsAttention={!!needsAttention[split.leftId] || !!needsAttention[split.rightId]}
+                  onView={() => onViewSplit?.()}
+                  onRename={(title) => onRenameSplit?.(title)}
+                  onRecolor={(color) => onRecolorSplit?.(color)}
+                  onClose={() => onUnsplit?.()}
+                />
+              );
+            }
+
+            return (
+              <TabChip
+                key={tab.id}
+                tab={tab}
+                active={!viewingSplit && tab.id === activeTabId}
+                focused={!viewingSplit && tab.id === activeTabId}
+                status={tabStatuses[tab.id]}
+                running={!!runningTabs[tab.id]}
+                needsAttention={!!needsAttention[tab.id]}
+                isDragging={draggingId === tab.id}
+                showInsertBefore={insertBeforeId === tab.id && draggingId !== tab.id}
+                onSelect={() => onSelect(tab.id)}
+                onClose={() => onClose(tab.id)}
+                onRename={(title) => onRename(tab.id, title)}
+                onRecolor={(color) => onRecolor(tab.id, color)}
+                onPointerDown={(e) => startDrag(e, tab.id)}
+                onOpenToSide={
+                  onOpenToSide && canSplitWithCurrent && tab.id !== activeTabId
+                    ? () => onOpenToSide(tab.id)
+                    : undefined
+                }
+              />
+            );
+          })}
 
           {/* Append-end insertion bar */}
           {draggingId && insertBeforeId === null && (

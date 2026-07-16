@@ -1,68 +1,40 @@
-import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { isAgentKind, type Tab, type TabStatus } from "../lib/tabs";
 import { ColorPicker } from "./ColorPicker";
 import { ConfirmPopover } from "./ConfirmPopover";
-import { AnthropicIcon, CodexIcon, OpenCodeIcon, TerminalIcon, VSCodeIcon } from "./Icons";
+import { TerminalIcon } from "./Icons";
+import { AiStatusDot, KIND_ICON } from "./TabChip";
 
-interface TabChipProps {
+interface PaneHeaderProps {
   tab: Tab;
-  active: boolean;
-  focused?: boolean;
+  focused: boolean;
   status?: TabStatus;
-  /** Plain-terminal-tab counterpart to `status`: true while some job (not the
-   *  login shell) holds the pty's foreground process group. */
   running?: boolean;
-  needsAttention?: boolean;
-  isDragging?: boolean;
-  showInsertBefore?: boolean;
-  onSelect: () => void;
+  dragging?: boolean;
+  onHeaderPointerDown: (e: React.PointerEvent) => void;
   onClose: () => void;
   onRename: (title: string) => void;
   onRecolor: (color: string) => void;
-  onPointerDown?: (e: React.PointerEvent) => void;
-  onOpenToSide?: () => void;
 }
 
-export const KIND_ICON: Record<string, ReactNode> = {
-  opencode: <OpenCodeIcon size={12} className="opacity-80" />,
-  claude: <AnthropicIcon size={12} className="text-[#d4622a]" />,
-  codex: <CodexIcon size={12} className="opacity-80" />,
-  ide: <VSCodeIcon size={12} className="text-[#007ACC] opacity-80" />,
-};
-
-export function AiStatusDot({ status }: { status: TabStatus }) {
-  if (status === "busy") return <span className="ai-busy-dot shrink-0" title="Working" />;
-  if (status === "ready")
-    return <span className="h-2 w-2 shrink-0 rounded-full bg-green-400" title="Ready" />;
-  if (status === "waiting")
-    return <span className="h-2 w-2 shrink-0 rounded-full bg-red-400" title="Waiting for input" />;
-  return null;
-}
-
-export function TabChip({
+export function PaneHeader({
   tab,
-  active,
   focused,
   status,
   running,
-  needsAttention,
-  isDragging,
-  showInsertBefore,
-  onSelect,
+  dragging,
+  onHeaderPointerDown,
   onClose,
   onRename,
   onRecolor,
-  onPointerDown,
-  onOpenToSide,
-}: TabChipProps) {
+}: PaneHeaderProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(tab.title);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [closeConfirm, setCloseConfirm] = useState<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const chipRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
 
   const isAiRunning = isAgentKind(tab.kind) && (status === "busy" || status === "waiting");
   const isTerminalRunning = tab.kind === "terminal" && !!running;
@@ -101,40 +73,23 @@ export function TabChip({
     setEditing(false);
   }
 
-  const accentColor = tab.color ?? (focused ? "#d4622a" : active ? "#d4622a80" : undefined);
-
   return (
     <div
-      ref={chipRef}
-      data-drag-scope="tabs"
-      data-drag-id={tab.id}
-      onClick={onSelect}
-      onPointerDown={onPointerDown}
+      ref={headerRef}
+      onPointerDown={onHeaderPointerDown}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
         window.dispatchEvent(new CustomEvent("antani:close-ctx-menus"));
         setCtxMenu({ x: e.clientX, y: e.clientY });
       }}
-      className={`group relative flex h-full shrink-0 items-center gap-2 border-b-2 border-r border-r-border px-3 text-sm no-select cursor-pointer transition-opacity ${
+      className={`flex h-full items-center gap-2 px-2 text-xs no-select cursor-grab border-b border-border ${
         focused
           ? "bg-accent text-foreground"
-          : active
-            ? "bg-accent/50 text-muted-foreground hover:bg-accent/70"
-            : "bg-transparent text-muted-foreground hover:bg-secondary"
-      } ${isDragging ? "opacity-30 scale-95" : ""} ${
-        needsAttention
-          ? status === "ready"
-            ? "needs-attention-glow-ready"
-            : "needs-attention-glow-waiting"
-          : ""
-      }`}
-      style={{ borderBottomColor: accentColor ?? "transparent" }}
+          : "bg-secondary/60 text-muted-foreground hover:bg-secondary"
+      } ${dragging ? "opacity-50" : ""}`}
     >
-      {showInsertBefore && (
-        <div className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-primary" />
-      )}
-      <span className="shrink-0 flex items-center">
+      <span className="flex shrink-0 items-center">
         {tab.kind === "terminal" ? (
           <TerminalIcon size={12} className="opacity-70" blink={running} />
         ) : (
@@ -156,7 +111,7 @@ export function TabChip({
               setEditing(false);
             }
           }}
-          className="w-24 min-w-0 rounded bg-tertiary px-1 py-0.5 outline-none ring-1 ring-border"
+          className="w-32 min-w-0 rounded bg-tertiary px-1 py-0.5 outline-none ring-1 ring-border"
         />
       ) : (
         <span
@@ -165,35 +120,29 @@ export function TabChip({
             setDraft(tab.title);
             setEditing(true);
           }}
-          className="max-w-40 truncate"
+          className="min-w-0 truncate"
         >
           {tab.title}
         </span>
       )}
 
-      {/* Right slot: status indicator that becomes × on hover */}
-      <div className="relative flex h-4 w-4 shrink-0 items-center justify-center">
-        {status && status !== "idle" && (
-          <span className="flex items-center justify-center transition-opacity group-hover:opacity-0">
-            <AiStatusDot status={status} />
-          </span>
-        )}
-        <button
-          type="button"
-          aria-label="Close tab"
-          onClick={(e) => {
-            e.stopPropagation();
-            requestClose(e.clientX, e.clientY);
-          }}
-          className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground group-hover:opacity-100"
-        >
-          ×
-        </button>
-      </div>
+      {status && status !== "idle" && <AiStatusDot status={status} />}
+
+      <button
+        type="button"
+        aria-label="Close pane"
+        onClick={(e) => {
+          e.stopPropagation();
+          requestClose(e.clientX, e.clientY);
+        }}
+        className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+      >
+        ×
+      </button>
 
       {pickerOpen && (
         <ColorPicker
-          anchorEl={chipRef.current}
+          anchorEl={headerRef.current}
           selected={tab.color ?? ""}
           onPick={onRecolor}
           onClose={() => setPickerOpen(false)}
@@ -245,18 +194,6 @@ export function TabChip({
           >
             Change color
           </button>
-          {tab.kind !== "ide" && onOpenToSide && (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-secondary"
-              onClick={() => {
-                onOpenToSide();
-                setCtxMenu(null);
-              }}
-            >
-              Split view with current tab
-            </button>
-          )}
           <div className="my-1 border-t border-border" />
           <button
             type="button"
@@ -267,7 +204,7 @@ export function TabChip({
               if (anchor) requestClose(anchor.x, anchor.y);
             }}
           >
-            Close tab
+            Close
           </button>
         </div>
       )}

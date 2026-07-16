@@ -31,6 +31,17 @@ Do you want to allow this connection?
 2. Yes, and don't ask again for example.com
 3. No, and tell Claude what to do differently (esc)`;
 
+const CLAUDE_WORKING_WITH_TODOS = `✻ Implementing tab status detection…
+  ⎿  ☒ Trace the current status pipeline
+     ☐ Add active task detection
+esc to interrupt · ctrl+t to show todos · 1m 19s · ↑ 3.2k tokens`;
+
+const CLAUDE_WORKING_WITH_VISIBLE_TODOS = `Tasks
+☒ Trace the current status pipeline
+◼ Add active task detection
+☐ Run the focused tests
+esc to interrupt · ctrl+t to hide todos`;
+
 const OPENCODE_QUESTION = `Which harmless permission test should we run?
 1. Create a marker on Desktop
 4. Type your own answer
@@ -70,6 +81,14 @@ $ curl -I https://example.com
 3. No, and tell Codex what to do differently
 Press enter to confirm or esc to cancel`;
 
+const CODEX_PERMISSION_WITH_REASON = `Would you like to run the following command?
+Environment: local
+Reason: May I rerun the full suite with open-handle detection to verify the Jest shutdown warning?
+$ npm run test -- --detectOpenHandles
+> 1. Yes, proceed (y)
+2. Yes, and don't ask again for commands that start with \`npm run test\` (p)
+3. No, and tell Codex what to do differently (esc)`;
+
 describe("settledAgentStatus", () => {
   it.each([
     ["claude", CLAUDE_QUESTION],
@@ -82,8 +101,16 @@ describe("settledAgentStatus", () => {
     ["opencode", OPENCODE_MULTISELECT_QUESTION],
     ["codex", CODEX_QUESTION],
     ["codex", CODEX_PERMISSION],
+    ["codex", CODEX_PERMISSION_WITH_REASON],
   ] as const)("recognizes the captured %s interaction screen", (kind, screenText) => {
     expect(settledAgentStatus(kind, screenText)).toBe("waiting");
+  });
+
+  it.each([
+    CLAUDE_WORKING_WITH_TODOS,
+    CLAUDE_WORKING_WITH_VISIBLE_TODOS,
+  ])("keeps Claude busy while its todo task UI is active", (screenText) => {
+    expect(settledAgentStatus("claude", screenText)).toBe("busy");
   });
 
   it.each([
@@ -122,6 +149,13 @@ describe("settledAgentStatus", () => {
     expect(settledAgentStatus("claude", "Build completed. Esc to cancel was shown earlier.")).toBe(
       "ready",
     );
+  });
+
+  it.each([
+    "The help text says esc to interrupt a running turn.",
+    "Use ctrl+t to show todos while Claude works.",
+  ])("does not treat a lone Claude busy cue as active work", (screenText) => {
+    expect(settledAgentStatus("claude", screenText)).toBe("ready");
   });
 
   it.each([

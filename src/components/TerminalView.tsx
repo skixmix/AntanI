@@ -51,6 +51,9 @@ interface TerminalViewProps {
   visible: boolean;
   fontSize: number;
   agentKind?: AgentKind;
+  rect?: { left: number; width: number; top?: number };
+  focused?: boolean;
+  onFocus?: () => void;
   onStatusChange?: (tabId: string, status: TabStatus) => void;
   /** Foreground-process-group signal, independent of the AI busy/ready/waiting
    *  pipeline above: fires for any tab kind, driven by the pty itself rather
@@ -67,6 +70,9 @@ export function TerminalView({
   visible,
   fontSize,
   agentKind,
+  rect,
+  focused,
+  onFocus,
   onStatusChange,
   onRunningChange,
   onOpenFile,
@@ -167,19 +173,21 @@ export function TerminalView({
     // resolves to "ready", so idle-time redraws after that don't re-arm it.
     let armed = true;
 
-    // The actual rendered screen, not a rolling window of raw output bytes:
+    // The live bottom screen, not a rolling window of raw output bytes or the
+    // user-controlled scrollback viewport:
     // TUIs that redraw via cursor-addressed partial updates (Ink, blessed,
     // opencode's UI, ...) can leave a prompt sitting on screen indefinitely
     // without ever re-emitting its text, so a raw-byte tail eventually loses
     // it — even though it's still visible — as soon as enough unrelated
     // redraw traffic (an animated spinner elsewhere, say) scrolls it out of
     // the window. Reading xterm's own buffer sidesteps that entirely: it's
-    // always exactly what's on screen right now.
-    function visibleScreenText(): string {
+    // always exactly what the running terminal is displaying now, even while
+    // the user is scrolled up reviewing older output.
+    function liveScreenText(): string {
       const buf = term.buffer.active;
       const lines: string[] = [];
       for (let y = 0; y < term.rows; y++) {
-        const line = buf.getLine(buf.viewportY + y);
+        const line = buf.getLine(buf.baseY + y);
         if (line) lines.push(line.translateToString(true));
       }
       return lines.join("\n");
@@ -195,7 +203,7 @@ export function TerminalView({
         // eventual submit (which triggers real output) re-drive this timer.
         if (composing) return;
         if (!agentKind) return;
-        const status = settledAgentStatus(agentKind, visibleScreenText());
+        const status = settledAgentStatus(agentKind, liveScreenText());
         setStatus(status);
         if (status === "ready") {
           armed = false;
@@ -233,16 +241,20 @@ export function TerminalView({
     // than immediately — a bit of lag here (vs. onOutputArrived above) only
     // delays waiting-prompt detection slightly, it doesn't cause flicker.
     function onWriteFlushed() {
-      if (disposed || !agentKind || !onStatusChange || !armed || composing) return;
-      // This is the path that scans the *whole* visible screen, so without
+      if (disposed || !agentKind || !onStatusChange || composing) return;
+      // This is the path that scans the *whole* live screen, so without
       // the composing check above, the terminal's own echo of the user's
       // still-being-typed message (e.g. containing "confirm" or "continue?")
       // can trip prompt detection before anything was ever sent.
-      if (settledAgentStatus(agentKind, visibleScreenText()) === "waiting") {
+      if (settledAgentStatus(agentKind, liveScreenText()) === "waiting") {
+        // Intentionally bypasses the armed guard: agents can issue permission
+        // prompts mid-task after a turn has already resolved to "ready" (which
+        // clears armed). We must catch those even without a new user keystroke.
+        armed = true;
         seenBusy = true;
         window.clearTimeout(silenceTimer);
         setStatus("waiting");
-      } else if (lastStatus === "waiting") {
+      } else if (armed && lastStatus === "waiting") {
         // The prompt text has left the screen — fall back to busy so the
         // silence timer (already scheduled by onOutputArrived) can resolve
         // it to "ready" normally instead of staying stuck on "waiting".
@@ -372,9 +384,13 @@ export function TerminalView({
     const fit = fitRef.current;
     if (!term || !fit) return;
     fit.fit();
-    term.focus();
     void resizePty(tabId, term.cols, term.rows);
   }, [visible, tabId]);
+
+  useEffect(() => {
+    if (!visible || !focused) return;
+    termRef.current?.focus();
+  }, [focused, visible]);
 
   // Refocus after the injection bar writes a snippet into this tab's PTY, so
   // the user can immediately edit or submit the freshly-injected draft.
@@ -396,6 +412,13 @@ export function TerminalView({
     const unlisten = getCurrentWebview().onDragDropEvent((event) => {
       if (event.payload.type !== "drop") return;
       if (event.payload.paths.length === 0) return;
+      const c = containerRef.current;
+      if (!c) return;
+      const r = c.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const x = event.payload.position.x / dpr;
+      const y = event.payload.position.y / dpr;
+      if (x < r.left || x > r.right || y < r.top || y > r.bottom) return;
       const text = event.payload.paths.map(shellEscapePath).join(" ");
       void writePty(tabId, `${text} `);
     });
@@ -422,7 +445,17 @@ export function TerminalView({
   }, [visible, tabId]);
 
   return (
-    <div className="absolute inset-0" style={{ display: visible ? "block" : "none" }}>
+    <div
+      style={{
+        display: visible ? "block" : "none",
+        position: "absolute",
+        top: rect?.top ?? 0,
+        bottom: 0,
+        left: rect ? `${rect.left * 100}%` : 0,
+        width: rect ? `${rect.width * 100}%` : "100%",
+      }}
+      onPointerDown={() => onFocus?.()}
+    >
       <div
         ref={containerRef}
         className="absolute inset-0 overflow-hidden pb-3 pl-2"
