@@ -31,6 +31,13 @@ Do you want to allow this connection?
 2. Yes, and don't ask again for example.com
 3. No, and tell Claude what to do differently (esc)`;
 
+const CLAUDE_PLAN_APPROVAL = `Claude has written up a plan and is ready to execute. Would you like to proceed?
+1. Yes, and use auto mode
+2. Yes, manually approve edits
+3. No, refine with Ultraplan on Claude Code on the web
+4. Tell Claude what to change
+shift+tab to approve with this feedback`;
+
 const CLAUDE_WORKING_WITH_TODOS = `✻ Implementing tab status detection…
   ⎿  ☒ Trace the current status pipeline
      ☐ Add active task detection
@@ -95,6 +102,7 @@ describe("settledAgentStatus", () => {
     ["claude", CLAUDE_PERMISSION],
     ["claude", CLAUDE_EDIT_PERMISSION],
     ["claude", CLAUDE_NETWORK_PERMISSION],
+    ["claude", CLAUDE_PLAN_APPROVAL],
     ["opencode", OPENCODE_QUESTION],
     ["opencode", OPENCODE_PERMISSION],
     ["opencode", OPENCODE_COMPACT_PERMISSION],

@@ -51,7 +51,7 @@ interface TerminalViewProps {
   visible: boolean;
   fontSize: number;
   agentKind?: AgentKind;
-  rect?: { left: number; width: number; top?: number };
+  rect?: { top: string; left: string; width: string; bottom: string };
   focused?: boolean;
   onFocus?: () => void;
   onStatusChange?: (tabId: string, status: TabStatus) => void;
@@ -450,9 +450,9 @@ export function TerminalView({
         display: visible ? "block" : "none",
         position: "absolute",
         top: rect?.top ?? 0,
-        bottom: 0,
-        left: rect ? `${rect.left * 100}%` : 0,
-        width: rect ? `${rect.width * 100}%` : "100%",
+        bottom: rect?.bottom ?? 0,
+        left: rect?.left ?? 0,
+        width: rect?.width ?? "100%",
       }}
       onPointerDown={() => onFocus?.()}
     >

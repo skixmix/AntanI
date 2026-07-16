@@ -7,6 +7,7 @@ mod menu;
 mod pty;
 mod sound;
 mod state;
+mod updater;
 mod vscode_server;
 
 use state::{
@@ -354,7 +355,8 @@ pub fn run() {
             ide_webview::set_ide_bounds,
             ide_webview::show_ide_webview,
             ide_webview::hide_ide_webview,
-            ide_webview::close_ide_webview
+            ide_webview::close_ide_webview,
+            updater::run_brew_upgrade
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

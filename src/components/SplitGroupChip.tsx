@@ -7,10 +7,7 @@ import { AiStatusDot } from "./TabChip";
 interface SplitGroupChipProps {
   split: Split;
   viewingSplit: boolean;
-  primaryStatus?: TabStatus;
-  secondaryStatus?: TabStatus;
-  primaryRunning?: boolean;
-  secondaryRunning?: boolean;
+  memberStatuses: (TabStatus | undefined)[];
   needsAttention?: boolean;
   onView: () => void;
   onRename: (title: string) => void;
@@ -23,8 +20,7 @@ const DEFAULT_ACCENT = "#d4622a";
 export function SplitGroupChip({
   split,
   viewingSplit,
-  primaryStatus,
-  secondaryStatus,
+  memberStatuses,
   needsAttention,
   onView,
   onRename,
@@ -68,7 +64,7 @@ export function SplitGroupChip({
   }
 
   const glowClass = needsAttention
-    ? primaryStatus === "waiting" || secondaryStatus === "waiting"
+    ? memberStatuses.includes("waiting")
       ? "needs-attention-glow-waiting"
       : "needs-attention-glow-ready"
     : "";
@@ -127,14 +123,16 @@ export function SplitGroupChip({
       )}
 
       <span className="flex shrink-0 items-center gap-1">
-        {primaryStatus && primaryStatus !== "idle" && <AiStatusDot status={primaryStatus} />}
-        {secondaryStatus && secondaryStatus !== "idle" && <AiStatusDot status={secondaryStatus} />}
+        {memberStatuses.map(
+          (status, i) =>
+            status && status !== "idle" && <AiStatusDot key={split.memberIds[i]} status={status} />,
+        )}
       </span>
 
       <button
         type="button"
-        aria-label="Close split view"
-        title="Close split view"
+        aria-label="Unsplit"
+        title="Unsplit"
         onClick={(e) => {
           e.stopPropagation();
           onClose();
@@ -189,7 +187,7 @@ export function SplitGroupChip({
               setCtxMenu(null);
             }}
           >
-            Close split view
+            Unsplit
           </button>
         </div>
       )}

@@ -1,16 +1,28 @@
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
+import * as api from "../lib/api.ipc";
 import * as git from "../lib/git.ipc";
 import type { Project } from "../lib/types";
+import { RELEASES_PAGE_URL } from "../lib/updateCheck.ipc";
 import { BranchIcon } from "./Icons";
 
 interface StatusBarProps {
   project: Project | null;
   version: string;
+  updateVersion: string | null;
 }
 
-export function StatusBar({ project, version }: StatusBarProps) {
+export function StatusBar({ project, version, updateVersion }: StatusBarProps) {
   const [branch, setBranch] = useState<string | null>(null);
   const [notGitRepo, setNotGitRepo] = useState(false);
+  const [updateMenuOpen, setUpdateMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!updateMenuOpen) return;
+    const close = () => setUpdateMenuOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [updateMenuOpen]);
 
   useEffect(() => {
     setBranch(null);
@@ -56,10 +68,52 @@ export function StatusBar({ project, version }: StatusBarProps) {
         <span className="truncate">{branchLabel}</span>
       </div>
       <div
-        className="flex shrink-0 items-center justify-end whitespace-nowrap pr-3"
+        className="flex shrink-0 items-center justify-end gap-1.5 whitespace-nowrap pr-3"
         style={{ width: "max(var(--git-sidebar-width, 280px), 110px)" }}
       >
-        AntanI v{version}
+        {updateVersion && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setUpdateMenuOpen((open) => !open);
+              }}
+              className="rounded-full bg-primary px-1.5 py-px text-[10px] text-primary-foreground no-select"
+              title={`AntanI v${updateVersion} is available`}
+            >
+              Update available
+            </button>
+            {updateMenuOpen && (
+              <div
+                className="absolute right-0 bottom-full mb-1 min-w-40 rounded-lg border border-border bg-popover p-1 text-xs shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="block w-full rounded px-2 py-1.5 text-left text-foreground hover:bg-secondary"
+                  onClick={() => {
+                    setUpdateMenuOpen(false);
+                    void openUrl(RELEASES_PAGE_URL);
+                  }}
+                >
+                  View release notes
+                </button>
+                <button
+                  type="button"
+                  className="block w-full rounded px-2 py-1.5 text-left text-foreground hover:bg-secondary"
+                  onClick={() => {
+                    setUpdateMenuOpen(false);
+                    void api.runBrewUpgrade();
+                  }}
+                >
+                  Update now
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        <span>AntanI v{version}</span>
       </div>
     </div>
   );

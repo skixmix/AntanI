@@ -15,6 +15,7 @@ interface PaneHeaderProps {
   onClose: () => void;
   onRename: (title: string) => void;
   onRecolor: (color: string) => void;
+  onUnsplit: () => void;
 }
 
 export function PaneHeader({
@@ -27,6 +28,7 @@ export function PaneHeader({
   onClose,
   onRename,
   onRecolor,
+  onUnsplit,
 }: PaneHeaderProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(tab.title);
@@ -83,11 +85,12 @@ export function PaneHeader({
         window.dispatchEvent(new CustomEvent("antani:close-ctx-menus"));
         setCtxMenu({ x: e.clientX, y: e.clientY });
       }}
-      className={`flex h-full items-center gap-2 px-2 text-xs no-select cursor-grab border-b border-border ${
+      className={`flex h-full items-center gap-2 px-2 text-xs no-select cursor-grab border-b-2 ${
         focused
           ? "bg-accent text-foreground"
           : "bg-secondary/60 text-muted-foreground hover:bg-secondary"
       } ${dragging ? "opacity-50" : ""}`}
+      style={{ borderBottomColor: tab.color ?? "var(--color-border)" }}
     >
       <span className="flex shrink-0 items-center">
         {tab.kind === "terminal" ? (
@@ -193,6 +196,16 @@ export function PaneHeader({
             }}
           >
             Change color
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-secondary"
+            onClick={() => {
+              onUnsplit();
+              setCtxMenu(null);
+            }}
+          >
+            Unsplit
           </button>
           <div className="my-1 border-t border-border" />
           <button

@@ -22,9 +22,16 @@ scope.
 
 Saying no is a feature here. Out of scope: git worktree management, PR/task boards,
 session history/restore, cloud sync, Windows/Linux support, a plugin API,
-auto-updates, telemetry. Terminal tabs are **session-only** — never persisted, so
-every launch starts clean; only projects and settings persist. That asymmetry is
-intentional, not a missing feature.
+telemetry. Terminal tabs are **session-only** — never persisted, so every launch
+starts clean; only projects and settings persist. That asymmetry is intentional,
+not a missing feature.
+
+Update *installation* stays out of scope too (no self-updating binary — the app
+is unsigned, so a silent self-replace would be a bad idea anyway). The one
+exception is a passive **update check**: `src/lib/updateCheck*.ts` hits the
+GitHub releases API once per launch and shows a badge in the status bar if a
+newer tag exists; clicking it opens the releases page. No download, no install,
+no background polling — installing the update is still `brew upgrade` by hand.
 
 ## Code intelligence
 

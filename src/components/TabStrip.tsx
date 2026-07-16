@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef } from "react";
 import { projectInitials } from "../lib/constants";
-import type { Split, Tab, TabKind, TabStatus } from "../lib/tabs";
+import { MAX_SPLIT_MEMBERS, type Split, type Tab, type TabKind, type TabStatus } from "../lib/tabs";
 import type { CustomCommand, Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
 import {
@@ -35,6 +35,7 @@ interface TabStripProps {
   onReorder: (fromId: string, insertBeforeId: string | null) => void;
   onOpenIde: () => void;
   onOpenToSide?: (tabId: string) => void;
+  onAddToSplit?: (tabId: string) => void;
   onUnsplit?: () => void;
   onViewSplit?: () => void;
   onRenameSplit?: (title: string) => void;
@@ -67,6 +68,7 @@ export function TabStrip({
   onReorder,
   onOpenIde,
   onOpenToSide,
+  onAddToSplit,
   onUnsplit,
   onViewSplit,
   onRenameSplit,
@@ -78,6 +80,7 @@ export function TabStrip({
 
   const currentTab = tabs.find((t) => t.id === activeTabId);
   const canSplitWithCurrent = currentTab != null && currentTab.kind !== "ide";
+  const canGrowSplit = split != null && split.memberIds.length < MAX_SPLIT_MEMBERS;
 
   useEffect(() => {
     if (!activeTabId || !scrollRef.current) return;
@@ -121,19 +124,18 @@ export function TabStrip({
           className="flex items-stretch flex-1 min-w-0 overflow-x-auto scrollbar-hidden"
         >
           {tabs.map((tab) => {
-            if (split && tab.id === split.rightId) return null;
+            if (split?.memberIds.includes(tab.id) && tab.id !== split.memberIds[0]) {
+              return null;
+            }
 
-            if (split && tab.id === split.leftId) {
+            if (split && tab.id === split.memberIds[0]) {
               return (
                 <SplitGroupChip
                   key={tab.id}
                   split={split}
                   viewingSplit={viewingSplit}
-                  primaryStatus={tabStatuses[split.leftId]}
-                  secondaryStatus={tabStatuses[split.rightId]}
-                  primaryRunning={!!runningTabs[split.leftId]}
-                  secondaryRunning={!!runningTabs[split.rightId]}
-                  needsAttention={!!needsAttention[split.leftId] || !!needsAttention[split.rightId]}
+                  memberStatuses={split.memberIds.map((id) => tabStatuses[id])}
+                  needsAttention={split.memberIds.some((id) => !!needsAttention[id])}
                   onView={() => onViewSplit?.()}
                   onRename={(title) => onRenameSplit?.(title)}
                   onRecolor={(color) => onRecolorSplit?.(color)}
@@ -161,6 +163,14 @@ export function TabStrip({
                 onOpenToSide={
                   onOpenToSide && canSplitWithCurrent && tab.id !== activeTabId
                     ? () => onOpenToSide(tab.id)
+                    : undefined
+                }
+                onAddToSplit={
+                  onAddToSplit &&
+                  canGrowSplit &&
+                  tab.kind !== "ide" &&
+                  !split?.memberIds.includes(tab.id)
+                    ? () => onAddToSplit(tab.id)
                     : undefined
                 }
               />

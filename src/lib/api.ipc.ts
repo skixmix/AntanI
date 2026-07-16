@@ -21,6 +21,10 @@ export function getAppVersion(): Promise<string> {
   return getVersion();
 }
 
+export function runBrewUpgrade(): Promise<void> {
+  return invoke("run_brew_upgrade");
+}
+
 export function addProject(path: string, name: string, color: string): Promise<AppData> {
   return invoke<AppData>("add_project", { path, name, color });
 }

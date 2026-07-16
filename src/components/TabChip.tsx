@@ -22,6 +22,7 @@ interface TabChipProps {
   onRecolor: (color: string) => void;
   onPointerDown?: (e: React.PointerEvent) => void;
   onOpenToSide?: () => void;
+  onAddToSplit?: () => void;
 }
 
 export const KIND_ICON: Record<string, ReactNode> = {
@@ -55,6 +56,7 @@ export function TabChip({
   onRecolor,
   onPointerDown,
   onOpenToSide,
+  onAddToSplit,
 }: TabChipProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(tab.title);
@@ -255,6 +257,18 @@ export function TabChip({
               }}
             >
               Split view with current tab
+            </button>
+          )}
+          {onAddToSplit && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-secondary"
+              onClick={() => {
+                onAddToSplit();
+                setCtxMenu(null);
+              }}
+            >
+              Add to split
             </button>
           )}
           <div className="my-1 border-t border-border" />

@@ -13,6 +13,7 @@ const PROVIDER_PROMPT_SIGNATURES: Record<AgentKind, readonly PromptSignature[]> 
       /Do you want to allow this connection\?/i,
       /No, and tell Claude what to do differently/i,
     ],
+    [/Claude has written up a plan/i, /Yes, and use auto mode/i],
   ],
   opencode: [
     [/Permission required/i, /Allow once/i, /Allow always/i, /Reject/i],

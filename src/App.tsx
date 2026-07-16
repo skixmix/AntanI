@@ -20,6 +20,7 @@ import { playSystemSound } from "./lib/sound.ipc";
 import {
   activePaneTabs,
   addTab,
+  addToSplit,
   closeTab,
   createCustomTab,
   createTab,
@@ -36,6 +37,7 @@ import {
   setActiveTab,
   setFocusedPane,
   setSplitRatio,
+  setSplitRowRatio,
   swapPanes,
   type TabKind,
   type TabStatus,
@@ -44,6 +46,8 @@ import {
   viewSplit,
 } from "./lib/tabs";
 import type { AppData, CustomCommand, InjectTarget, Settings } from "./lib/types";
+import { isNewerVersion } from "./lib/updateCheck";
+import { fetchLatestVersion } from "./lib/updateCheck.ipc";
 
 function App() {
   const [data, setData] = useState<AppData | null>(null);
@@ -65,10 +69,21 @@ function App() {
   const [showFirstRunImportModal, setShowFirstRunImportModal] = useState(false);
   const [pendingIdeOpenProjectId, setPendingIdeOpenProjectId] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState("");
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
 
   useEffect(() => {
     void api.getAppVersion().then(setAppVersion);
   }, []);
+
+  // One-shot check on launch, not polled — this is a single-user local tool,
+  // not worth a background timer just to catch a release that lands mid-session.
+  useEffect(() => {
+    if (!appVersion) return;
+    setUpdateVersion("99.0.0"); // TEMP: force-show the update badge for a visual check
+    void fetchLatestVersion().then((latest) => {
+      if (latest && isNewerVersion(appVersion, latest)) setUpdateVersion(latest);
+    });
+  }, [appVersion]);
 
   // Latest-value refs so handleStatusChange (below) can stay referentially
   // stable — it's a TerminalView effect dependency, and a new identity on
@@ -288,8 +303,14 @@ function App() {
       const owner = findTabOwner(tabsRef.current, tabId);
       const project = projectsRef.current.find((p) => p.id === owner?.projectId);
       const ownerPt = owner ? tabsRef.current[owner.projectId] : undefined;
-      const panes = ownerPt ? activePaneTabs(ownerPt) : { primary: null, secondary: null };
-      const isVisiblePaneTab = panes.primary?.id === tabId || panes.secondary?.id === tabId;
+      const panes = ownerPt
+        ? activePaneTabs(ownerPt)
+        : { primary: null, secondary: null, tertiary: null, quaternary: null };
+      const isVisiblePaneTab =
+        panes.primary?.id === tabId ||
+        panes.secondary?.id === tabId ||
+        panes.tertiary?.id === tabId ||
+        panes.quaternary?.id === tabId;
       const isOpenTab =
         !!owner && activeProjectIdRef.current === owner.projectId && isVisiblePaneTab;
       if (owner && project) {
@@ -353,6 +374,14 @@ function App() {
     [activeId],
   );
 
+  const handleAddToSplit = useCallback(
+    (tabId: string) => {
+      if (!activeId) return;
+      setTabs((t) => addToSplit(t, activeId, tabId));
+    },
+    [activeId],
+  );
+
   const handleUnsplit = useCallback(() => {
     if (!activeId) return;
     setTabs((t) => unsplit(t, activeId));
@@ -370,6 +399,14 @@ function App() {
     (ratio: number) => {
       if (!activeId) return;
       setTabs((t) => setSplitRatio(t, activeId, ratio));
+    },
+    [activeId],
+  );
+
+  const handleSetSplitRowRatio = useCallback(
+    (ratio: number) => {
+      if (!activeId) return;
+      setTabs((t) => setSplitRowRatio(t, activeId, ratio));
     },
     [activeId],
   );
@@ -395,10 +432,13 @@ function App() {
     [activeId],
   );
 
-  const handleSwapPanes = useCallback(() => {
-    if (!activeId) return;
-    setTabs((t) => swapPanes(t, activeId));
-  }, [activeId]);
+  const handleSwapPanes = useCallback(
+    (paneA: PaneId, paneB: PaneId) => {
+      if (!activeId) return;
+      setTabs((t) => swapPanes(t, activeId, paneA, paneB));
+    },
+    [activeId],
+  );
 
   const openIdeNow = useCallback(
     (id: string) => {
@@ -497,12 +537,20 @@ function App() {
   // it (visible tab + window focused) — on mount, whenever the visible tab
   // changes, and when the window regains focus while already parked on it.
   const activePt = activeId ? tabs[activeId] : undefined;
-  const { primary: visiblePrimary, secondary: visibleSecondary } = activePt
+  const {
+    primary: visiblePrimary,
+    secondary: visibleSecondary,
+    tertiary: visibleTertiary,
+    quaternary: visibleQuaternary,
+  } = activePt
     ? activePaneTabs(activePt)
-    : { primary: null, secondary: null };
-  const visibleTabIds = [visiblePrimary?.id, visibleSecondary?.id].filter(
-    (x): x is string => x !== undefined,
-  );
+    : { primary: null, secondary: null, tertiary: null, quaternary: null };
+  const visibleTabIds = [
+    visiblePrimary?.id,
+    visibleSecondary?.id,
+    visibleTertiary?.id,
+    visibleQuaternary?.id,
+  ].filter((x): x is string => x !== undefined);
   const visibleTabIdsRef = useRef(visibleTabIds);
   visibleTabIdsRef.current = visibleTabIds;
 
@@ -637,9 +685,11 @@ function App() {
           onRunningChange={handleRunningChange}
           onOpenFile={handleOpenFile}
           onOpenToSide={handleOpenToSide}
+          onAddToSplit={handleAddToSplit}
           onUnsplit={handleUnsplit}
           onFocusPane={handleFocusPane}
           onSetSplitRatio={handleSetSplitRatio}
+          onSetSplitRowRatio={handleSetSplitRowRatio}
           onSwapPanes={handleSwapPanes}
           onViewSplit={handleViewSplit}
           onRenameSplit={handleRenameSplit}
@@ -647,7 +697,7 @@ function App() {
         />
       </div>
 
-      <StatusBar project={active} version={appVersion} />
+      <StatusBar project={active} version={appVersion} updateVersion={updateVersion} />
 
       {settingsInitialTab && (
         <SettingsPage
