@@ -1,8 +1,8 @@
 use std::process::Command;
 
-/// Opens Terminal.app and runs the Homebrew upgrade there, not in an AntanI
-/// terminal tab: `brew upgrade --cask` quits the running app as part of the
-/// upgrade, which would kill an in-app tab (and the command) mid-upgrade.
+/// Fallback for when there's no active project (so no in-app terminal tab to
+/// run the upgrade in): opens Terminal.app and runs the Homebrew upgrade
+/// there instead. Normal path is an in-app terminal tab (see StatusBar.tsx).
 #[tauri::command]
 pub fn run_brew_upgrade() -> Result<(), String> {
     let script = r#"tell application "Terminal"

@@ -79,7 +79,6 @@ function App() {
   // not worth a background timer just to catch a release that lands mid-session.
   useEffect(() => {
     if (!appVersion) return;
-    setUpdateVersion("99.0.0"); // TEMP: force-show the update badge for a visual check
     void fetchLatestVersion().then((latest) => {
       if (latest && isNewerVersion(appVersion, latest)) setUpdateVersion(latest);
     });
@@ -697,7 +696,12 @@ function App() {
         />
       </div>
 
-      <StatusBar project={active} version={appVersion} updateVersion={updateVersion} />
+      <StatusBar
+        project={active}
+        version={appVersion}
+        updateVersion={updateVersion}
+        onOpenCustomTab={openCustomTab}
+      />
 
       {settingsInitialTab && (
         <SettingsPage

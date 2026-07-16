@@ -2,17 +2,26 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
 import * as api from "../lib/api.ipc";
 import * as git from "../lib/git.ipc";
-import type { Project } from "../lib/types";
+import type { CustomCommand, Project } from "../lib/types";
+import { BREW_UPGRADE_COMMAND } from "../lib/updateCheck";
 import { RELEASES_PAGE_URL } from "../lib/updateCheck.ipc";
 import { BranchIcon } from "./Icons";
+
+const BREW_UPGRADE_TAB: CustomCommand = {
+  id: "update-antani",
+  name: "Update AntanI",
+  command: BREW_UPGRADE_COMMAND,
+  color: "#808080",
+};
 
 interface StatusBarProps {
   project: Project | null;
   version: string;
   updateVersion: string | null;
+  onOpenCustomTab: (cmd: CustomCommand) => void;
 }
 
-export function StatusBar({ project, version, updateVersion }: StatusBarProps) {
+export function StatusBar({ project, version, updateVersion, onOpenCustomTab }: StatusBarProps) {
   const [branch, setBranch] = useState<string | null>(null);
   const [notGitRepo, setNotGitRepo] = useState(false);
   const [updateMenuOpen, setUpdateMenuOpen] = useState(false);
@@ -104,7 +113,8 @@ export function StatusBar({ project, version, updateVersion }: StatusBarProps) {
                   className="block w-full rounded px-2 py-1.5 text-left text-foreground hover:bg-secondary"
                   onClick={() => {
                     setUpdateMenuOpen(false);
-                    void api.runBrewUpgrade();
+                    if (project) onOpenCustomTab(BREW_UPGRADE_TAB);
+                    else void api.runBrewUpgrade();
                   }}
                 >
                   Update now
