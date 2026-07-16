@@ -167,19 +167,21 @@ export function TerminalView({
     // resolves to "ready", so idle-time redraws after that don't re-arm it.
     let armed = true;
 
-    // The actual rendered screen, not a rolling window of raw output bytes:
+    // The live bottom screen, not a rolling window of raw output bytes or the
+    // user-controlled scrollback viewport:
     // TUIs that redraw via cursor-addressed partial updates (Ink, blessed,
     // opencode's UI, ...) can leave a prompt sitting on screen indefinitely
     // without ever re-emitting its text, so a raw-byte tail eventually loses
     // it — even though it's still visible — as soon as enough unrelated
     // redraw traffic (an animated spinner elsewhere, say) scrolls it out of
     // the window. Reading xterm's own buffer sidesteps that entirely: it's
-    // always exactly what's on screen right now.
-    function visibleScreenText(): string {
+    // always exactly what the running terminal is displaying now, even while
+    // the user is scrolled up reviewing older output.
+    function liveScreenText(): string {
       const buf = term.buffer.active;
       const lines: string[] = [];
       for (let y = 0; y < term.rows; y++) {
-        const line = buf.getLine(buf.viewportY + y);
+        const line = buf.getLine(buf.baseY + y);
         if (line) lines.push(line.translateToString(true));
       }
       return lines.join("\n");
@@ -195,7 +197,7 @@ export function TerminalView({
         // eventual submit (which triggers real output) re-drive this timer.
         if (composing) return;
         if (!agentKind) return;
-        const status = settledAgentStatus(agentKind, visibleScreenText());
+        const status = settledAgentStatus(agentKind, liveScreenText());
         setStatus(status);
         if (status === "ready") {
           armed = false;
@@ -233,16 +235,20 @@ export function TerminalView({
     // than immediately — a bit of lag here (vs. onOutputArrived above) only
     // delays waiting-prompt detection slightly, it doesn't cause flicker.
     function onWriteFlushed() {
-      if (disposed || !agentKind || !onStatusChange || !armed || composing) return;
-      // This is the path that scans the *whole* visible screen, so without
+      if (disposed || !agentKind || !onStatusChange || composing) return;
+      // This is the path that scans the *whole* live screen, so without
       // the composing check above, the terminal's own echo of the user's
       // still-being-typed message (e.g. containing "confirm" or "continue?")
       // can trip prompt detection before anything was ever sent.
-      if (settledAgentStatus(agentKind, visibleScreenText()) === "waiting") {
+      if (settledAgentStatus(agentKind, liveScreenText()) === "waiting") {
+        // Intentionally bypasses the armed guard: agents can issue permission
+        // prompts mid-task after a turn has already resolved to "ready" (which
+        // clears armed). We must catch those even without a new user keystroke.
+        armed = true;
         seenBusy = true;
         window.clearTimeout(silenceTimer);
         setStatus("waiting");
-      } else if (lastStatus === "waiting") {
+      } else if (armed && lastStatus === "waiting") {
         // The prompt text has left the screen — fall back to busy so the
         // silence timer (already scheduled by onOutputArrived) can resolve
         // it to "ready" normally instead of staying stuck on "waiting".

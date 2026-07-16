@@ -70,6 +70,14 @@ $ curl -I https://example.com
 3. No, and tell Codex what to do differently
 Press enter to confirm or esc to cancel`;
 
+const CODEX_PERMISSION_WITH_REASON = `Would you like to run the following command?
+Environment: local
+Reason: May I rerun the full suite with open-handle detection to verify the Jest shutdown warning?
+$ npm run test -- --detectOpenHandles
+> 1. Yes, proceed (y)
+2. Yes, and don't ask again for commands that start with \`npm run test\` (p)
+3. No, and tell Codex what to do differently (esc)`;
+
 describe("settledAgentStatus", () => {
   it.each([
     ["claude", CLAUDE_QUESTION],
@@ -82,6 +90,7 @@ describe("settledAgentStatus", () => {
     ["opencode", OPENCODE_MULTISELECT_QUESTION],
     ["codex", CODEX_QUESTION],
     ["codex", CODEX_PERMISSION],
+    ["codex", CODEX_PERMISSION_WITH_REASON],
   ] as const)("recognizes the captured %s interaction screen", (kind, screenText) => {
     expect(settledAgentStatus(kind, screenText)).toBe("waiting");
   });
