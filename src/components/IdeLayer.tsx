@@ -12,7 +12,7 @@ export function IdeLayer({ projects, tabs, activeProjectId }: IdeLayerProps) {
   return (
     <>
       {projects.flatMap((project) => {
-        const { tabs: projectTabList, activeTabId } = projectTabs(tabs, project.id);
+        const { tabs: projectTabList, activeTabId, viewingSplitId } = projectTabs(tabs, project.id);
         return projectTabList
           .filter((tab) => tab.kind === "ide")
           .map((tab) => (
@@ -20,7 +20,7 @@ export function IdeLayer({ projects, tabs, activeProjectId }: IdeLayerProps) {
               key={tab.id}
               projectId={project.id}
               folder={project.path}
-              visible={project.id === activeProjectId && tab.id === activeTabId}
+              visible={project.id === activeProjectId && tab.id === activeTabId && !viewingSplitId}
             />
           ));
       })}

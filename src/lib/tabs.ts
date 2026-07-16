@@ -29,14 +29,16 @@ export interface Tab {
 }
 
 /** A split is a persistent entity: it survives while at least two of its
- *  members exist, even when parked (a solo tab shown full-area), carrying its
- *  own editable title and color independent of its member tabs. `memberIds`
- *  holds 2-4 tab ids in quadrant order: 0 top-left, 1 top-right, 2
- *  bottom-left (or full-width bottom row when there's no 4th member), 3
- *  bottom-right. `ratio` is the column split (left column width), `rowRatio`
- *  is the row split (top row height) — only meaningful once a 3rd member
- *  exists. */
+ *  members exist, even when parked (a different tab or split shown
+ *  full-area), carrying its own editable title and color independent of its
+ *  member tabs. `memberIds` holds 2-4 tab ids in quadrant order: 0 top-left,
+ *  1 top-right, 2 bottom-left (or full-width bottom row when there's no 4th
+ *  member), 3 bottom-right. `ratio` is the column split (left column width),
+ *  `rowRatio` is the row split (top row height) — only meaningful once a 3rd
+ *  member exists. A project can hold several independent splits at once; each
+ *  is its own chip in the tab strip. A tab belongs to at most one split. */
 export interface Split {
+  id: string;
   memberIds: string[];
   focusedPane: PaneId;
   ratio: number;
@@ -48,9 +50,10 @@ export interface Split {
 export interface ProjectTabs {
   tabs: Tab[];
   activeTabId: string | null;
-  split: Split | null;
-  /** true => the split is the current view; false => the solo activeTabId is shown. */
-  viewingSplit: boolean;
+  splits: Split[];
+  /** id of the split currently shown full-area, or null when the solo
+   *  activeTabId is shown instead. */
+  viewingSplitId: string | null;
 }
 
 /** Session-only tab state, keyed by project id. Never persisted. */
@@ -63,8 +66,8 @@ export const DEFAULT_SPLIT_RATIO = 0.5;
 const EMPTY_PROJECT_TABS: ProjectTabs = {
   tabs: [],
   activeTabId: null,
-  split: null,
-  viewingSplit: false,
+  splits: [],
+  viewingSplitId: null,
 };
 
 const TAB_TITLES: Record<TabKind, string> = {
@@ -124,9 +127,20 @@ export function findTabOwner(
   return null;
 }
 
+/** The split a tab belongs to, if any. A tab is a member of at most one split. */
+function findSplitByMember(p: ProjectTabs, tabId: string): Split | undefined {
+  return p.splits.find((s) => s.memberIds.includes(tabId));
+}
+
+/** The split currently shown full-area, or null when a solo tab is shown instead. */
+function viewedSplit(p: ProjectTabs): Split | null {
+  if (!p.viewingSplitId) return null;
+  return p.splits.find((s) => s.id === p.viewingSplitId) ?? null;
+}
+
 export function splitMembers(p: ProjectTabs): (Tab | null)[] {
-  const split = p.split;
-  if (!split || !p.viewingSplit) return [];
+  const split = viewedSplit(p);
+  if (!split) return [];
   return split.memberIds.map((id) => p.tabs.find((t) => t.id === id) ?? null);
 }
 
@@ -150,8 +164,8 @@ export function activePaneTabs(p: ProjectTabs): {
 }
 
 export function focusedTab(p: ProjectTabs): Tab | null {
-  const split = p.split;
-  if (split && p.viewingSplit) {
+  const split = viewedSplit(p);
+  if (split) {
     const idx = PANE_IDS.indexOf(split.focusedPane);
     const members = splitMembers(p);
     return members[idx] ?? members[0] ?? null;
@@ -167,7 +181,7 @@ export function addTab(state: TabsState, projectId: string, tab: Tab): TabsState
       ...current,
       tabs: [...current.tabs, tab],
       activeTabId: tab.id,
-      viewingSplit: false,
+      viewingSplitId: null,
     },
   };
 }
@@ -176,85 +190,102 @@ export function setActiveTab(state: TabsState, projectId: string, tabId: string)
   const current = projectTabs(state, projectId);
   const target = current.tabs.find((t) => t.id === tabId);
   if (!target) return state;
-  const split = current.split;
-  const memberIdx = split?.memberIds.indexOf(tabId) ?? -1;
-  if (split && memberIdx !== -1) {
+  const owner = findSplitByMember(current, tabId);
+  if (owner) {
+    const memberIdx = owner.memberIds.indexOf(tabId);
     return {
       ...state,
       [projectId]: {
         ...current,
-        viewingSplit: true,
-        split: { ...split, focusedPane: PANE_IDS[memberIdx] },
+        activeTabId: null,
+        viewingSplitId: owner.id,
+        splits: current.splits.map((s) =>
+          s.id === owner.id ? { ...s, focusedPane: PANE_IDS[memberIdx] } : s,
+        ),
       },
     };
   }
-  return { ...state, [projectId]: { ...current, activeTabId: tabId, viewingSplit: false } };
+  return { ...state, [projectId]: { ...current, activeTabId: tabId, viewingSplitId: null } };
 }
 
-export function viewSplit(state: TabsState, projectId: string): TabsState {
+export function viewSplit(state: TabsState, projectId: string, splitId: string): TabsState {
   const current = projectTabs(state, projectId);
-  if (!current.split) return state;
-  return { ...state, [projectId]: { ...current, viewingSplit: true } };
+  if (!current.splits.some((s) => s.id === splitId)) return state;
+  return { ...state, [projectId]: { ...current, activeTabId: null, viewingSplitId: splitId } };
 }
 
+/** Starts a fresh split from the active solo tab + target, or if the target
+ *  already belongs to a split, just views that split. */
 export function openTabToSide(state: TabsState, projectId: string, tabId: string): TabsState {
   const current = projectTabs(state, projectId);
   const target = current.tabs.find((t) => t.id === tabId);
   if (!target || target.kind === "ide") return state;
-  const split = current.split;
-  const memberIdx = split?.memberIds.indexOf(tabId) ?? -1;
-  if (split && memberIdx !== -1) {
+  const owner = findSplitByMember(current, tabId);
+  if (owner) {
+    const memberIdx = owner.memberIds.indexOf(tabId);
     return {
       ...state,
       [projectId]: {
         ...current,
-        viewingSplit: true,
-        split: { ...split, focusedPane: PANE_IDS[memberIdx] },
+        activeTabId: null,
+        viewingSplitId: owner.id,
+        splits: current.splits.map((s) =>
+          s.id === owner.id ? { ...s, focusedPane: PANE_IDS[memberIdx] } : s,
+        ),
       },
     };
   }
-  const existingLeft = split ? current.tabs.find((t) => t.id === split.memberIds[0]) : undefined;
   const activeTab = current.activeTabId
     ? current.tabs.find((t) => t.id === current.activeTabId)
     : undefined;
-  let leftId: string | null = null;
-  if (activeTab && activeTab.kind !== "ide" && activeTab.id !== tabId) {
-    leftId = activeTab.id;
-  } else if (existingLeft && existingLeft.kind !== "ide" && existingLeft.id !== tabId) {
-    leftId = existingLeft.id;
-  } else {
-    leftId = current.tabs.find((t) => t.kind !== "ide" && t.id !== tabId)?.id ?? null;
-  }
+  const leftId =
+    activeTab && activeTab.kind !== "ide" && activeTab.id !== tabId
+      ? activeTab.id
+      : (current.tabs.find(
+          (t) => t.kind !== "ide" && t.id !== tabId && !findSplitByMember(current, t.id),
+        )?.id ?? null);
   if (!leftId) {
-    return { ...state, [projectId]: { ...current, activeTabId: tabId, viewingSplit: false } };
+    return { ...state, [projectId]: { ...current, activeTabId: tabId, viewingSplitId: null } };
   }
+  const newSplit: Split = {
+    id: crypto.randomUUID(),
+    memberIds: [leftId, tabId],
+    focusedPane: "secondary",
+    ratio: DEFAULT_SPLIT_RATIO,
+    rowRatio: DEFAULT_SPLIT_RATIO,
+    title: "Split",
+    color: null,
+  };
   return {
     ...state,
     [projectId]: {
       ...current,
-      split: {
-        memberIds: [leftId, tabId],
-        focusedPane: "secondary",
-        ratio: split?.ratio ?? DEFAULT_SPLIT_RATIO,
-        rowRatio: split?.rowRatio ?? DEFAULT_SPLIT_RATIO,
-        title: split?.title ?? "Split",
-        color: split?.color ?? null,
-      },
-      viewingSplit: true,
+      activeTabId: null,
+      splits: [...current.splits, newSplit],
+      viewingSplitId: newSplit.id,
     },
   };
 }
 
-/** Appends a tab to the currently open split, growing it toward the 2x2
- *  quadrant grid (capped at MAX_SPLIT_MEMBERS). No-op without an existing
- *  split — starting one is `openTabToSide`'s job. */
-export function addToSplit(state: TabsState, projectId: string, tabId: string): TabsState {
+/** Appends a tab to the given split, growing it toward the 2x2 quadrant grid
+ *  (capped at MAX_SPLIT_MEMBERS). No-op without a matching split — starting
+ *  one is `openTabToSide`'s job. */
+export function addToSplit(
+  state: TabsState,
+  projectId: string,
+  splitId: string,
+  tabId: string,
+): TabsState {
   const current = projectTabs(state, projectId);
-  const split = current.split;
+  const split = current.splits.find((s) => s.id === splitId);
   if (!split) return state;
   const target = current.tabs.find((t) => t.id === tabId);
   if (!target || target.kind === "ide") return state;
-  if (split.memberIds.includes(tabId) || split.memberIds.length >= MAX_SPLIT_MEMBERS) {
+  if (
+    split.memberIds.includes(tabId) ||
+    split.memberIds.length >= MAX_SPLIT_MEMBERS ||
+    findSplitByMember(current, tabId)
+  ) {
     return state;
   }
   const memberIds = [...split.memberIds, tabId];
@@ -262,65 +293,120 @@ export function addToSplit(state: TabsState, projectId: string, tabId: string): 
     ...state,
     [projectId]: {
       ...current,
-      split: { ...split, memberIds, focusedPane: PANE_IDS[memberIds.length - 1] },
-      viewingSplit: true,
+      activeTabId: null,
+      splits: current.splits.map((s) =>
+        s.id === splitId ? { ...s, memberIds, focusedPane: PANE_IDS[memberIds.length - 1] } : s,
+      ),
+      viewingSplitId: splitId,
     },
   };
 }
 
-export function unsplit(state: TabsState, projectId: string): TabsState {
+export function unsplit(state: TabsState, projectId: string, splitId: string): TabsState {
   const current = projectTabs(state, projectId);
+  const split = current.splits.find((s) => s.id === splitId);
+  if (!split) return state;
+  const wasViewing = current.viewingSplitId === splitId;
   return {
     ...state,
     [projectId]: {
       ...current,
-      split: null,
-      viewingSplit: false,
-      activeTabId: current.split?.memberIds[0] ?? current.activeTabId,
+      splits: current.splits.filter((s) => s.id !== splitId),
+      viewingSplitId: wasViewing ? null : current.viewingSplitId,
+      activeTabId: wasViewing ? (split.memberIds[0] ?? current.activeTabId) : current.activeTabId,
     },
   };
 }
 
-export function setFocusedPane(state: TabsState, projectId: string, pane: PaneId): TabsState {
+export function setFocusedPane(
+  state: TabsState,
+  projectId: string,
+  splitId: string,
+  pane: PaneId,
+): TabsState {
   const current = projectTabs(state, projectId);
-  const split = current.split;
-  if (!split) return state;
+  if (!current.splits.some((s) => s.id === splitId)) return state;
   return {
     ...state,
-    [projectId]: { ...current, viewingSplit: true, split: { ...split, focusedPane: pane } },
+    [projectId]: {
+      ...current,
+      activeTabId: null,
+      viewingSplitId: splitId,
+      splits: current.splits.map((s) => (s.id === splitId ? { ...s, focusedPane: pane } : s)),
+    },
   };
 }
 
-export function setSplitRatio(state: TabsState, projectId: string, ratio: number): TabsState {
+export function setSplitRatio(
+  state: TabsState,
+  projectId: string,
+  splitId: string,
+  ratio: number,
+): TabsState {
   const current = projectTabs(state, projectId);
-  if (!Number.isFinite(ratio) || !current.split) return state;
+  if (!Number.isFinite(ratio) || !current.splits.some((s) => s.id === splitId)) return state;
   const clamped = Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, ratio));
-  return { ...state, [projectId]: { ...current, split: { ...current.split, ratio: clamped } } };
+  return {
+    ...state,
+    [projectId]: {
+      ...current,
+      splits: current.splits.map((s) => (s.id === splitId ? { ...s, ratio: clamped } : s)),
+    },
+  };
 }
 
 /** The row split (top row height) only applies once a 3rd member exists. */
-export function setSplitRowRatio(state: TabsState, projectId: string, ratio: number): TabsState {
+export function setSplitRowRatio(
+  state: TabsState,
+  projectId: string,
+  splitId: string,
+  ratio: number,
+): TabsState {
   const current = projectTabs(state, projectId);
-  if (!Number.isFinite(ratio) || !current.split || current.split.memberIds.length < 3) {
-    return state;
-  }
+  const split = current.splits.find((s) => s.id === splitId);
+  if (!Number.isFinite(ratio) || !split || split.memberIds.length < 3) return state;
   const clamped = Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, ratio));
   return {
     ...state,
-    [projectId]: { ...current, split: { ...current.split, rowRatio: clamped } },
+    [projectId]: {
+      ...current,
+      splits: current.splits.map((s) => (s.id === splitId ? { ...s, rowRatio: clamped } : s)),
+    },
   };
 }
 
-export function renameSplit(state: TabsState, projectId: string, title: string): TabsState {
+export function renameSplit(
+  state: TabsState,
+  projectId: string,
+  splitId: string,
+  title: string,
+): TabsState {
   const current = projectTabs(state, projectId);
-  if (!current.split) return state;
-  return { ...state, [projectId]: { ...current, split: { ...current.split, title } } };
+  if (!current.splits.some((s) => s.id === splitId)) return state;
+  return {
+    ...state,
+    [projectId]: {
+      ...current,
+      splits: current.splits.map((s) => (s.id === splitId ? { ...s, title } : s)),
+    },
+  };
 }
 
-export function recolorSplit(state: TabsState, projectId: string, color: string): TabsState {
+export function recolorSplit(
+  state: TabsState,
+  projectId: string,
+  splitId: string,
+  color: string,
+): TabsState {
   const current = projectTabs(state, projectId);
-  if (!current.split) return state;
-  return { ...state, [projectId]: { ...current, split: { ...current.split, color } } };
+  if (!current.splits.some((s) => s.id === splitId)) return state;
+  return {
+    ...state,
+    [projectId]: {
+      ...current,
+      splits: current.splits.map((s) => (s.id === splitId ? { ...s, color } : s)),
+    },
+  };
 }
 
 /** Swap two arbitrary quadrant slots (drag-to-swap any pane onto any other).
@@ -329,11 +415,12 @@ export function recolorSplit(state: TabsState, projectId: string, color: string)
 export function swapPanes(
   state: TabsState,
   projectId: string,
+  splitId: string,
   paneA: PaneId,
   paneB: PaneId,
 ): TabsState {
   const current = projectTabs(state, projectId);
-  const split = current.split;
+  const split = current.splits.find((s) => s.id === splitId);
   if (!split) return state;
   const idxA = PANE_IDS.indexOf(paneA);
   const idxB = PANE_IDS.indexOf(paneB);
@@ -351,7 +438,10 @@ export function swapPanes(
     split.focusedPane === paneA ? paneB : split.focusedPane === paneB ? paneA : split.focusedPane;
   return {
     ...state,
-    [projectId]: { ...current, split: { ...split, memberIds, focusedPane } },
+    [projectId]: {
+      ...current,
+      splits: current.splits.map((s) => (s.id === splitId ? { ...s, memberIds, focusedPane } : s)),
+    },
   };
 }
 
@@ -360,27 +450,29 @@ export function closeTab(state: TabsState, projectId: string, tabId: string): Ta
   const index = current.tabs.findIndex((t) => t.id === tabId);
   if (index === -1) return state;
   const newTabs = current.tabs.filter((t) => t.id !== tabId);
-  const split = current.split;
-  if (split?.memberIds.includes(tabId)) {
-    const closedIdx = split.memberIds.indexOf(tabId);
-    const remaining = split.memberIds.filter((id) => id !== tabId);
+  const owner = findSplitByMember(current, tabId);
+
+  if (owner) {
+    const closedIdx = owner.memberIds.indexOf(tabId);
+    const remaining = owner.memberIds.filter((id) => id !== tabId);
+    const wasViewing = current.viewingSplitId === owner.id;
     if (remaining.length <= 1) {
       return {
         ...state,
         [projectId]: {
           ...current,
           tabs: newTabs,
-          split: null,
-          viewingSplit: false,
-          activeTabId: remaining[0] ?? current.activeTabId,
+          splits: current.splits.filter((s) => s.id !== owner.id),
+          viewingSplitId: wasViewing ? null : current.viewingSplitId,
+          activeTabId: wasViewing ? (remaining[0] ?? current.activeTabId) : current.activeTabId,
         },
       };
     }
     // Keep focus on the same tab if it survived; otherwise fall back to
     // whichever pane now holds the closed member's old slot (clamped to the
     // shrunk grid), defaulting to primary.
-    const focusedIdx = PANE_IDS.indexOf(split.focusedPane);
-    const focusedId = split.memberIds[focusedIdx];
+    const focusedIdx = PANE_IDS.indexOf(owner.focusedPane);
+    const focusedId = owner.memberIds[focusedIdx];
     const survivedFocusIdx = focusedId ? remaining.indexOf(focusedId) : -1;
     const focusedPane =
       survivedFocusIdx !== -1
@@ -391,18 +483,21 @@ export function closeTab(state: TabsState, projectId: string, tabId: string): Ta
       [projectId]: {
         ...current,
         tabs: newTabs,
-        split: { ...split, memberIds: remaining, focusedPane },
+        splits: current.splits.map((s) =>
+          s.id === owner.id ? { ...s, memberIds: remaining, focusedPane } : s,
+        ),
       },
     };
   }
+
   let activeTabId = current.activeTabId;
-  let viewingSplit = current.viewingSplit;
+  let viewingSplitId = current.viewingSplitId;
   if (tabId === current.activeTabId) {
     // The next solo view must skip split members. They have no solo chip (the
-    // strip shows them only as the merged split chip), so pointing activeTabId
-    // at one while parked would display it full-area with nothing active in the
-    // strip. When only members remain, fall back to viewing the split itself.
-    const isMember = (id: string) => split?.memberIds.includes(id);
+    // strip shows them only as their split's merged chip), so pointing
+    // activeTabId at one while parked would display it full-area with nothing
+    // active in the strip. When only members remain, fall back to viewing a split.
+    const isMember = (id: string) => current.splits.some((s) => s.memberIds.includes(id));
     const neighbor = newTabs[index] ?? newTabs[index - 1] ?? null;
     if (neighbor && !isMember(neighbor.id)) {
       activeTabId = neighbor.id;
@@ -410,15 +505,15 @@ export function closeTab(state: TabsState, projectId: string, tabId: string): Ta
       const solo = newTabs.find((t) => !isMember(t.id));
       if (solo) {
         activeTabId = solo.id;
-      } else if (split) {
+      } else if (current.splits.length > 0) {
         activeTabId = null;
-        viewingSplit = true;
+        viewingSplitId = current.splits[0].id;
       } else {
         activeTabId = neighbor?.id ?? null;
       }
     }
   }
-  return { ...state, [projectId]: { ...current, tabs: newTabs, activeTabId, viewingSplit } };
+  return { ...state, [projectId]: { ...current, tabs: newTabs, activeTabId, viewingSplitId } };
 }
 
 export function renameTab(
@@ -453,6 +548,10 @@ export function recolorTab(
   };
 }
 
+/** Reorders tab-strip chips. `fromId`/`insertBeforeId` may each be a tab id or
+ *  a split id — a split's chip drags/drops as its whole member block, and a
+ *  split always resolves to its first member's position (a split's chip
+ *  position in the strip is always its first member's position in `tabs`). */
 export function reorderTabs(
   state: TabsState,
   projectId: string,
@@ -460,12 +559,27 @@ export function reorderTabs(
   insertBeforeId: string | null,
 ): TabsState {
   const current = projectTabs(state, projectId);
-  const tabs = current.tabs.filter((t) => t.id !== fromId);
-  const dragged = current.tabs.find((t) => t.id === fromId);
-  if (!dragged) return state;
-  const to = insertBeforeId === null ? tabs.length : tabs.findIndex((t) => t.id === insertBeforeId);
+  const fromSplit = current.splits.find((s) => s.id === fromId);
+  const movingIds = fromSplit ? fromSplit.memberIds : [fromId];
+  const movingTabs = movingIds
+    .map((id) => current.tabs.find((t) => t.id === id))
+    .filter((t): t is Tab => t != null);
+  if (movingTabs.length === 0) return state;
+
+  const insertBeforeSplit = insertBeforeId
+    ? current.splits.find((s) => s.id === insertBeforeId)
+    : undefined;
+  const resolvedInsertBeforeId = insertBeforeSplit
+    ? insertBeforeSplit.memberIds[0]
+    : insertBeforeId;
+
+  const tabs = current.tabs.filter((t) => !movingIds.includes(t.id));
+  const to =
+    resolvedInsertBeforeId === null
+      ? tabs.length
+      : tabs.findIndex((t) => t.id === resolvedInsertBeforeId);
   if (to === -1) return state;
-  tabs.splice(to, 0, dragged);
+  tabs.splice(to, 0, ...movingTabs);
   return { ...state, [projectId]: { ...current, tabs } };
 }
 

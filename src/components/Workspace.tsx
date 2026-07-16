@@ -43,15 +43,15 @@ interface WorkspaceProps {
   onRunningChange: (tabId: string, running: boolean) => void;
   onOpenFile: (target: TerminalFileOpenTarget) => void;
   onOpenToSide?: (tabId: string) => void;
-  onAddToSplit?: (tabId: string) => void;
-  onUnsplit?: () => void;
-  onFocusPane?: (pane: PaneId) => void;
-  onSetSplitRatio?: (ratio: number) => void;
-  onSetSplitRowRatio?: (ratio: number) => void;
-  onSwapPanes?: (paneA: PaneId, paneB: PaneId) => void;
-  onViewSplit?: () => void;
-  onRenameSplit?: (title: string) => void;
-  onRecolorSplit?: (color: string) => void;
+  onAddToSplit?: (splitId: string, tabId: string) => void;
+  onUnsplit?: (splitId: string) => void;
+  onFocusPane?: (splitId: string, pane: PaneId) => void;
+  onSetSplitRatio?: (splitId: string, ratio: number) => void;
+  onSetSplitRowRatio?: (splitId: string, ratio: number) => void;
+  onSwapPanes?: (splitId: string, paneA: PaneId, paneB: PaneId) => void;
+  onViewSplit?: (splitId: string) => void;
+  onRenameSplit?: (splitId: string, title: string) => void;
+  onRecolorSplit?: (splitId: string, color: string) => void;
 }
 
 export function Workspace({
@@ -91,11 +91,15 @@ export function Workspace({
     rowRatio: DEFAULT_SPLIT_RATIO,
     memberCount: 0,
   });
+  const pt = projectTabs(tabs, project?.id ?? "");
+  const viewedSplit = pt.viewingSplitId
+    ? (pt.splits.find((s) => s.id === pt.viewingSplitId) ?? null)
+    : null;
   const { startDrag, draggingPane, dropOver } = usePaneSwapDrag(
     contentRef,
     geometryRef,
-    (a, b) => onSwapPanes?.(a, b),
-    (pane) => onFocusPane?.(pane),
+    (a, b) => viewedSplit && onSwapPanes?.(viewedSplit.id, a, b),
+    (pane) => viewedSplit && onFocusPane?.(viewedSplit.id, pane),
   );
 
   if (!project) {
@@ -109,17 +113,16 @@ export function Workspace({
     );
   }
 
-  const pt = projectTabs(tabs, project.id);
-  const { tabs: projectTabList, activeTabId } = pt;
-  const split = pt.split;
-  const viewingSplit = pt.viewingSplit;
-  const focusedPane = pt.split?.focusedPane ?? "primary";
-  const colRatio = pt.split?.ratio ?? DEFAULT_SPLIT_RATIO;
-  const rowRatio = pt.split?.rowRatio ?? DEFAULT_SPLIT_RATIO;
+  const { tabs: projectTabList, activeTabId, splits, viewingSplitId } = pt;
+  const focusedPane = viewedSplit?.focusedPane ?? "primary";
+  const colRatio = viewedSplit?.ratio ?? DEFAULT_SPLIT_RATIO;
+  const rowRatio = viewedSplit?.rowRatio ?? DEFAULT_SPLIT_RATIO;
   const ideTabId = projectTabList.find((t) => t.kind === "ide")?.id ?? null;
   const isEmpty = projectTabList.length === 0;
   const members = splitMembers(pt).filter((t): t is Tab => t !== null);
-  const soloTab = !viewingSplit ? (projectTabList.find((t) => t.id === activeTabId) ?? null) : null;
+  const soloTab = !viewingSplitId
+    ? (projectTabList.find((t) => t.id === activeTabId) ?? null)
+    : null;
   const paneTabIds = members.length > 0 ? members.map((t) => t.id) : soloTab ? [soloTab.id] : [];
   geometryRef.current = { colRatio, rowRatio, memberCount: members.length };
   const focused = focusedTab(pt);
@@ -133,8 +136,8 @@ export function Workspace({
         <TabStrip
           tabs={projectTabList}
           activeTabId={activeTabId}
-          split={split}
-          viewingSplit={viewingSplit}
+          splits={splits}
+          viewingSplitId={viewingSplitId}
           tabStatuses={tabStatuses}
           runningTabs={runningTabs}
           needsAttention={needsAttention}
@@ -167,7 +170,9 @@ export function Workspace({
             colRatio={colRatio}
             rowRatio={rowRatio}
             focusedPane={focusedPane}
-            onFocusPane={onFocusPane}
+            onFocusPane={
+              onFocusPane && viewedSplit ? (pane) => onFocusPane(viewedSplit.id, pane) : undefined
+            }
             onStatusChange={onStatusChange}
             onRunningChange={onRunningChange}
             onOpenFile={onOpenFile}
@@ -190,12 +195,12 @@ export function Workspace({
               draggingPane={draggingPane}
               dropOver={dropOver}
               onStartDrag={startDrag}
-              onSetColRatio={onSetSplitRatio ?? (() => {})}
-              onSetRowRatio={onSetSplitRowRatio ?? (() => {})}
+              onSetColRatio={(ratio) => viewedSplit && onSetSplitRatio?.(viewedSplit.id, ratio)}
+              onSetRowRatio={(ratio) => viewedSplit && onSetSplitRowRatio?.(viewedSplit.id, ratio)}
               onCloseTab={onCloseTab}
               onRenameTab={onRenameTab}
               onRecolorTab={onRecolorTab}
-              onUnsplit={onUnsplit}
+              onUnsplit={() => viewedSplit && onUnsplit?.(viewedSplit.id)}
             />
           )}
         </div>

@@ -18,8 +18,8 @@ import { TabChip } from "./TabChip";
 interface TabStripProps {
   tabs: Tab[];
   activeTabId: string | null;
-  split: Split | null;
-  viewingSplit: boolean;
+  splits: Split[];
+  viewingSplitId: string | null;
   tabStatuses: Record<string, TabStatus>;
   runningTabs: Record<string, true>;
   needsAttention: Record<string, true>;
@@ -35,11 +35,11 @@ interface TabStripProps {
   onReorder: (fromId: string, insertBeforeId: string | null) => void;
   onOpenIde: () => void;
   onOpenToSide?: (tabId: string) => void;
-  onAddToSplit?: (tabId: string) => void;
-  onUnsplit?: () => void;
-  onViewSplit?: () => void;
-  onRenameSplit?: (title: string) => void;
-  onRecolorSplit?: (color: string) => void;
+  onAddToSplit?: (splitId: string, tabId: string) => void;
+  onUnsplit?: (splitId: string) => void;
+  onViewSplit?: (splitId: string) => void;
+  onRenameSplit?: (splitId: string, title: string) => void;
+  onRecolorSplit?: (splitId: string, color: string) => void;
 }
 
 const QUICK_OPEN: { kind: TabKind; label: string; icon: ReactNode }[] = [
@@ -51,8 +51,8 @@ const QUICK_OPEN: { kind: TabKind; label: string; icon: ReactNode }[] = [
 export function TabStrip({
   tabs,
   activeTabId,
-  split,
-  viewingSplit,
+  splits,
+  viewingSplitId,
   tabStatuses,
   runningTabs,
   needsAttention,
@@ -80,7 +80,8 @@ export function TabStrip({
 
   const currentTab = tabs.find((t) => t.id === activeTabId);
   const canSplitWithCurrent = currentTab != null && currentTab.kind !== "ide";
-  const canGrowSplit = split != null && split.memberIds.length < MAX_SPLIT_MEMBERS;
+  const viewedSplit = viewingSplitId ? (splits.find((s) => s.id === viewingSplitId) ?? null) : null;
+  const canGrowSplit = viewedSplit != null && viewedSplit.memberIds.length < MAX_SPLIT_MEMBERS;
 
   useEffect(() => {
     if (!activeTabId || !scrollRef.current) return;
@@ -124,22 +125,27 @@ export function TabStrip({
           className="flex items-stretch flex-1 min-w-0 overflow-x-auto scrollbar-hidden"
         >
           {tabs.map((tab) => {
-            if (split?.memberIds.includes(tab.id) && tab.id !== split.memberIds[0]) {
+            const owningSplit = splits.find((s) => s.memberIds.includes(tab.id));
+            if (owningSplit && tab.id !== owningSplit.memberIds[0]) {
               return null;
             }
 
-            if (split && tab.id === split.memberIds[0]) {
+            if (owningSplit) {
+              const anchorId = owningSplit.memberIds[0];
               return (
                 <SplitGroupChip
                   key={tab.id}
-                  split={split}
-                  viewingSplit={viewingSplit}
-                  memberStatuses={split.memberIds.map((id) => tabStatuses[id])}
-                  needsAttention={split.memberIds.some((id) => !!needsAttention[id])}
-                  onView={() => onViewSplit?.()}
-                  onRename={(title) => onRenameSplit?.(title)}
-                  onRecolor={(color) => onRecolorSplit?.(color)}
-                  onClose={() => onUnsplit?.()}
+                  split={owningSplit}
+                  viewingSplit={viewingSplitId === owningSplit.id}
+                  memberStatuses={owningSplit.memberIds.map((id) => tabStatuses[id])}
+                  needsAttention={owningSplit.memberIds.some((id) => !!needsAttention[id])}
+                  isDragging={draggingId === owningSplit.id}
+                  showInsertBefore={insertBeforeId === anchorId && draggingId !== owningSplit.id}
+                  onPointerDown={(e) => startDrag(e, owningSplit.id)}
+                  onView={() => onViewSplit?.(owningSplit.id)}
+                  onRename={(title) => onRenameSplit?.(owningSplit.id, title)}
+                  onRecolor={(color) => onRecolorSplit?.(owningSplit.id, color)}
+                  onClose={() => onUnsplit?.(owningSplit.id)}
                 />
               );
             }
@@ -148,8 +154,8 @@ export function TabStrip({
               <TabChip
                 key={tab.id}
                 tab={tab}
-                active={!viewingSplit && tab.id === activeTabId}
-                focused={!viewingSplit && tab.id === activeTabId}
+                active={!viewingSplitId && tab.id === activeTabId}
+                focused={!viewingSplitId && tab.id === activeTabId}
                 status={tabStatuses[tab.id]}
                 running={!!runningTabs[tab.id]}
                 needsAttention={!!needsAttention[tab.id]}
@@ -166,11 +172,8 @@ export function TabStrip({
                     : undefined
                 }
                 onAddToSplit={
-                  onAddToSplit &&
-                  canGrowSplit &&
-                  tab.kind !== "ide" &&
-                  !split?.memberIds.includes(tab.id)
-                    ? () => onAddToSplit(tab.id)
+                  onAddToSplit && canGrowSplit && tab.kind !== "ide" && viewedSplit
+                    ? () => onAddToSplit(viewedSplit.id, tab.id)
                     : undefined
                 }
               />

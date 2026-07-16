@@ -9,10 +9,13 @@ interface SplitGroupChipProps {
   viewingSplit: boolean;
   memberStatuses: (TabStatus | undefined)[];
   needsAttention?: boolean;
+  isDragging?: boolean;
+  showInsertBefore?: boolean;
   onView: () => void;
   onRename: (title: string) => void;
   onRecolor: (color: string) => void;
   onClose: () => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
 }
 
 const DEFAULT_ACCENT = "#d4622a";
@@ -22,10 +25,13 @@ export function SplitGroupChip({
   viewingSplit,
   memberStatuses,
   needsAttention,
+  isDragging,
+  showInsertBefore,
   onView,
   onRename,
   onRecolor,
   onClose,
+  onPointerDown,
 }: SplitGroupChipProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(split.title);
@@ -75,7 +81,10 @@ export function SplitGroupChip({
   return (
     <div
       ref={chipRef}
+      data-drag-scope="tabs"
+      data-drag-id={split.id}
       onClick={onView}
+      onPointerDown={onPointerDown}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -86,9 +95,12 @@ export function SplitGroupChip({
         viewingSplit
           ? "bg-accent text-foreground"
           : "bg-transparent text-muted-foreground hover:bg-secondary"
-      } ${glowClass}`}
+      } ${isDragging ? "opacity-30 scale-95" : ""} ${glowClass}`}
       style={{ borderBottomColor: accentColor }}
     >
+      {showInsertBefore && (
+        <div className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-primary" />
+      )}
       <span className="shrink-0 flex items-center text-muted-foreground" title="Split view">
         <SplitColumnsIcon size={13} />
       </span>

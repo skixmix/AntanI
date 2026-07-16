@@ -374,67 +374,73 @@ function App() {
   );
 
   const handleAddToSplit = useCallback(
-    (tabId: string) => {
+    (splitId: string, tabId: string) => {
       if (!activeId) return;
-      setTabs((t) => addToSplit(t, activeId, tabId));
+      setTabs((t) => addToSplit(t, activeId, splitId, tabId));
     },
     [activeId],
   );
 
-  const handleUnsplit = useCallback(() => {
-    if (!activeId) return;
-    setTabs((t) => unsplit(t, activeId));
-  }, [activeId]);
+  const handleUnsplit = useCallback(
+    (splitId: string) => {
+      if (!activeId) return;
+      setTabs((t) => unsplit(t, activeId, splitId));
+    },
+    [activeId],
+  );
 
   const handleFocusPane = useCallback(
-    (pane: PaneId) => {
+    (splitId: string, pane: PaneId) => {
       if (!activeId) return;
-      setTabs((t) => setFocusedPane(t, activeId, pane));
+      setTabs((t) => setFocusedPane(t, activeId, splitId, pane));
     },
     [activeId],
   );
 
   const handleSetSplitRatio = useCallback(
-    (ratio: number) => {
+    (splitId: string, ratio: number) => {
       if (!activeId) return;
-      setTabs((t) => setSplitRatio(t, activeId, ratio));
+      setTabs((t) => setSplitRatio(t, activeId, splitId, ratio));
     },
     [activeId],
   );
 
   const handleSetSplitRowRatio = useCallback(
-    (ratio: number) => {
+    (splitId: string, ratio: number) => {
       if (!activeId) return;
-      setTabs((t) => setSplitRowRatio(t, activeId, ratio));
+      setTabs((t) => setSplitRowRatio(t, activeId, splitId, ratio));
     },
     [activeId],
   );
 
-  const handleViewSplit = useCallback(() => {
-    if (!activeId) return;
-    setTabs((t) => viewSplit(t, activeId));
-  }, [activeId]);
+  const handleViewSplit = useCallback(
+    (splitId: string) => {
+      if (!activeId) return;
+      setTabs((t) => viewSplit(t, activeId, splitId));
+    },
+    [activeId],
+  );
 
   const handleRenameSplit = useCallback(
-    (title: string) => {
+    (splitId: string, title: string) => {
       if (!activeId) return;
-      setTabs((t) => renameSplit(t, activeId, title));
+      setTabs((t) => renameSplit(t, activeId, splitId, title));
     },
     [activeId],
   );
 
   const handleRecolorSplit = useCallback(
-    (color: string) => {
+    (splitId: string, color: string) => {
       if (!activeId) return;
-      setTabs((t) => recolorSplit(t, activeId, color));
+      setTabs((t) => recolorSplit(t, activeId, splitId, color));
     },
     [activeId],
   );
 
   const handleSwapPanes = useCallback(
-    (paneA: PaneId, paneB: PaneId) => {
+    (splitId: string, paneA: PaneId, paneB: PaneId) => {
       if (!activeId) return;
-      setTabs((t) => swapPanes(t, activeId, paneA, paneB));
+      setTabs((t) => swapPanes(t, activeId, splitId, paneA, paneB));
     },
     [activeId],
   );
