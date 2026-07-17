@@ -42,13 +42,51 @@ it never merges, publishes a release, or touches the tap directly.
 
 7. **Push**: `git push -u origin release/vX.Y.Z`.
 
-8. **Open the PR** — title must start with exactly `Release ` (this is what
-   `release.yml` matches on the squash-merge commit message):
+8. **Build release recap** from `git log <last-tag>..main --oneline` (same
+   range used for version signal in step 3). For each commit:
+
+   - Fetch its diff (`git show <sha> --stat`) and, if a PR number is present,
+     fetch the PR body via `gh pr view <number> --json body,title` for extra
+     context.
+   - Write a **1–2 sentence plain-English summary** of what the change actually
+     does from a user's perspective — not a restatement of the commit title.
+     Focus on the observable effect, not the implementation.
+   - Categorize case-insensitively by conventional-commit prefix:
+     `feat:` / `feat!:` → **Features**, `fix:` → **Bug fixes**, everything
+     else → **Improvements**. Omit the version-bump commit itself.
+   - Omit a section entirely if it has no entries.
+
+   Example output:
    ```
-   gh pr create --title "Release vX.Y.Z" --base main --head release/vX.Y.Z \
-     --body "Version bump only. Merging triggers the build + draft release; publish it manually to update the Homebrew tap."
+   ## Features
+   - Tabs can now be dragged between split panes — drop a tab onto any pane
+     header to move it there instantly. (#37)
+
+   ## Bug fixes
+   - The sidebar now correctly highlights the active project even when
+     collapsed to icon-only mode.
+   - Projects reorder correctly after a drag; the previous ordering glitch
+     on drop is fixed.
+
+   ## Improvements
+   - The split-pane preview is now shown while dragging, giving clearer
+     visual feedback before you drop.
    ```
 
-9. **Report** the PR URL back to the user, and remind them of the two manual
-   gates still ahead: merging this PR (once CI + review pass) and clicking
-   **Publish** on the resulting draft GitHub Release.
+9. **Open the PR** — title must start with exactly `Release ` (this is what
+   `release.yml` matches on the squash-merge commit message). Use the recap
+   from step 8 as the top of the body, followed by the release instructions:
+   ```
+   gh pr create --title "Release vX.Y.Z" --base main --head release/vX.Y.Z \
+     --body "$(cat <<'EOF'
+   <recap sections here>
+
+   ---
+   Version bump only. Merging triggers the build + draft release; publish it manually to update the Homebrew tap.
+   EOF
+   )"
+   ```
+
+10. **Report** the PR URL back to the user, and remind them of the two manual
+    gates still ahead: merging this PR (once CI + review pass) and clicking
+    **Publish** on the resulting draft GitHub Release.
