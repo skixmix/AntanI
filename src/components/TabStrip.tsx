@@ -1,8 +1,8 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 import { projectInitials } from "../lib/constants";
 import { MAX_SPLIT_MEMBERS, type Split, type Tab, type TabKind, type TabStatus } from "../lib/tabs";
 import type { CustomCommand, Project } from "../lib/types";
-import { useDragReorder } from "../lib/useDragReorder";
+import { type SplitDropTarget, useDragReorder } from "../lib/useDragReorder";
 import {
   AnthropicIcon,
   CodexIcon,
@@ -40,6 +40,9 @@ interface TabStripProps {
   onViewSplit?: (splitId: string) => void;
   onRenameSplit?: (splitId: string, title: string) => void;
   onRecolorSplit?: (splitId: string, color: string) => void;
+  contentRef?: RefObject<HTMLDivElement | null>;
+  onTabDropToSplit?: (fromId: string) => void;
+  canTabDropToSplit?: (fromId: string) => boolean;
 }
 
 const QUICK_OPEN: { kind: TabKind; label: string; icon: ReactNode }[] = [
@@ -73,8 +76,20 @@ export function TabStrip({
   onViewSplit,
   onRenameSplit,
   onRecolorSplit,
+  contentRef,
+  onTabDropToSplit,
+  canTabDropToSplit,
 }: TabStripProps) {
-  const { draggingId, insertBeforeId, startDrag } = useDragReorder("tabs", false, onReorder);
+  const splitDrop: SplitDropTarget | undefined =
+    contentRef && onTabDropToSplit && canTabDropToSplit
+      ? { zoneRef: contentRef, canDrop: canTabDropToSplit, onDrop: onTabDropToSplit }
+      : undefined;
+  const { draggingId, insertBeforeId, startDrag } = useDragReorder(
+    "tabs",
+    false,
+    onReorder,
+    splitDrop,
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
