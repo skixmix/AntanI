@@ -1,5 +1,21 @@
 import type React from "react";
-import { useRef, useState } from "react";
+import { type RefObject, useRef, useState } from "react";
+import type { PaneRect } from "./splitLayout";
+
+/**
+ * A content area a dragged item can be dropped into for an action other than
+ * reordering (e.g. dropping a tab onto the workspace body to start/grow a
+ * split). A release inside `zoneRef`'s rect fires `onDrop` instead of a
+ * reorder; while hovering it, a highlight overlay is shown and the reorder
+ * insertion bar is suppressed. `previewRect` optionally narrows that overlay
+ * to just the sub-region the drop will land in (e.g. the new bottom row).
+ */
+export interface SplitDropTarget {
+  zoneRef: RefObject<HTMLDivElement | null>;
+  canDrop: (fromId: string) => boolean;
+  onDrop: (fromId: string) => void;
+  previewRect?: (fromId: string) => PaneRect | null;
+}
 
 /**
  * Pointer-events based drag-to-reorder for Tauri/WKWebView.
@@ -20,11 +36,14 @@ export function useDragReorder(
   scope: string,
   isVertical: boolean,
   onReorder: (fromId: string, insertBeforeId: string | null) => void,
+  splitDrop?: SplitDropTarget,
 ) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [insertBeforeId, setInsertBeforeId] = useState<string | null | undefined>(undefined);
   const dragIdRef = useRef<string | null>(null);
   const insertRef = useRef<string | null | undefined>(undefined);
+  const overDropRef = useRef(false);
+  const highlightRef = useRef<HTMLElement | null>(null);
 
   function findInsertBefore(x: number, y: number): string | null {
     const nodes = Array.from(
@@ -39,6 +58,42 @@ export function useDragReorder(
     return null;
   }
 
+  function pointerInDropZone(ev: PointerEvent): boolean {
+    if (!splitDrop) return false;
+    const zone = splitDrop.zoneRef.current;
+    const id = dragIdRef.current;
+    if (!zone || !id || !splitDrop.canDrop(id)) return false;
+    const r = zone.getBoundingClientRect();
+    return (
+      ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom
+    );
+  }
+
+  function setHighlight(on: boolean) {
+    if (on) {
+      const zone = splitDrop?.zoneRef.current;
+      const id = dragIdRef.current;
+      if (highlightRef.current || !zone || !id) return;
+      const rect = splitDrop?.previewRect?.(id) ?? null;
+      const el = document.createElement("div");
+      el.className =
+        "pointer-events-none absolute z-30 rounded-sm bg-primary/10 ring-2 ring-inset ring-primary transition-all";
+      if (rect) {
+        el.style.top = rect.top;
+        el.style.left = rect.left;
+        el.style.width = rect.width;
+        el.style.bottom = rect.bottom;
+      } else {
+        el.style.inset = "0";
+      }
+      zone.appendChild(el);
+      highlightRef.current = el;
+    } else {
+      highlightRef.current?.remove();
+      highlightRef.current = null;
+    }
+  }
+
   function startDrag(e: React.PointerEvent, id: string) {
     if (e.button !== 0) return;
     const target = e.target as Element;
@@ -47,12 +102,28 @@ export function useDragReorder(
 
     dragIdRef.current = id;
     insertRef.current = undefined;
+    overDropRef.current = false;
     setDraggingId(id);
     setInsertBeforeId(undefined);
     document.body.style.userSelect = "none";
     document.body.style.cursor = "grabbing";
 
     function onMove(ev: PointerEvent) {
+      if (pointerInDropZone(ev)) {
+        if (!overDropRef.current) {
+          overDropRef.current = true;
+          setHighlight(true);
+        }
+        if (insertRef.current !== undefined) {
+          insertRef.current = undefined;
+          setInsertBeforeId(undefined);
+        }
+        return;
+      }
+      if (overDropRef.current) {
+        overDropRef.current = false;
+        setHighlight(false);
+      }
       const next = findInsertBefore(ev.clientX, ev.clientY);
       if (next !== insertRef.current) {
         insertRef.current = next;
@@ -60,17 +131,24 @@ export function useDragReorder(
       }
     }
 
-    function onUp() {
+    function onUp(ev: PointerEvent) {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
+      const droppedInZone = pointerInDropZone(ev);
+      setHighlight(false);
+      overDropRef.current = false;
       const fromId = dragIdRef.current;
       const before = insertRef.current;
       dragIdRef.current = null;
       insertRef.current = undefined;
       setDraggingId(null);
       setInsertBeforeId(undefined);
+      if (fromId && droppedInZone && splitDrop) {
+        splitDrop.onDrop(fromId);
+        return;
+      }
       if (fromId && before !== undefined && before !== fromId) {
         const nodes = Array.from(
           document.querySelectorAll<HTMLElement>(`[data-drag-scope="${scope}"]`),

@@ -74,6 +74,13 @@ What should I do now? (select all that apply)
 5. [ ] Type your own answer
 ↔ tab  ↑↓ select  enter toggle  esc dismiss`;
 
+const OPENCODE_WORKING = `Sisyphus — Ultraworker · Claude Opus 4.8 (EU) Amazon Bedrock · max
+Digging through the reorder logic…
+⠋ esc interrupt`;
+
+const OPENCODE_WORKING_INTERRUPT_ARMED = `Building the busy-status signature…
+⠹ esc again to interrupt`;
+
 const CODEX_QUESTION = `Question 1/1 (1 unanswered)
 Which harmless permission test should we run?
 1. Create a marker on Desktop
@@ -122,9 +129,18 @@ describe("settledAgentStatus", () => {
   });
 
   it.each([
+    OPENCODE_WORKING,
+    OPENCODE_WORKING_INTERRUPT_ARMED,
+  ])("keeps opencode busy while its interrupt footer is shown", (screenText) => {
+    expect(settledAgentStatus("opencode", screenText)).toBe("busy");
+  });
+
+  it.each([
     ["claude", OPENCODE_PERMISSION],
     ["opencode", CODEX_PERMISSION],
     ["codex", CLAUDE_PERMISSION],
+    ["claude", OPENCODE_WORKING],
+    ["codex", OPENCODE_WORKING],
   ] as const)("does not apply another provider's cues to %s", (kind, screenText) => {
     expect(settledAgentStatus(kind, screenText)).toBe("ready");
   });

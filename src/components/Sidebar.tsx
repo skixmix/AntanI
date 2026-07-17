@@ -98,15 +98,21 @@ export function Sidebar({
     true,
     (fromId, insertBefore) => {
       const inactiveIds = inactiveProjects.map((p) => p.id);
-      const filtered = inactiveIds.filter((id) => id !== fromId);
+      const reordered = inactiveIds.filter((id) => id !== fromId);
       if (insertBefore === null) {
-        filtered.push(fromId);
+        reordered.push(fromId);
       } else {
-        const idx = filtered.indexOf(insertBefore);
-        if (idx !== -1) filtered.splice(idx, 0, fromId);
+        const idx = reordered.indexOf(insertBefore);
+        if (idx !== -1) reordered.splice(idx, 0, fromId);
+        else reordered.push(fromId);
       }
-      const activeIds = activeProjectOrder;
-      onReorder([...filtered, ...activeIds]);
+      // Slot the reordered inactive ids back into the positions they already
+      // occupy, leaving active projects put. Appending active ids at the end
+      // (the old behavior) yanked them to the bottom once their tabs closed.
+      const inactiveSet = new Set(inactiveIds);
+      let cursor = 0;
+      const merged = projects.map((p) => (inactiveSet.has(p.id) ? reordered[cursor++] : p.id));
+      onReorder(merged);
     },
   );
 
@@ -329,49 +335,107 @@ export function Sidebar({
       {/* Project list */}
       <div ref={listRef} className="flex-1 overflow-y-auto">
         {collapsed ? (
-          projects.map((project) => (
-            <button
-              key={project.id}
-              ref={project.id === activeProjectId ? activeCollapsedRowRef : undefined}
-              type="button"
-              title={project.name}
-              onClick={() => onSelect(project.id)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setCollapsedCtxMenu({ project, x: e.clientX, y: e.clientY });
-              }}
-              className={`relative flex w-full items-center justify-center py-2 no-select ${
-                projectNeedsAttention[project.id]
-                  ? `needs-attention-glow-${projectNeedsAttention[project.id]}`
-                  : ""
-              }`}
-            >
-              <span
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[10px] font-bold text-black/80"
-                style={{
-                  backgroundColor: project.color,
-                  boxShadow:
-                    project.id === activeProjectId
-                      ? "0 0 0 2px var(--color-foreground)"
-                      : undefined,
+          <>
+            {(hasSections ? orderedActiveProjects : projects).map((project) => (
+              <button
+                key={project.id}
+                ref={project.id === activeProjectId ? activeCollapsedRowRef : undefined}
+                type="button"
+                title={project.name}
+                onClick={() => onSelect(project.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setCollapsedCtxMenu({ project, x: e.clientX, y: e.clientY });
                 }}
+                className={`relative flex w-full items-center justify-center py-2 no-select ${
+                  projectNeedsAttention[project.id]
+                    ? `needs-attention-glow-${projectNeedsAttention[project.id]}`
+                    : ""
+                }`}
               >
-                {projectInitials(project.name)}
-              </span>
-              {projectStatuses[project.id] && (
-                <span className="absolute right-2.5 top-1 flex items-center justify-center">
-                  {projectStatuses[project.id] === "busy" ? (
-                    <span className="ai-busy-dot shrink-0" title="Activity in progress" />
-                  ) : (
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full bg-red-400"
-                      title="Waiting for input"
-                    />
-                  )}
+                <span
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[10px] font-bold text-black/80"
+                  style={{
+                    backgroundColor: project.color,
+                    boxShadow:
+                      project.id === activeProjectId
+                        ? "0 0 0 2px var(--color-foreground)"
+                        : undefined,
+                  }}
+                >
+                  {projectInitials(project.name)}
                 </span>
-              )}
-            </button>
-          ))
+                {projectStatuses[project.id] && (
+                  <span className="absolute right-2.5 top-1 flex items-center justify-center">
+                    {projectStatuses[project.id] === "busy" ? (
+                      <span className="ai-busy-dot shrink-0" title="Activity in progress" />
+                    ) : (
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full bg-red-400"
+                        title="Waiting for input"
+                      />
+                    )}
+                  </span>
+                )}
+              </button>
+            ))}
+            {hasSections && (
+              <>
+                <div
+                  className="mx-auto my-1"
+                  style={{
+                    width: 28,
+                    height: 1,
+                    background: "var(--color-sidebar-border)",
+                  }}
+                />
+                {inactiveProjects.map((project) => (
+                  <button
+                    key={project.id}
+                    ref={project.id === activeProjectId ? activeCollapsedRowRef : undefined}
+                    type="button"
+                    title={project.name}
+                    onClick={() => onSelect(project.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setCollapsedCtxMenu({ project, x: e.clientX, y: e.clientY });
+                    }}
+                    className={`relative flex w-full items-center justify-center py-2 no-select ${
+                      projectNeedsAttention[project.id]
+                        ? `needs-attention-glow-${projectNeedsAttention[project.id]}`
+                        : ""
+                    }`}
+                  >
+                    <span
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[10px] font-bold text-black/80"
+                      style={{
+                        backgroundColor: project.color,
+                        opacity: 0.5,
+                        boxShadow:
+                          project.id === activeProjectId
+                            ? "0 0 0 2px var(--color-foreground)"
+                            : undefined,
+                      }}
+                    >
+                      {projectInitials(project.name)}
+                    </span>
+                    {projectStatuses[project.id] && (
+                      <span className="absolute right-2.5 top-1 flex items-center justify-center">
+                        {projectStatuses[project.id] === "busy" ? (
+                          <span className="ai-busy-dot shrink-0" title="Activity in progress" />
+                        ) : (
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full bg-red-400"
+                            title="Waiting for input"
+                          />
+                        )}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </>
+            )}
+          </>
         ) : projects.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-xs leading-relaxed text-muted-foreground no-select">
             <span>No projects yet.</span>
