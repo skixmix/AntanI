@@ -37,7 +37,7 @@ const PROVIDER_PROMPT_SIGNATURES: Record<AgentKind, readonly PromptSignature[]> 
 
 const PROVIDER_BUSY_SIGNATURES: Record<AgentKind, readonly PromptSignature[]> = {
   claude: [[/esc to interrupt/i, /ctrl\+t to (?:show|hide) todos/i]],
-  opencode: [],
+  opencode: [[/esc\s+(?:again\s+to\s+)?interrupt/i]],
   codex: [],
 };
 

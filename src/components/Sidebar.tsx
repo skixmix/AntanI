@@ -98,15 +98,21 @@ export function Sidebar({
     true,
     (fromId, insertBefore) => {
       const inactiveIds = inactiveProjects.map((p) => p.id);
-      const filtered = inactiveIds.filter((id) => id !== fromId);
+      const reordered = inactiveIds.filter((id) => id !== fromId);
       if (insertBefore === null) {
-        filtered.push(fromId);
+        reordered.push(fromId);
       } else {
-        const idx = filtered.indexOf(insertBefore);
-        if (idx !== -1) filtered.splice(idx, 0, fromId);
+        const idx = reordered.indexOf(insertBefore);
+        if (idx !== -1) reordered.splice(idx, 0, fromId);
+        else reordered.push(fromId);
       }
-      const activeIds = activeProjectOrder;
-      onReorder([...filtered, ...activeIds]);
+      // Slot the reordered inactive ids back into the positions they already
+      // occupy, leaving active projects put. Appending active ids at the end
+      // (the old behavior) yanked them to the bottom once their tabs closed.
+      const inactiveSet = new Set(inactiveIds);
+      let cursor = 0;
+      const merged = projects.map((p) => (inactiveSet.has(p.id) ? reordered[cursor++] : p.id));
+      onReorder(merged);
     },
   );
 
