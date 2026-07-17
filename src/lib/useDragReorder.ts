@@ -1,17 +1,20 @@
 import type React from "react";
 import { type RefObject, useRef, useState } from "react";
+import type { PaneRect } from "./splitLayout";
 
 /**
  * A content area a dragged item can be dropped into for an action other than
  * reordering (e.g. dropping a tab onto the workspace body to start/grow a
  * split). A release inside `zoneRef`'s rect fires `onDrop` instead of a
  * reorder; while hovering it, a highlight overlay is shown and the reorder
- * insertion bar is suppressed.
+ * insertion bar is suppressed. `previewRect` optionally narrows that overlay
+ * to just the sub-region the drop will land in (e.g. the new bottom row).
  */
 export interface SplitDropTarget {
   zoneRef: RefObject<HTMLDivElement | null>;
   canDrop: (fromId: string) => boolean;
   onDrop: (fromId: string) => void;
+  previewRect?: (fromId: string) => PaneRect | null;
 }
 
 /**
@@ -69,10 +72,20 @@ export function useDragReorder(
   function setHighlight(on: boolean) {
     if (on) {
       const zone = splitDrop?.zoneRef.current;
-      if (highlightRef.current || !zone) return;
+      const id = dragIdRef.current;
+      if (highlightRef.current || !zone || !id) return;
+      const rect = splitDrop?.previewRect?.(id) ?? null;
       const el = document.createElement("div");
       el.className =
-        "pointer-events-none absolute inset-0 z-30 rounded-sm bg-primary/10 ring-2 ring-inset ring-primary";
+        "pointer-events-none absolute z-30 rounded-sm bg-primary/10 ring-2 ring-inset ring-primary transition-all";
+      if (rect) {
+        el.style.top = rect.top;
+        el.style.left = rect.left;
+        el.style.width = rect.width;
+        el.style.bottom = rect.bottom;
+      } else {
+        el.style.inset = "0";
+      }
       zone.appendChild(el);
       highlightRef.current = el;
     } else {

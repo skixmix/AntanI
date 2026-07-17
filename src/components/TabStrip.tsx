@@ -1,5 +1,6 @@
 import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 import { projectInitials } from "../lib/constants";
+import type { PaneRect } from "../lib/splitLayout";
 import { MAX_SPLIT_MEMBERS, type Split, type Tab, type TabKind, type TabStatus } from "../lib/tabs";
 import type { CustomCommand, Project } from "../lib/types";
 import { type SplitDropTarget, useDragReorder } from "../lib/useDragReorder";
@@ -43,6 +44,7 @@ interface TabStripProps {
   contentRef?: RefObject<HTMLDivElement | null>;
   onTabDropToSplit?: (fromId: string) => void;
   canTabDropToSplit?: (fromId: string) => boolean;
+  tabDropPreviewRect?: (fromId: string) => PaneRect | null;
 }
 
 const QUICK_OPEN: { kind: TabKind; label: string; icon: ReactNode }[] = [
@@ -79,10 +81,16 @@ export function TabStrip({
   contentRef,
   onTabDropToSplit,
   canTabDropToSplit,
+  tabDropPreviewRect,
 }: TabStripProps) {
   const splitDrop: SplitDropTarget | undefined =
     contentRef && onTabDropToSplit && canTabDropToSplit
-      ? { zoneRef: contentRef, canDrop: canTabDropToSplit, onDrop: onTabDropToSplit }
+      ? {
+          zoneRef: contentRef,
+          canDrop: canTabDropToSplit,
+          onDrop: onTabDropToSplit,
+          previewRect: tabDropPreviewRect,
+        }
       : undefined;
   const { draggingId, insertBeforeId, startDrag } = useDragReorder(
     "tabs",

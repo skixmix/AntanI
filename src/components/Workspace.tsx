@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { type PaneRect, paneCellRect } from "../lib/splitLayout";
 import {
   DEFAULT_SPLIT_RATIO,
   focusedTab,
@@ -144,6 +145,15 @@ export function Workspace({
     else onOpenToSide?.(fromId);
   };
 
+  const tabDropPreviewRect = (fromId: string): PaneRect | null => {
+    if (!canTabDropToSplit(fromId)) return null;
+    if (viewedSplit) {
+      const nextCount = viewedSplit.memberIds.length + 1;
+      return paneCellRect(nextCount - 1, nextCount, colRatio, rowRatio);
+    }
+    return paneCellRect(1, 2, DEFAULT_SPLIT_RATIO, DEFAULT_SPLIT_RATIO);
+  };
+
   return (
     <>
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -177,6 +187,7 @@ export function Workspace({
           contentRef={contentRef}
           onTabDropToSplit={handleTabDropToSplit}
           canTabDropToSplit={canTabDropToSplit}
+          tabDropPreviewRect={tabDropPreviewRect}
         />
 
         <div ref={contentRef} className="relative flex-1 overflow-hidden">
