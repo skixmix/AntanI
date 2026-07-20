@@ -74,6 +74,32 @@ can silently miss a newly changed file because its repository model is stale.
   open the IDE tab (`SourceControlSidebar.tsx`), since the server/webview/
   extension may still be starting up the first time a project's IDE tab opens.
 
+## App menu is swapped by IDE focus (`menu.rs` + `ide_webview.rs`)
+
+On macOS the app menu gets `performKeyEquivalent:` before web content, so any
+menu item whose accelerator matches a keystroke swallows it before the focused
+webview — including the embedded VS Code child — sees it. Because that menu is
+app-wide (there is no per-webview menu on macOS), we swap the whole menu on IDE
+focus instead:
+
+- **Main UI focused → `menu::build`** (full Edit: Undo/Redo/Cut/Copy/Paste/Select
+  All). macOS WKWebView *requires* those native items for undo, clipboard, and
+  select-all in the UI's own text fields — dropping them breaks those keys, and
+  removing Cut/Copy/Paste specifically breaks paste (see Tauri #2397 / Wry #328).
+- **Embedded VS Code focused → `menu::build_ide`** (Cut/Copy/Paste only). Dropping
+  Undo/Redo and Select All lets Cmd+Z / Cmd+Shift+Z / Cmd+A fall through to
+  Monaco. Clipboard items stay for the reason above.
+- `IdeWebviews::active` is the single source of truth for which menu is installed;
+  `set_ide_active` derives the menu from it. The IDE lifecycle commands
+  (create/show vs hide/close) can fire out of order across a project switch, so
+  deactivation only clears `active` when the id matches — never swap the menu
+  blindly per event.
+- **Known tradeoff, not a bug:** while VS Code is focused the surviving Cut/Copy/
+  Paste accelerators still shadow Cmd+K chords whose second stroke is Cmd+C/X/V
+  (e.g. Cmd+K Cmd+C = Add Line Comment). There is no stateless way to keep single
+  Cmd+C as Copy *and* free it for the chord; fixing it would need a native
+  `NSEvent` key router. Cmd+/ toggles comments and is unaffected.
+
 ## Backup archives
 
 - Export categories own paths by their first app-data component: Projects &

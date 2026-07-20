@@ -13,9 +13,15 @@ const OFFSCREEN: f64 = 1_000_000.0;
 /// webview. One hidden child webview per project is created lazily and kept alive
 /// across tab/project switches, so an editor's unsaved buffers survive a switch;
 /// it is torn down only when the IDE tab is closed or the project is removed.
+///
+/// `active` is the project whose IDE webview is the focused surface, if any — the
+/// single source of truth for which app menu is installed (`set_ide_active`).
+/// Lifecycle commands can fire out of order across a project switch, so the menu
+/// is derived from this state, not from each event alone.
 #[derive(Default)]
 pub struct IdeWebviews {
     open: Mutex<HashSet<String>>,
+    active: Mutex<Option<String>>,
 }
 
 /// Webview label for a project. One per project => at most one IDE origin/folder.
@@ -37,6 +43,42 @@ fn folder_url(port: u16, folder: &str) -> Result<Url, String> {
         Url::parse(&format!("http://{SERVE_WEB_HOST}:{port}/")).map_err(|e| e.to_string())?;
     url.query_pairs_mut().append_pair("folder", folder);
     Ok(url)
+}
+
+/// Install the app menu matching the focused surface and track the active IDE.
+/// Deactivation clears the flag only when `project_id` is the active one, so a
+/// `hide(A)` racing a `show(B)` can't restore the full menu while B is focused.
+/// Returning to the main UI refocuses the main webview so its menu accelerators
+/// act there, not on the parked (still first-responder) IDE child.
+fn set_ide_active(app: &AppHandle, project_id: &str, active: bool) {
+    let (changed, now_active) = {
+        let ide = app.state::<IdeWebviews>();
+        let mut guard = match ide.active.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        let was_active = guard.is_some();
+        if active {
+            *guard = Some(project_id.to_string());
+        } else if guard.as_deref() == Some(project_id) {
+            *guard = None;
+        }
+        (was_active != guard.is_some(), guard.is_some())
+    };
+    if !changed {
+        return;
+    }
+    let menu = if now_active {
+        crate::menu::build_ide(app)
+    } else {
+        if let Some(main) = app.get_webview_window("main") {
+            let _ = main.set_focus();
+        }
+        crate::menu::build(app)
+    };
+    if let Ok(menu) = menu {
+        let _ = app.set_menu(menu);
+    }
 }
 
 /// Create the project's IDE webview over the given content rect, or, if it already
@@ -63,6 +105,7 @@ pub fn create_ide_webview(
     if already_open {
         if let Some(webview) = app.get_webview(&label) {
             let _ = webview.set_bounds(bounds(x, y, width, height));
+            set_ide_active(&app, &project_id, true);
             let _ = webview.set_focus();
         }
         return Ok(());
@@ -102,6 +145,7 @@ pub fn create_ide_webview(
         .map_err(|e| e.to_string())?;
     // macOS renders a freshly-added child blank until its bounds are set once more.
     let _ = webview.set_bounds(bounds(x, y, width, height));
+    set_ide_active(&app, &project_id, true);
     let _ = webview.set_focus();
 
     app.state::<IdeWebviews>()
@@ -147,6 +191,7 @@ pub fn show_ide_webview(
         webview
             .set_bounds(bounds(x, y, width, height))
             .map_err(|e| e.to_string())?;
+        set_ide_active(&app, &project_id, true);
         let _ = webview.set_focus();
     }
     Ok(())
@@ -166,6 +211,7 @@ pub fn hide_ide_webview(app: AppHandle, project_id: String) -> Result<(), String
             }))
             .map_err(|e| e.to_string())?;
     }
+    set_ide_active(&app, &project_id, false);
     Ok(())
 }
 
@@ -176,6 +222,7 @@ pub fn close_ide_webview(app: AppHandle, project_id: String) -> Result<(), Strin
     if let Some(webview) = app.get_webview(&label_for(&project_id)) {
         let _ = webview.close();
     }
+    set_ide_active(&app, &project_id, false);
     let empty = {
         let ide = app.state::<IdeWebviews>();
         let mut open = ide.open.lock().map_err(|e| e.to_string())?;
