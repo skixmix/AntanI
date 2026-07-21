@@ -74,6 +74,60 @@ can silently miss a newly changed file because its repository model is stale.
   open the IDE tab (`SourceControlSidebar.tsx`), since the server/webview/
   extension may still be starting up the first time a project's IDE tab opens.
 
+## App menu is swapped by IDE focus (`menu.rs` + `ide_webview.rs`)
+
+On macOS the app menu gets `performKeyEquivalent:` before web content, so any
+menu item whose accelerator matches a keystroke swallows it before the focused
+webview — including the embedded VS Code child — sees it. Because that menu is
+app-wide (there is no per-webview menu on macOS), we swap the whole menu on IDE
+focus instead:
+
+- **Main UI focused → `menu::build`** (full Edit: Undo/Redo/Cut/Copy/Paste/Select
+  All). macOS WKWebView *requires* those native items for undo, clipboard, and
+  select-all in the UI's own text fields — dropping them breaks those keys, and
+  removing Cut/Copy/Paste specifically breaks paste (see Tauri #2397 / Wry #328).
+- **Embedded VS Code focused → `menu::build_ide`** (Cut/Copy/Paste only). Dropping
+  Undo/Redo and Select All lets Cmd+Z / Cmd+Shift+Z / Cmd+A fall through to
+  Monaco. Clipboard items stay for the reason above.
+- `IdeWebviews::active` is the single source of truth for which menu is installed;
+  `set_ide_active` derives the menu from it. The IDE lifecycle commands
+  (create/show vs hide/close) can fire out of order across a project switch, so
+  deactivation only clears `active` when the id matches — never swap the menu
+  blindly per event.
+- **Known tradeoff, not a bug:** while VS Code is focused the surviving Cut/Copy/
+  Paste accelerators still shadow Cmd+K chords whose second stroke is Cmd+C/X/V
+  (e.g. Cmd+K Cmd+C = Add Line Comment). There is no stateless way to keep single
+  Cmd+C as Copy *and* free it for the chord; fixing it would need a native
+  `NSEvent` key router. Cmd+/ toggles comments and is unaffected.
+
+## Window state restore is fullscreen-aware (`lib.rs`)
+
+`tauri-plugin-window-state` is registered with `.skip_initial_state("main")` and
+the main window is restored by hand (`restore_main_window`) instead of by the
+plugin's automatic pass. This is a deliberate workaround for a macOS bug, not an
+accident:
+
+- The plugin saves a fullscreen window's `inner_size` as its **windowed** size
+  (it guards the size-save against *maximized* but not *fullscreen*). On restore
+  it does `set_size(saved)` then `set_fullscreen(true)`.
+- When the app is relaunched **at login**, the external display / Spaces haven't
+  settled yet, so that saved fullscreen geometry lands on whatever monitor is
+  momentarily current and the window comes back "way over the screen size."
+- So we skip the plugin's auto-restore and restore ourselves: a windowed layout
+  restores immediately via the plugin's own `restore_state(StateFlags::all())`
+  (don't reimplement its monitor-intersection / maximized logic); a fullscreen
+  one keeps the config-default frame and, after `FULLSCREEN_RESTORE_DELAY_MS`,
+  restores **only** `FULLSCREEN | VISIBLE` — never the saved SIZE/POSITION — so
+  macOS computes the fullscreen frame itself once the display has settled.
+- The delay must run off the main thread (`thread::spawn` + `sleep`, then
+  `run_on_main_thread`): calling `run_on_main_thread` from `setup` runs
+  synchronously and wouldn't defer anything.
+- Consequence, accepted: quitting while fullscreen still persists the bogus
+  fullscreen size, but our fullscreen branch ignores it, so exiting a restored
+  fullscreen falls back to the 1200×800 config default rather than the last
+  custom windowed frame. Preserving that frame would require patching the
+  plugin's own SIZE/POSITION tracking to skip updates while `is_fullscreen()`.
+
 ## Backup archives
 
 - Export categories own paths by their first app-data component: Projects &
