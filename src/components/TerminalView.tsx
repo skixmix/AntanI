@@ -43,6 +43,13 @@ function shellEscapePath(path: string): string {
   return `'${path.split("'").join("'\\''")}'`;
 }
 
+// Only a single printable char (no ctrl/meta/alt) adds draft text. Named keys
+// (ArrowDown, Tab, ...) and modifier chords like opencode's ctrl+x subagent
+// view do not — they must not wedge the "composing" suppression window open.
+function isDraftTextKey(e: KeyboardEvent): boolean {
+  return e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+}
+
 interface TerminalViewProps {
   tabId: string;
   projects: readonly Project[];
@@ -246,7 +253,8 @@ export function TerminalView({
       // the composing check above, the terminal's own echo of the user's
       // still-being-typed message (e.g. containing "confirm" or "continue?")
       // can trip prompt detection before anything was ever sent.
-      if (settledAgentStatus(agentKind, liveScreenText()) === "waiting") {
+      const status = settledAgentStatus(agentKind, liveScreenText());
+      if (status === "waiting") {
         // Intentionally bypasses the armed guard: agents can issue permission
         // prompts mid-task after a turn has already resolved to "ready" (which
         // clears armed). We must catch those even without a new user keystroke.
@@ -254,6 +262,16 @@ export function TerminalView({
         seenBusy = true;
         window.clearTimeout(silenceTimer);
         setStatus("waiting");
+      } else if (status === "busy" && lastStatus !== "busy") {
+        // A live busy marker (e.g. opencode's "esc interrupt") means the agent
+        // is working now, even if it resumed on its own after a turn resolved
+        // to "ready" (which clears armed) while spawned subagents ran on.
+        // Keying off a real on-screen marker, not onOutputArrived's "any
+        // output = busy", avoids misfiring on an idle splash or lone spinner.
+        armed = true;
+        seenBusy = true;
+        setStatus("busy");
+        scheduleReadyCheck();
       } else if (armed && lastStatus === "waiting") {
         // The prompt text has left the screen — fall back to busy so the
         // silence timer (already scheduled by onOutputArrived) can resolve
@@ -278,9 +296,17 @@ export function TerminalView({
     // (and composing) is gated on that instead.
     term.onKey(({ domEvent }) => {
       armed = true;
-      // Enter (not Shift+Enter, which inserts a newline rather than
-      // submitting) is the one keystroke that ends a draft.
-      composing = !(domEvent.key === "Enter" && !domEvent.shiftKey);
+      // Plain Enter submits a draft and Escape abandons it — both end
+      // composing. A printable key starts/continues one. Everything else
+      // (arrows, ctrl/cmd/alt chords such as opencode's ctrl+x to view
+      // subagents) leaves composing as-is: treating those as "composing" used
+      // to wedge it true with no submit to clear it, freezing every
+      // busy/ready/waiting transition until the next Enter.
+      if ((domEvent.key === "Enter" && !domEvent.shiftKey) || domEvent.key === "Escape") {
+        composing = false;
+      } else if (isDraftTextKey(domEvent)) {
+        composing = true;
+      }
     });
     // xterm.js sends the same "\r" for Enter and Shift+Enter, so the PTY never
     // sees the modifier unless we encode it ourselves. Agent composers use
