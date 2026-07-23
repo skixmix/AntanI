@@ -9,6 +9,7 @@ mod sound;
 mod state;
 mod updater;
 mod vscode_server;
+mod window_restore;
 
 use state::{
     AppData, AppState, InjectTarget, Settings, SettingsState, PROJECTS_FILE, SETTINGS_FILE,
@@ -255,55 +256,6 @@ fn import_backup(app: tauri::AppHandle, path: String) -> Result<(), String> {
     app.restart()
 }
 
-// Login-item relaunches restore the window before the external display / Spaces
-// have settled, so the window-state plugin's saved fullscreen SIZE/POSITION land
-// on whatever monitor is momentarily current and overshoot it (the reported
-// "fullscreen way over the screen size"). We skip the plugin's automatic restore
-// for "main" and restore it ourselves: a windowed layout restores immediately,
-// but a fullscreen one keeps the config-default frame and, once the display has
-// had a moment to settle, restores only the fullscreen flag so macOS sizes it.
-const FULLSCREEN_RESTORE_DELAY_MS: u64 = 500;
-
-#[derive(serde::Deserialize)]
-struct PersistedWindowFullscreen {
-    #[serde(default)]
-    fullscreen: bool,
-}
-
-fn saved_main_was_fullscreen(app: &tauri::App) -> bool {
-    use tauri_plugin_window_state::AppHandleExt;
-    let Ok(dir) = app.path().app_config_dir() else {
-        return false;
-    };
-    let Ok(contents) = std::fs::read_to_string(dir.join(app.handle().filename())) else {
-        return false;
-    };
-    serde_json::from_str::<std::collections::HashMap<String, PersistedWindowFullscreen>>(&contents)
-        .ok()
-        .and_then(|windows| windows.get("main").map(|w| w.fullscreen))
-        .unwrap_or(false)
-}
-
-fn restore_main_window(app: &tauri::App) {
-    use tauri_plugin_window_state::{StateFlags, WindowExt};
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    if !saved_main_was_fullscreen(app) {
-        let _ = window.restore_state(StateFlags::all());
-        return;
-    }
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(
-            FULLSCREEN_RESTORE_DELAY_MS,
-        ));
-        let window_on_main = window.clone();
-        let _ = window.run_on_main_thread(move || {
-            let _ = window_on_main.restore_state(StateFlags::FULLSCREEN | StateFlags::VISIBLE);
-        });
-    });
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -317,7 +269,7 @@ pub fn run() {
         )
         .setup(|app| {
             app.set_menu(menu::build(app.handle())?)?;
-            restore_main_window(app);
+            window_restore::restore_main_window(app);
 
             let dir = app.path().app_data_dir()?;
             backup::recover_interrupted_import(&dir)?;
