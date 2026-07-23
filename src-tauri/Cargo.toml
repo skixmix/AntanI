@@ -1,6 +1,6 @@
 [package]
 name = "antani"
-version = "0.12.2"
+version = "1.0.0"
 description = "AntanI — a minimal Tauri orchestrator for CLI coding agents"
 license = "MIT"
 edition = "2021"
