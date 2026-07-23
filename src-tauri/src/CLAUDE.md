@@ -100,7 +100,7 @@ focus instead:
   Cmd+C as Copy *and* free it for the chord; fixing it would need a native
   `NSEvent` key router. Cmd+/ toggles comments and is unaffected.
 
-## Window state restore is fullscreen-aware (`lib.rs`)
+## Window state restore is fullscreen-aware (`window_restore.rs`)
 
 `tauri-plugin-window-state` is registered with `.skip_initial_state("main")` and
 the main window is restored by hand (`restore_main_window`) instead of by the
@@ -110,18 +110,23 @@ accident:
 - The plugin saves a fullscreen window's `inner_size` as its **windowed** size
   (it guards the size-save against *maximized* but not *fullscreen*). On restore
   it does `set_size(saved)` then `set_fullscreen(true)`.
-- When the app is relaunched **at login**, the external display / Spaces haven't
-  settled yet, so that saved fullscreen geometry lands on whatever monitor is
-  momentarily current and the window comes back "way over the screen size."
+- When the app is relaunched **at login**, the external display / Spaces and
+  DisplayLink's automatic window move haven't settled yet. Entering fullscreen
+  before that move leaves the native fullscreen frame associated with the wrong
+  monitor, and moving it afterward can make it overflow the destination display.
 - So we skip the plugin's auto-restore and restore ourselves: a windowed layout
   restores immediately via the plugin's own `restore_state(StateFlags::all())`
   (don't reimplement its monitor-intersection / maximized logic); a fullscreen
-  one keeps the config-default frame and, after `FULLSCREEN_RESTORE_DELAY_MS`,
-  restores **only** `FULLSCREEN | VISIBLE` — never the saved SIZE/POSITION — so
-  macOS computes the fullscreen frame itself once the display has settled.
-- The delay must run off the main thread (`thread::spawn` + `sleep`, then
-  `run_on_main_thread`): calling `run_on_main_thread` from `setup` runs
-  synchronously and wouldn't defer anything.
+  one keeps the config-default frame. A single-monitor launch retains the 500 ms
+  delay; multi-monitor or uncertain detection waits for `Moved` /
+  `ScaleFactorChanged` activity to stay quiet for 200 ms, with a two-second hard
+  fallback. It then restores **only** `FULLSCREEN | VISIBLE` — never the saved
+  SIZE/POSITION — so macOS computes the fullscreen frame on the destination
+  display. The one-shot guard is set before dispatch because native fullscreen
+  emits its own move/scale events.
+- Waiting must run off the main thread, then use `run_on_main_thread` for the
+  restore: calling `run_on_main_thread` from `setup` runs synchronously and
+  wouldn't defer anything.
 - Consequence, accepted: quitting while fullscreen still persists the bogus
   fullscreen size, but our fullscreen branch ignores it, so exiting a restored
   fullscreen falls back to the 1200×800 config default rather than the last
