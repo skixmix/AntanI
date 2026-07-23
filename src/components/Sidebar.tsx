@@ -3,6 +3,7 @@ import type React from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { projectInitials } from "../lib/constants";
 import { fileDrag } from "../lib/fileDrag";
+import { reorderProjectSubset } from "../lib/projectOrder";
 import type { Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
 import { ContextMenu } from "./ContextMenu";
@@ -74,45 +75,18 @@ export function Sidebar({
   );
   const hasSections = activeProjects.length > 0;
 
-  const [activeProjectOrder, setActiveProjectOrder] = useState<string[]>(() =>
-    activeProjects.map((p) => p.id),
-  );
-
-  const activeProjectIds = useMemo(() => activeProjects.map((p) => p.id), [activeProjects]);
-
-  useEffect(() => {
-    setActiveProjectOrder((prev) => {
-      const incoming = new Set(activeProjectIds);
-      const kept = prev.filter((id) => incoming.has(id));
-      const added = activeProjectIds.filter((id) => !prev.includes(id));
-      return [...kept, ...added];
-    });
-  }, [activeProjectIds]);
-
-  const orderedActiveProjects = activeProjectOrder
-    .map((id) => activeProjects.find((p) => p.id === id))
-    .filter((p): p is (typeof activeProjects)[number] => p !== undefined);
-
   const { draggingId, insertBeforeId, startDrag } = useDragReorder(
     "projects",
     true,
     (fromId, insertBefore) => {
       const inactiveIds = inactiveProjects.map((p) => p.id);
-      const reordered = inactiveIds.filter((id) => id !== fromId);
-      if (insertBefore === null) {
-        reordered.push(fromId);
-      } else {
-        const idx = reordered.indexOf(insertBefore);
-        if (idx !== -1) reordered.splice(idx, 0, fromId);
-        else reordered.push(fromId);
-      }
-      // Slot the reordered inactive ids back into the positions they already
-      // occupy, leaving active projects put. Appending active ids at the end
-      // (the old behavior) yanked them to the bottom once their tabs closed.
-      const inactiveSet = new Set(inactiveIds);
-      let cursor = 0;
-      const merged = projects.map((p) => (inactiveSet.has(p.id) ? reordered[cursor++] : p.id));
-      onReorder(merged);
+      onReorder(
+        reorderProjectSubset(
+          projects.map((p) => p.id),
+          inactiveIds,
+          { fromId, insertBeforeId: insertBefore },
+        ),
+      );
     },
   );
 
@@ -121,16 +95,13 @@ export function Sidebar({
     insertBeforeId: activeInsertBeforeId,
     startDrag: startActiveDrag,
   } = useDragReorder("projects-active", true, (fromId, insertBefore) => {
-    setActiveProjectOrder((prev) => {
-      const filtered = prev.filter((id) => id !== fromId);
-      if (insertBefore === null) {
-        filtered.push(fromId);
-      } else {
-        const idx = filtered.indexOf(insertBefore);
-        if (idx !== -1) filtered.splice(idx, 0, fromId);
-      }
-      return filtered;
-    });
+    onReorder(
+      reorderProjectSubset(
+        projects.map((p) => p.id),
+        activeProjects.map((p) => p.id),
+        { fromId, insertBeforeId: insertBefore },
+      ),
+    );
   });
   function withPathDrag(project: Project, reorderStart: (e: React.PointerEvent) => void) {
     return (e: React.PointerEvent) => {
@@ -336,7 +307,7 @@ export function Sidebar({
       <div ref={listRef} className="flex-1 overflow-y-auto">
         {collapsed ? (
           <>
-            {(hasSections ? orderedActiveProjects : projects).map((project) => (
+            {(hasSections ? activeProjects : projects).map((project) => (
               <button
                 key={project.id}
                 ref={project.id === activeProjectId ? activeCollapsedRowRef : undefined}
@@ -463,7 +434,7 @@ export function Sidebar({
             </button>
             {activeSectionOpen && (
               <>
-                {orderedActiveProjects.map((project) => (
+                {activeProjects.map((project) => (
                   <ProjectRow
                     key={project.id}
                     dragScope="projects-active"
