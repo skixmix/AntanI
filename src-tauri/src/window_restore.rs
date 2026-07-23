@@ -118,13 +118,15 @@ pub fn restore_main_window(app: &tauri::App) {
         let _ = window.restore_state(StateFlags::all());
         return;
     }
-    if window
-        .available_monitors()
-        .is_ok_and(|monitors| monitors.len() == 1)
-    {
-        restore_fullscreen_after_delay(window, SINGLE_MONITOR_RESTORE_DELAY);
-    } else {
-        restore_fullscreen_after_display_settles(window);
+    match window.available_monitors() {
+        Ok(monitors) if monitors.len() == 1 => {
+            restore_fullscreen_after_delay(window, SINGLE_MONITOR_RESTORE_DELAY);
+        }
+        Ok(_) => restore_fullscreen_after_display_settles(window),
+        Err(err) => {
+            eprintln!("antani: failed to enumerate monitors, assuming multi-monitor: {err}");
+            restore_fullscreen_after_display_settles(window);
+        }
     }
 }
 

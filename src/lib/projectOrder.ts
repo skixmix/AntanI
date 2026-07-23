@@ -8,6 +8,8 @@ export function reorderProjectSubset(
   subsetIds: readonly string[],
   move: ProjectReorder,
 ): string[] {
+  if (!subsetIds.includes(move.fromId)) return projectIds.slice();
+
   const reordered = subsetIds.filter((id) => id !== move.fromId);
   if (move.insertBeforeId === null) {
     reordered.push(move.fromId);
