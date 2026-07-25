@@ -128,7 +128,7 @@ describe("settledAgentStatus", () => {
     CLAUDE_WORKING_WITH_TODOS,
     CLAUDE_WORKING_WITH_VISIBLE_TODOS,
     CLAUDE_WORKING_NO_TODOS,
-  ])("keeps Claude busy while its todo task UI is active", (screenText) => {
+  ])("keeps Claude busy whether or not its todo task UI is active", (screenText) => {
     expect(settledAgentStatus("claude", screenText)).toBe("busy");
   });
 
