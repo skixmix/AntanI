@@ -49,6 +49,9 @@ const CLAUDE_WORKING_WITH_VISIBLE_TODOS = `Tasks
 ☐ Run the focused tests
 esc to interrupt · ctrl+t to hide todos`;
 
+const CLAUDE_WORKING_NO_TODOS = `✳ Considering… (19m 59s · ↓ 85.0k tokens)
+▸▸ accept edits on (shift+tab to cycle) · esc to interrupt · ← for agents`;
+
 const OPENCODE_QUESTION = `Which harmless permission test should we run?
 1. Create a marker on Desktop
 4. Type your own answer
@@ -124,7 +127,8 @@ describe("settledAgentStatus", () => {
   it.each([
     CLAUDE_WORKING_WITH_TODOS,
     CLAUDE_WORKING_WITH_VISIBLE_TODOS,
-  ])("keeps Claude busy while its todo task UI is active", (screenText) => {
+    CLAUDE_WORKING_NO_TODOS,
+  ])("keeps Claude busy whether or not its todo task UI is active", (screenText) => {
     expect(settledAgentStatus("claude", screenText)).toBe("busy");
   });
 
