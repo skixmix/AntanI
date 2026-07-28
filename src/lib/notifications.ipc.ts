@@ -74,3 +74,12 @@ export function notifyAgentWaiting(
 ) {
   notify("Agent needs input", projectName, tabTitle, projectId, tabId);
 }
+
+export function notifyTerminalFinished(
+  projectName: string,
+  tabTitle: string,
+  projectId: string,
+  tabId: string,
+) {
+  notify("Terminal finished", projectName, tabTitle, projectId, tabId);
+}

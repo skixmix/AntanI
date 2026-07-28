@@ -15,7 +15,12 @@ import { useIdeFileOpen } from "./components/useIdeFileOpen";
 import { Workspace } from "./components/Workspace";
 import * as api from "./lib/api.ipc";
 import { basename, defaultColorForIndex, MAX_QUICK_SWITCH } from "./lib/constants";
-import { initNotifications, notifyAgentReady, notifyAgentWaiting } from "./lib/notifications.ipc";
+import {
+  initNotifications,
+  notifyAgentReady,
+  notifyAgentWaiting,
+  notifyTerminalFinished,
+} from "./lib/notifications.ipc";
 import { playSystemSound } from "./lib/sound.ipc";
 import {
   activePaneTabs,
@@ -367,12 +372,22 @@ function App() {
           delete rest[tabId];
           return rest;
         });
-      } else if (findTabOwner(tabsRef.current, tabId) && !isViewingTab(tabId)) {
-        // A job finished off-screen: neutral, silent "look at me" cue, cleared
-        // when the tab is next viewed (same lifecycle as agent attention). The
-        // owner check drops the redundant running=false that TerminalView fires
-        // on unmount when the tab is already being closed.
-        setNeedsAttention((s) => (s[tabId] ? s : { ...s, [tabId]: true }));
+        return;
+      }
+      // A job finished. The owner check drops the redundant running=false that
+      // TerminalView fires on unmount when the tab is already being closed.
+      const owner = findTabOwner(tabsRef.current, tabId);
+      if (!owner || isViewingTab(tabId)) return;
+      // Off-screen finish: neutral, silent "look at me" cue, cleared when the
+      // tab is next viewed (same lifecycle as agent attention).
+      setNeedsAttention((s) => (s[tabId] ? s : { ...s, [tabId]: true }));
+      // System notification only when the whole app is unfocused, matching the
+      // agent path: while focused, the glow above is the signal instead. Never
+      // a sound for a plain terminal, unlike agents.
+      const project = projectsRef.current.find((p) => p.id === owner.projectId);
+      const notificationsEnabled = settingsRef.current?.notificationsEnabled ?? true;
+      if (project && notificationsEnabled && !windowFocusedRef.current) {
+        notifyTerminalFinished(project.name, owner.tab.title, owner.projectId, tabId);
       }
     },
     [isViewingTab],
