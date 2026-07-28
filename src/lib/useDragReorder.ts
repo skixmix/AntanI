@@ -45,10 +45,26 @@ export function useDragReorder(
   const overDropRef = useRef(false);
   const highlightRef = useRef<HTMLElement | null>(null);
 
-  function findInsertBefore(x: number, y: number): string | null {
+  function findInsertBefore(x: number, y: number): string | null | undefined {
     const nodes = Array.from(
       document.querySelectorAll<HTMLElement>(`[data-drag-scope="${scope}"]`),
     );
+    if (nodes.length === 0) return undefined;
+
+    // Off the list's cross-axis (a project row dragged sideways onto a
+    // terminal) is not a reorder, so report no target. That hides the
+    // insertion bar and skips the release-time reorder, leaving the
+    // terminal's own path-drop as the only action.
+    let bandStart = Number.POSITIVE_INFINITY;
+    let bandEnd = Number.NEGATIVE_INFINITY;
+    for (const node of nodes) {
+      const rect = node.getBoundingClientRect();
+      bandStart = Math.min(bandStart, isVertical ? rect.left : rect.top);
+      bandEnd = Math.max(bandEnd, isVertical ? rect.right : rect.bottom);
+    }
+    const cross = isVertical ? x : y;
+    if (cross < bandStart || cross > bandEnd) return undefined;
+
     for (const node of nodes) {
       const rect = node.getBoundingClientRect();
       const mid = isVertical ? (rect.top + rect.bottom) / 2 : (rect.left + rect.right) / 2;
