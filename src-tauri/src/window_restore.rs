@@ -22,10 +22,10 @@ const SINGLE_MONITOR_RESTORE_DELAY: Duration = Duration::from_millis(500);
 const DISPLAY_QUIET_PERIOD: Duration = Duration::from_millis(200);
 const FULLSCREEN_RESTORE_DEADLINE: Duration = Duration::from_secs(2);
 
-// Mirrors the main window's inner size in tauri.conf.json; the pre-fullscreen
-// frame we hand to macOS must be a real, on-screen windowed size.
-const DEFAULT_WINDOW_WIDTH: f64 = 1200.0;
-const DEFAULT_WINDOW_HEIGHT: f64 = 800.0;
+// Tauri's own built-in default, used only if "main" is somehow missing from
+// tauri.conf.json's window list (should not happen in practice).
+const FALLBACK_WINDOW_WIDTH: f64 = 800.0;
+const FALLBACK_WINDOW_HEIGHT: f64 = 600.0;
 
 #[derive(serde::Deserialize)]
 struct PersistedMainWindow {
@@ -68,13 +68,28 @@ fn next_restore_wait(
     Some(until_quiet.min(until_deadline))
 }
 
+// The "main" window's logical size from tauri.conf.json, falling back to
+// Tauri's own default only if "main" is somehow absent from the config.
+fn configured_window_size(app: &tauri::App) -> (f64, f64) {
+    app.config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == "main")
+        .map_or((FALLBACK_WINDOW_WIDTH, FALLBACK_WINDOW_HEIGHT), |w| {
+            (w.width, w.height)
+        })
+}
+
 // Pick the monitor the window was fullscreen on if it is still attached (its
 // saved frame centre lands inside one), else the primary, else any. Returns the
 // config-default window size centered on that monitor, in physical pixels.
 fn target_windowed_frame(
+    app: &tauri::App,
     window: &tauri::WebviewWindow,
     saved: &PersistedMainWindow,
 ) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    let (default_width, default_height) = configured_window_size(app);
     let monitors = window.available_monitors().ok()?;
     let center_x = saved.x.saturating_add(saved.width as i32 / 2);
     let center_y = saved.y.saturating_add(saved.height as i32 / 2);
@@ -93,8 +108,8 @@ fn target_windowed_frame(
         .or_else(|| monitors.first().cloned())?;
 
     let scale = target.scale_factor();
-    let win_w = (DEFAULT_WINDOW_WIDTH * scale).round() as u32;
-    let win_h = (DEFAULT_WINDOW_HEIGHT * scale).round() as u32;
+    let win_w = (default_width * scale).round() as u32;
+    let win_h = (default_height * scale).round() as u32;
     let mp = target.position();
     let ms = target.size();
     let x = mp.x + (ms.width as i32 - win_w as i32) / 2;
@@ -184,7 +199,7 @@ pub fn restore_main_window(app: &tauri::App) {
         let _ = window.restore_state(StateFlags::all());
         return;
     }
-    let frame = target_windowed_frame(&window, &saved);
+    let frame = target_windowed_frame(app, &window, &saved);
     match window.available_monitors() {
         Ok(monitors) if monitors.len() == 1 => {
             enter_fullscreen_after_delay(window, frame, SINGLE_MONITOR_RESTORE_DELAY);

@@ -129,20 +129,23 @@ accident:
 - A fullscreen saved layout waits for the display to settle (single-monitor: a
   500 ms delay; multi-monitor or uncertain detection: `Moved` / `Resized` /
   `ScaleFactorChanged` activity stays quiet for 200 ms, two-second hard fallback), then
-  on the main thread places a config-default `1200×800` windowed frame **centered
+  on the main thread places a config-default windowed frame **centered
   on a still-attached target monitor** (the monitor whose bounds contain the saved
   frame's centre, else the primary, else any), shows the window, calls
   `set_fullscreen(true)`, and focuses. Handing `toggleFullScreen:` an unambiguous
   on-screen frame on a valid monitor, after the startup churn, is what stops the
-  overshoot. `DEFAULT_WINDOW_WIDTH/HEIGHT` must stay in sync with the config.
+  overshoot. `configured_window_size` reads the "main" entry's width/height
+  straight from `app.config()` (parsed `tauri.conf.json`), so there is nothing to
+  keep in sync by hand; `FALLBACK_WINDOW_WIDTH/HEIGHT` only fires if "main" is
+  somehow missing from the config.
 - Waiting must run off the main thread, then use `run_on_main_thread` for the
   restore: calling `run_on_main_thread` from `setup` runs synchronously and
   wouldn't defer anything. Note `run_on_main_thread` does not make fullscreen
   synchronous; tao still queues the native transition asynchronously.
 - Consequence, accepted: quitting while fullscreen still persists the bogus
   fullscreen size, but our fullscreen branch ignores it and rebuilds a centered
-  default frame, so exiting a restored fullscreen falls back to the 1200×800
-  config default rather than the last custom windowed frame.
+  default frame, so exiting a restored fullscreen falls back to the
+  tauri.conf.json config default rather than the last custom windowed frame.
 - This is a pragmatic pure-Tauri fix verified by running the app. If the AppKit
   race ever slips through again, the next levers (both need an `objc2` bridge, so
   weigh them against the minimalism rule) are disabling per-window NSWindow

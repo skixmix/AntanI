@@ -28,8 +28,11 @@ export interface SplitDropTarget {
  *
  * Returns:
  *   draggingId    — id of item being dragged (for lift styling)
- *   insertBeforeId — id of item the dragged item will be inserted *before*,
- *                    or null meaning "append to end"
+ *   insertBeforeId — id of item the dragged item will be inserted *before*;
+ *                    null means "append to end"; undefined means "not a
+ *                    reorder target" (no active drag, or the pointer is off
+ *                    the list's cross-axis) — callers must treat this as
+ *                    distinct from null, not fall back to end-of-list
  *   startDrag
  */
 export function useDragReorder(
@@ -165,6 +168,8 @@ export function useDragReorder(
         splitDrop.onDrop(fromId);
         return;
       }
+      // undefined means "not a valid reorder target" (off cross-axis): skip
+      // the reorder rather than treating it as null's "append to end".
       if (fromId && before !== undefined && before !== fromId) {
         const nodes = Array.from(
           document.querySelectorAll<HTMLElement>(`[data-drag-scope="${scope}"]`),
