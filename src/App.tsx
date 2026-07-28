@@ -99,6 +99,8 @@ function App() {
   const notifiedWaitingRef = useRef(new Set<string>());
   const tabStatusesRef = useRef(tabStatuses);
   tabStatusesRef.current = tabStatuses;
+  const runningTabsRef = useRef(runningTabs);
+  runningTabsRef.current = runningTabs;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   // Tracks the native window's actual focus state, not document.hasFocus():
@@ -278,77 +280,103 @@ function App() {
     [activeId],
   );
 
-  const handleStatusChange = useCallback((tabId: string, status: TabStatus) => {
-    const prevStatus = tabStatusesRef.current[tabId];
-    // Dedupe against the ref (updated synchronously right here), not React
-    // state: TerminalView can fire two "waiting" calls back-to-back — e.g. a
-    // permission prompt that redraws across two write flushes — faster than
-    // a render can land, so a state-only check would see the same stale
-    // prevStatus twice and double-notify.
-    if (prevStatus === status) return;
-    tabStatusesRef.current = { ...tabStatusesRef.current, [tabId]: status };
+  // True only when the tab is on a visible pane of the active project AND the
+  // native window is focused, i.e. the user is actually looking at it. Drives
+  // whether a status change / job finish is worth an attention cue.
+  const isViewingTab = useCallback((tabId: string): boolean => {
+    const owner = findTabOwner(tabsRef.current, tabId);
+    if (!owner || activeProjectIdRef.current !== owner.projectId) return false;
+    const ownerPt = tabsRef.current[owner.projectId];
+    if (!ownerPt) return false;
+    const panes = activePaneTabs(ownerPt);
+    const onVisiblePane =
+      panes.primary?.id === tabId ||
+      panes.secondary?.id === tabId ||
+      panes.tertiary?.id === tabId ||
+      panes.quaternary?.id === tabId;
+    return onVisiblePane && windowFocusedRef.current;
+  }, []);
 
-    let notify = false;
-    if (status === "ready" && prevStatus === "busy") {
-      notify = true;
-    } else if (status === "waiting") {
-      notify = !notifiedWaitingRef.current.has(tabId);
-      notifiedWaitingRef.current.add(tabId);
-    }
-    if (status !== "waiting") {
-      notifiedWaitingRef.current.delete(tabId);
-    }
-    if (notify) {
-      const owner = findTabOwner(tabsRef.current, tabId);
-      const project = projectsRef.current.find((p) => p.id === owner?.projectId);
-      const ownerPt = owner ? tabsRef.current[owner.projectId] : undefined;
-      const panes = ownerPt
-        ? activePaneTabs(ownerPt)
-        : { primary: null, secondary: null, tertiary: null, quaternary: null };
-      const isVisiblePaneTab =
-        panes.primary?.id === tabId ||
-        panes.secondary?.id === tabId ||
-        panes.tertiary?.id === tabId ||
-        panes.quaternary?.id === tabId;
-      const isOpenTab =
-        !!owner && activeProjectIdRef.current === owner.projectId && isVisiblePaneTab;
-      if (owner && project) {
-        const focusedOnTab = isOpenTab && windowFocusedRef.current;
-        // No glow or system notification when already looking at this tab.
-        if (!focusedOnTab) {
-          setNeedsAttention((s) => (s[tabId] ? s : { ...s, [tabId]: true }));
-          // System notifications are for when the user isn't looking at the app
-          // at all — while it's focused, the glow above is the "look at me"
-          // signal instead, even for a background tab/project.
-          const notificationsEnabled = settingsRef.current?.notificationsEnabled ?? true;
-          if (notificationsEnabled && !windowFocusedRef.current) {
-            const notifyFn = status === "ready" ? notifyAgentReady : notifyAgentWaiting;
-            notifyFn(project.name, owner.tab.title, owner.projectId, tabId);
+  const handleStatusChange = useCallback(
+    (tabId: string, status: TabStatus) => {
+      const prevStatus = tabStatusesRef.current[tabId];
+      // Dedupe against the ref (updated synchronously right here), not React
+      // state: TerminalView can fire two "waiting" calls back-to-back, e.g. a
+      // permission prompt that redraws across two write flushes, faster than
+      // a render can land, so a state-only check would see the same stale
+      // prevStatus twice and double-notify.
+      if (prevStatus === status) return;
+      tabStatusesRef.current = { ...tabStatusesRef.current, [tabId]: status };
+
+      let notify = false;
+      if (status === "ready" && prevStatus === "busy") {
+        notify = true;
+      } else if (status === "waiting") {
+        notify = !notifiedWaitingRef.current.has(tabId);
+        notifiedWaitingRef.current.add(tabId);
+      }
+      if (status !== "waiting") {
+        notifiedWaitingRef.current.delete(tabId);
+      }
+      if (notify) {
+        const owner = findTabOwner(tabsRef.current, tabId);
+        const project = projectsRef.current.find((p) => p.id === owner?.projectId);
+        if (owner && project) {
+          const focusedOnTab = isViewingTab(tabId);
+          // No glow or system notification when already looking at this tab.
+          if (!focusedOnTab) {
+            setNeedsAttention((s) => (s[tabId] ? s : { ...s, [tabId]: true }));
+            // System notifications are for when the user isn't looking at the app
+            // at all: while it's focused, the glow above is the "look at me"
+            // signal instead, even for a background tab/project.
+            const notificationsEnabled = settingsRef.current?.notificationsEnabled ?? true;
+            if (notificationsEnabled && !windowFocusedRef.current) {
+              const notifyFn = status === "ready" ? notifyAgentReady : notifyAgentWaiting;
+              notifyFn(project.name, owner.tab.title, owner.projectId, tabId);
+            }
+          }
+          // Sound plays for any tab transition when enabled, including the
+          // currently open tab.
+          if (settingsRef.current?.soundEnabled ?? true) {
+            const soundName =
+              status === "ready"
+                ? (settingsRef.current?.soundReady ?? "Glass")
+                : (settingsRef.current?.soundWaiting ?? "Ping");
+            void playSystemSound(soundName);
           }
         }
-        // Sound plays for any tab transition when enabled — including the
-        // currently open tab.
-        if (settingsRef.current?.soundEnabled ?? true) {
-          const soundName =
-            status === "ready"
-              ? (settingsRef.current?.soundReady ?? "Glass")
-              : (settingsRef.current?.soundWaiting ?? "Ping");
-          void playSystemSound(soundName);
-        }
       }
-    }
-    setTabStatuses(tabStatusesRef.current);
-  }, []);
-  const handleRunningChange = useCallback((tabId: string, running: boolean) => {
-    setRunningTabs((s) => {
-      const wasRunning = tabId in s;
-      if (running === wasRunning) return s;
-      const next = { ...s };
+      setTabStatuses(tabStatusesRef.current);
+    },
+    [isViewingTab],
+  );
+  const handleRunningChange = useCallback(
+    (tabId: string, running: boolean) => {
+      const wasRunning = tabId in runningTabsRef.current;
+      if (running === wasRunning) return;
+      const next = { ...runningTabsRef.current };
       if (running) next[tabId] = true;
       else delete next[tabId];
-      return next;
-    });
-  }, []);
+      runningTabsRef.current = next;
+      setRunningTabs(next);
+
+      if (running) {
+        setNeedsAttention((s) => {
+          if (!(tabId in s)) return s;
+          const rest = { ...s };
+          delete rest[tabId];
+          return rest;
+        });
+      } else if (findTabOwner(tabsRef.current, tabId) && !isViewingTab(tabId)) {
+        // A job finished off-screen: neutral, silent "look at me" cue, cleared
+        // when the tab is next viewed (same lifecycle as agent attention). The
+        // owner check drops the redundant running=false that TerminalView fires
+        // on unmount when the tab is already being closed.
+        setNeedsAttention((s) => (s[tabId] ? s : { ...s, [tabId]: true }));
+      }
+    },
+    [isViewingTab],
+  );
   const handleRenameTab = useCallback(
     (tabId: string, title: string) =>
       activeId && setTabs((t) => renameTab(t, activeId, tabId, title)),
@@ -611,16 +639,18 @@ function App() {
     return statuses;
   }, [tabs, tabStatuses]);
 
-  // Which color the project row's glow should echo — "waiting" (red) wins
-  // over "ready" (green) if a project has tabs needing attention for both.
+  // Which color the project row's glow should echo: "waiting" (red) wins over
+  // "ready" (green), which in turn wins over "neutral" (a finished terminal
+  // job), if a project has tabs needing attention for more than one.
   const projectNeedsAttention = useMemo(() => {
-    const result: Record<string, "ready" | "waiting"> = {};
+    const result: Record<string, "ready" | "waiting" | "neutral"> = {};
     for (const projectId of Object.keys(tabs)) {
-      let kind: "ready" | "waiting" | undefined;
+      let kind: "ready" | "waiting" | "neutral" | undefined;
       for (const tab of projectTabs(tabs, projectId).tabs) {
         if (!needsAttention[tab.id]) continue;
         if (tabStatuses[tab.id] === "waiting") kind = "waiting";
         else if (tabStatuses[tab.id] === "ready" && kind !== "waiting") kind = "ready";
+        else if (tab.kind === "terminal" && kind === undefined) kind = "neutral";
       }
       if (kind) result[projectId] = kind;
     }

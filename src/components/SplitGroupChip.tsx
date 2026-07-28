@@ -72,7 +72,9 @@ export function SplitGroupChip({
   const glowClass = needsAttention
     ? memberStatuses.includes("waiting")
       ? "needs-attention-glow-waiting"
-      : "needs-attention-glow-ready"
+      : memberStatuses.includes("ready")
+        ? "needs-attention-glow-ready"
+        : "needs-attention-glow-neutral"
     : "";
   const accentColor = viewingSplit
     ? (split.color ?? DEFAULT_ACCENT)

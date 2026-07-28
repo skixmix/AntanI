@@ -15,7 +15,7 @@ interface SidebarProps {
   activeProjectId: string | null;
   projectsWithActivity: Set<string>;
   projectStatuses: Record<string, "busy" | "waiting">;
-  projectNeedsAttention: Record<string, "ready" | "waiting">;
+  projectNeedsAttention: Record<string, "ready" | "waiting" | "neutral">;
   onAdd: () => void;
   onSelect: (id: string) => void;
   onRename: (id: string, name: string) => void;
