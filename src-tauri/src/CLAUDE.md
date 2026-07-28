@@ -107,31 +107,48 @@ the main window is restored by hand (`restore_main_window`) instead of by the
 plugin's automatic pass. This is a deliberate workaround for a macOS bug, not an
 accident:
 
-- The plugin saves a fullscreen window's `inner_size` as its **windowed** size
-  (it guards the size-save against *maximized* but not *fullscreen*). On restore
-  it does `set_size(saved)` then `set_fullscreen(true)`.
-- When the app is relaunched **at login**, the external display / Spaces and
-  DisplayLink's automatic window move haven't settled yet. Entering fullscreen
-  before that move leaves the native fullscreen frame associated with the wrong
-  monitor, and moving it afterward can make it overflow the destination display.
-- So we skip the plugin's auto-restore and restore ourselves: a windowed layout
+- Root cause is an AppKit fullscreen/Space restoration race, not the plugin's
+  geometry. A bare `set_fullscreen(true)` at startup fires while macOS is still
+  restoring or relocating the previous fullscreen window, so `toggleFullScreen:`
+  (what tao maps `Fullscreen::Borderless` to, dispatched asynchronously and never
+  awaited) builds the Space against a stale screen/frame and overshoots the
+  display until the user manually exits and re-enters fullscreen. An earlier
+  attempt that restored only `FULLSCREEN | VISIBLE` after a delay did **not** fix
+  this, which is the tell that the frame, not the saved size, was never the
+  problem.
+- The plugin also saves a fullscreen window's `inner_size` as its **windowed**
+  size (it guards the size-save against *maximized* but not *fullscreen*), so its
+  own `restore_state` would `set_size(fullscreen_size)` then `set_fullscreen(true)`.
+  We never take that path for a fullscreen main window.
+- What we do instead: the window is created hidden (`"visible": false` in
+  `tauri.conf.json`) so no intermediate frame flashes. A windowed saved layout
   restores immediately via the plugin's own `restore_state(StateFlags::all())`
-  (don't reimplement its monitor-intersection / maximized logic); a fullscreen
-  one keeps the config-default frame. A single-monitor launch retains the 500 ms
-  delay; multi-monitor or uncertain detection waits for `Moved` /
-  `ScaleFactorChanged` activity to stay quiet for 200 ms, with a two-second hard
-  fallback. It then restores **only** `FULLSCREEN | VISIBLE` — never the saved
-  SIZE/POSITION — so macOS computes the fullscreen frame on the destination
-  display. The one-shot guard is set before dispatch because native fullscreen
-  emits its own move/scale events.
+  (which also shows it; don't reimplement its monitor-intersection / maximized
+  logic). An absent or unreadable state file just shows the config-default
+  window, **not** `restore_state(all)`, which could reapply corrupt geometry.
+- A fullscreen saved layout waits for the display to settle (single-monitor: a
+  500 ms delay; multi-monitor or uncertain detection: `Moved` / `Resized` /
+  `ScaleFactorChanged` activity quiet for 200 ms, two-second hard fallback), then
+  on the main thread places a config-default `1200×800` windowed frame **centered
+  on a still-attached target monitor** (the monitor whose bounds contain the saved
+  frame's centre, else the primary, else any), shows the window, calls
+  `set_fullscreen(true)`, and focuses. Handing `toggleFullScreen:` an unambiguous
+  on-screen frame on a valid monitor, after the startup churn, is what stops the
+  overshoot. `DEFAULT_WINDOW_WIDTH/HEIGHT` must stay in sync with the config.
 - Waiting must run off the main thread, then use `run_on_main_thread` for the
   restore: calling `run_on_main_thread` from `setup` runs synchronously and
-  wouldn't defer anything.
+  wouldn't defer anything. Note `run_on_main_thread` does not make fullscreen
+  synchronous; tao still queues the native transition asynchronously.
 - Consequence, accepted: quitting while fullscreen still persists the bogus
-  fullscreen size, but our fullscreen branch ignores it, so exiting a restored
-  fullscreen falls back to the 1200×800 config default rather than the last
-  custom windowed frame. Preserving that frame would require patching the
-  plugin's own SIZE/POSITION tracking to skip updates while `is_fullscreen()`.
+  fullscreen size, but our fullscreen branch ignores it and rebuilds a centered
+  default frame, so exiting a restored fullscreen falls back to the 1200×800
+  config default rather than the last custom windowed frame.
+- This is a pragmatic pure-Tauri fix verified by running the app. If the AppKit
+  race ever slips through again, the next levers (both need an `objc2` bridge, so
+  weigh them against the minimalism rule) are disabling per-window NSWindow
+  restoration via `setRestorable(false)` so AppKit stops competing, and awaiting
+  `NSWindowDidEnterFullScreen` with a one-shot `false -> true` repair when the
+  entered frame doesn't match its `NSScreen`.
 
 ## Backup archives
 

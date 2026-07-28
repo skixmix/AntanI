@@ -5,37 +5,49 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tauri::{Manager, WindowEvent};
+use tauri::{Manager, PhysicalPosition, PhysicalSize, WindowEvent};
 
-// Login-item relaunches restore the window before the external display / Spaces
-// have settled, so the window-state plugin's saved fullscreen SIZE/POSITION land
-// on whatever monitor is momentarily current and overshoot it (the reported
-// "fullscreen way over the screen size"). We skip the plugin's automatic restore
-// for "main" and restore it ourselves: a windowed layout restores immediately,
-// but a fullscreen one keeps the config-default frame until DisplayLink's startup
-// move settles, then restores only the fullscreen flag so macOS sizes it.
+// Cold-start and login-item relaunches can fire our fullscreen restore while
+// macOS is still restoring or relocating the previous fullscreen window, so a
+// bare set_fullscreen(true) at startup builds the fullscreen Space against a
+// stale screen/frame and overshoots the display until the user manually exits
+// and re-enters fullscreen. We skip the window-state plugin's automatic restore
+// for "main" and restore it ourselves: a windowed layout restores immediately
+// via the plugin, while a fullscreen one waits for the display to settle, then
+// places a correctly sized windowed frame centered on a still-attached target
+// monitor before entering fullscreen, so macOS sizes the Space on the right
+// screen. The window is created hidden (tauri.conf.json visible:false) so this
+// intermediate frame never flashes on screen.
 const SINGLE_MONITOR_RESTORE_DELAY: Duration = Duration::from_millis(500);
 const DISPLAY_QUIET_PERIOD: Duration = Duration::from_millis(200);
 const FULLSCREEN_RESTORE_DEADLINE: Duration = Duration::from_secs(2);
 
+// Mirrors the main window's inner size in tauri.conf.json; the pre-fullscreen
+// frame we hand to macOS must be a real, on-screen windowed size.
+const DEFAULT_WINDOW_WIDTH: f64 = 1200.0;
+const DEFAULT_WINDOW_HEIGHT: f64 = 800.0;
+
 #[derive(serde::Deserialize)]
-struct PersistedWindowFullscreen {
+struct PersistedMainWindow {
     #[serde(default)]
     fullscreen: bool,
+    #[serde(default)]
+    x: i32,
+    #[serde(default)]
+    y: i32,
+    #[serde(default)]
+    width: u32,
+    #[serde(default)]
+    height: u32,
 }
 
-fn saved_main_was_fullscreen(app: &tauri::App) -> bool {
+fn saved_main_window(app: &tauri::App) -> Option<PersistedMainWindow> {
     use tauri_plugin_window_state::AppHandleExt;
-    let Ok(dir) = app.path().app_config_dir() else {
-        return false;
-    };
-    let Ok(contents) = std::fs::read_to_string(dir.join(app.handle().filename())) else {
-        return false;
-    };
-    serde_json::from_str::<std::collections::HashMap<String, PersistedWindowFullscreen>>(&contents)
-        .ok()
-        .and_then(|windows| windows.get("main").map(|w| w.fullscreen))
-        .unwrap_or(false)
+    let dir = app.path().app_config_dir().ok()?;
+    let contents = std::fs::read_to_string(dir.join(app.handle().filename())).ok()?;
+    serde_json::from_str::<std::collections::HashMap<String, PersistedMainWindow>>(&contents)
+        .ok()?
+        .remove("main")
 }
 
 fn next_restore_wait(
@@ -56,22 +68,67 @@ fn next_restore_wait(
     Some(until_quiet.min(until_deadline))
 }
 
-fn restore_fullscreen(window: tauri::WebviewWindow) {
-    use tauri_plugin_window_state::{StateFlags, WindowExt};
+// Pick the monitor the window was fullscreen on if it is still attached (its
+// saved frame centre lands inside one), else the primary, else any. Returns the
+// config-default window size centered on that monitor, in physical pixels.
+fn target_windowed_frame(
+    window: &tauri::WebviewWindow,
+    saved: &PersistedMainWindow,
+) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    let monitors = window.available_monitors().ok()?;
+    let center_x = saved.x.saturating_add(saved.width as i32 / 2);
+    let center_y = saved.y.saturating_add(saved.height as i32 / 2);
+    let target = monitors
+        .iter()
+        .find(|m| {
+            let p = m.position();
+            let s = m.size();
+            center_x >= p.x
+                && center_x < p.x + s.width as i32
+                && center_y >= p.y
+                && center_y < p.y + s.height as i32
+        })
+        .cloned()
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .or_else(|| monitors.first().cloned())?;
+
+    let scale = target.scale_factor();
+    let win_w = (DEFAULT_WINDOW_WIDTH * scale).round() as u32;
+    let win_h = (DEFAULT_WINDOW_HEIGHT * scale).round() as u32;
+    let mp = target.position();
+    let ms = target.size();
+    let x = mp.x + (ms.width as i32 - win_w as i32) / 2;
+    let y = mp.y + (ms.height as i32 - win_h as i32) / 2;
+    Some((PhysicalPosition::new(x, y), PhysicalSize::new(win_w, win_h)))
+}
+
+type WindowedFrame = Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>;
+
+fn enter_fullscreen(window: tauri::WebviewWindow, frame: WindowedFrame) {
     let window_on_main = window.clone();
     let _ = window.run_on_main_thread(move || {
-        let _ = window_on_main.restore_state(StateFlags::FULLSCREEN | StateFlags::VISIBLE);
+        if let Some((position, size)) = frame {
+            let _ = window_on_main.set_size(size);
+            let _ = window_on_main.set_position(position);
+        }
+        let _ = window_on_main.show();
+        let _ = window_on_main.set_fullscreen(true);
+        let _ = window_on_main.set_focus();
     });
 }
 
-fn restore_fullscreen_after_delay(window: tauri::WebviewWindow, delay: Duration) {
+fn enter_fullscreen_after_delay(
+    window: tauri::WebviewWindow,
+    frame: WindowedFrame,
+    delay: Duration,
+) {
     std::thread::spawn(move || {
         std::thread::sleep(delay);
-        restore_fullscreen(window);
+        enter_fullscreen(window, frame);
     });
 }
 
-fn restore_fullscreen_after_display_settles(window: tauri::WebviewWindow) {
+fn enter_fullscreen_after_display_settles(window: tauri::WebviewWindow, frame: WindowedFrame) {
     let (display_activity_tx, display_activity_rx) = mpsc::channel();
     let restored = Arc::new(AtomicBool::new(false));
     let event_restored = Arc::clone(&restored);
@@ -81,7 +138,9 @@ fn restore_fullscreen_after_display_settles(window: tauri::WebviewWindow) {
         }
         if matches!(
             event,
-            WindowEvent::Moved(_) | WindowEvent::ScaleFactorChanged { .. }
+            WindowEvent::Moved(_)
+                | WindowEvent::Resized(_)
+                | WindowEvent::ScaleFactorChanged { .. }
         ) {
             let _ = display_activity_tx.send(());
         }
@@ -105,7 +164,7 @@ fn restore_fullscreen_after_display_settles(window: tauri::WebviewWindow) {
             }
         }
         restored.store(true, Ordering::Release);
-        restore_fullscreen(window);
+        enter_fullscreen(window, frame);
     });
 }
 
@@ -114,19 +173,23 @@ pub fn restore_main_window(app: &tauri::App) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
-    if !saved_main_was_fullscreen(app) {
+    // An absent or unreadable state file means "show the config-default window";
+    // restore_state(all) here could reapply corrupt geometry from a bad file.
+    let Some(saved) = saved_main_window(app) else {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    };
+    if !saved.fullscreen {
         let _ = window.restore_state(StateFlags::all());
         return;
     }
+    let frame = target_windowed_frame(&window, &saved);
     match window.available_monitors() {
         Ok(monitors) if monitors.len() == 1 => {
-            restore_fullscreen_after_delay(window, SINGLE_MONITOR_RESTORE_DELAY);
+            enter_fullscreen_after_delay(window, frame, SINGLE_MONITOR_RESTORE_DELAY);
         }
-        Ok(_) => restore_fullscreen_after_display_settles(window),
-        Err(err) => {
-            eprintln!("antani: failed to enumerate monitors, assuming multi-monitor: {err}");
-            restore_fullscreen_after_display_settles(window);
-        }
+        _ => enter_fullscreen_after_display_settles(window, frame),
     }
 }
 
