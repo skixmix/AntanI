@@ -128,7 +128,7 @@ accident:
   window, **not** `restore_state(all)`, which could reapply corrupt geometry.
 - A fullscreen saved layout waits for the display to settle (single-monitor: a
   500 ms delay; multi-monitor or uncertain detection: `Moved` / `Resized` /
-  `ScaleFactorChanged` activity quiet for 200 ms, two-second hard fallback), then
+  `ScaleFactorChanged` activity stays quiet for 200 ms, two-second hard fallback), then
   on the main thread places a config-default `1200×800` windowed frame **centered
   on a still-attached target monitor** (the monitor whose bounds contain the saved
   frame's centre, else the primary, else any), shows the window, calls
