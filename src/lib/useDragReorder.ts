@@ -28,8 +28,11 @@ export interface SplitDropTarget {
  *
  * Returns:
  *   draggingId    — id of item being dragged (for lift styling)
- *   insertBeforeId — id of item the dragged item will be inserted *before*,
- *                    or null meaning "append to end"
+ *   insertBeforeId — id of item the dragged item will be inserted *before*;
+ *                    null means "append to end"; undefined means "not a
+ *                    reorder target" (no active drag, or the pointer is off
+ *                    the list's cross-axis) — callers must treat this as
+ *                    distinct from null, not fall back to end-of-list
  *   startDrag
  */
 export function useDragReorder(
@@ -45,10 +48,26 @@ export function useDragReorder(
   const overDropRef = useRef(false);
   const highlightRef = useRef<HTMLElement | null>(null);
 
-  function findInsertBefore(x: number, y: number): string | null {
+  function findInsertBefore(x: number, y: number): string | null | undefined {
     const nodes = Array.from(
       document.querySelectorAll<HTMLElement>(`[data-drag-scope="${scope}"]`),
     );
+    if (nodes.length === 0) return undefined;
+
+    // Off the list's cross-axis (a project row dragged sideways onto a
+    // terminal) is not a reorder, so report no target. That hides the
+    // insertion bar and skips the release-time reorder, leaving the
+    // terminal's own path-drop as the only action.
+    let bandStart = Number.POSITIVE_INFINITY;
+    let bandEnd = Number.NEGATIVE_INFINITY;
+    for (const node of nodes) {
+      const rect = node.getBoundingClientRect();
+      bandStart = Math.min(bandStart, isVertical ? rect.left : rect.top);
+      bandEnd = Math.max(bandEnd, isVertical ? rect.right : rect.bottom);
+    }
+    const cross = isVertical ? x : y;
+    if (cross < bandStart || cross > bandEnd) return undefined;
+
     for (const node of nodes) {
       const rect = node.getBoundingClientRect();
       const mid = isVertical ? (rect.top + rect.bottom) / 2 : (rect.left + rect.right) / 2;
@@ -149,6 +168,8 @@ export function useDragReorder(
         splitDrop.onDrop(fromId);
         return;
       }
+      // undefined means "not a valid reorder target" (off cross-axis): skip
+      // the reorder rather than treating it as null's "append to end".
       if (fromId && before !== undefined && before !== fromId) {
         const nodes = Array.from(
           document.querySelectorAll<HTMLElement>(`[data-drag-scope="${scope}"]`),

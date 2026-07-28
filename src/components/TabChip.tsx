@@ -126,9 +126,11 @@ export function TabChip({
             : "bg-transparent text-muted-foreground hover:bg-secondary"
       } ${isDragging ? "opacity-30 scale-95" : ""} ${
         needsAttention
-          ? status === "ready"
-            ? "needs-attention-glow-ready"
-            : "needs-attention-glow-waiting"
+          ? tab.kind === "terminal"
+            ? "needs-attention-glow-neutral"
+            : status === "ready"
+              ? "needs-attention-glow-ready"
+              : "needs-attention-glow-waiting"
           : ""
       }`}
       style={{ borderBottomColor: accentColor ?? "transparent" }}
@@ -178,6 +180,11 @@ export function TabChip({
         {status && status !== "idle" && (
           <span className="flex items-center justify-center transition-opacity group-hover:opacity-0">
             <AiStatusDot status={status} />
+          </span>
+        )}
+        {tab.kind === "terminal" && needsAttention && (
+          <span className="flex items-center justify-center transition-opacity group-hover:opacity-0">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground" title="Finished" />
           </span>
         )}
         <button

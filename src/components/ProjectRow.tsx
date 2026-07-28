@@ -11,7 +11,7 @@ interface ProjectRowProps {
   project: Project;
   active: boolean;
   status?: "busy" | "waiting";
-  needsAttention?: "ready" | "waiting";
+  needsAttention?: "ready" | "waiting" | "neutral";
   rowRef?: React.Ref<HTMLDivElement>;
   dragScope?: string;
   onSelect: () => void;
