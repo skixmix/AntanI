@@ -13,14 +13,19 @@ Been there, done that. But you know what? I built my own, just for me. That's th
 Built with Tauri v2 + React. And AI.
 
 <p align="center">
-  <img src="docs/screenshots/main.png" width="100%" alt="AntanI workspace with terminal, agent, and split tabs" />
+  <img width="100%" alt="AntanI split view" src="https://github.com/user-attachments/assets/f84e4d37-1898-42a3-bf6c-338e22ee520b" />
 </p>
+
 
 <details>
 <summary>More screenshots</summary>
 <p align="center">
   <img src="docs/screenshots/settings.png" width="100%" alt="AntanI settings, including terminal, notifications, and backup" />
 </p>
+
+<p align="center">
+  <img src="docs/screenshots/main.png" width="100%" alt="AntanI workspace with terminal, agent, and split tabs" />
+</p>   
 </details>
 
 ## What you can do with it
