@@ -6,6 +6,7 @@ import type { CustomCommand, Injectable, InjectTarget, Project, Settings } from 
 import { BackupSettings } from "./BackupSettings";
 import { ColorPicker } from "./ColorPicker";
 import { CloseIcon, TerminalIcon, VSCodeIcon } from "./Icons";
+import { OpencodeThemeSettings } from "./OpencodeThemeSettings";
 import { SettingsSection as SectionCard } from "./SettingsSection";
 
 interface SettingsPageProps {
@@ -661,6 +662,7 @@ export function SettingsPage({
                   </div>
                 </SectionCard>
                 <BackupSettings />
+                <OpencodeThemeSettings />
               </>
             )}
 
