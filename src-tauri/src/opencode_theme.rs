@@ -20,9 +20,11 @@ const THEME_FILE_NAME: &str = "antani.json";
 /// It follows the XDG layout, not `~/Library/Application Support`.
 pub fn install_theme(config_root: &Path) -> Result<PathBuf, String> {
     let themes_dir = config_root.join("opencode").join("themes");
-    fs::create_dir_all(&themes_dir).map_err(|error| error.to_string())?;
+    fs::create_dir_all(&themes_dir)
+        .map_err(|error| format!("failed to create themes directory {}: {}", themes_dir.display(), error))?;
     let dest = themes_dir.join(THEME_FILE_NAME);
-    fs::write(&dest, THEME_JSON).map_err(|error| error.to_string())?;
+    fs::write(&dest, THEME_JSON)
+        .map_err(|error| format!("failed to write theme file {}: {}", dest.display(), error))?;
     Ok(dest)
 }
 
