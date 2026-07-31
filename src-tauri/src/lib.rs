@@ -4,6 +4,7 @@ mod git_watcher;
 mod ide_bridge;
 mod ide_webview;
 mod menu;
+mod opencode_theme;
 mod pty;
 mod sound;
 mod state;
@@ -256,6 +257,22 @@ fn import_backup(app: tauri::AppHandle, path: String) -> Result<(), String> {
     app.restart()
 }
 
+/// One-click adoption of the matching OpenCode theme for users who installed
+/// AntanI via Homebrew and have no repo checkout. Returns the path written.
+#[tauri::command]
+fn install_opencode_theme(app: tauri::AppHandle) -> Result<String, String> {
+    let config_root = match std::env::var_os("XDG_CONFIG_HOME") {
+        Some(value) if !value.is_empty() => std::path::PathBuf::from(value),
+        _ => app
+            .path()
+            .home_dir()
+            .map_err(|error| error.to_string())?
+            .join(".config"),
+    };
+    let dest = opencode_theme::install_theme(&config_root)?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -338,6 +355,7 @@ pub fn run() {
             update_settings,
             export_backup,
             import_backup,
+            install_opencode_theme,
             sound::play_system_sound,
             pty::pty_spawn,
             pty::pty_write,
