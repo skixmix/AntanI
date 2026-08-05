@@ -18,6 +18,21 @@ export interface Injectable {
   color: string;
 }
 
+export type TaskStatus = "todo" | "inProgress" | "done";
+
+export interface Task {
+  id: string;
+  taskId: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  createdAt: number;
+  updatedAt: number;
+  startedAt: number | null;
+  doneAt: number | null;
+  enteredColumnAt: number | null;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -25,6 +40,9 @@ export interface Project {
   color: string;
   customCommands: CustomCommand[];
   injectables: Injectable[];
+  tasks: Task[];
+  taskPrefix: string;
+  nextTaskSeq: number;
 }
 
 export interface AppData {

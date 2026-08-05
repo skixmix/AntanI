@@ -20,6 +20,7 @@ export default defineConfig({
         "src/lib/**/*.ipc.ts",
         "src/lib/useDragReorder.ts",
         "src/lib/usePaneSwapDrag.ts",
+        "src/lib/useCardDrag.ts",
       ],
       thresholds: {
         lines: 90,

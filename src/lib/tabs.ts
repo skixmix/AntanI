@@ -1,7 +1,7 @@
 import type { CustomCommand, Settings } from "./types";
 
 export type AgentKind = "claude" | "opencode" | "codex";
-export type TabKind = "terminal" | AgentKind | "ide";
+export type TabKind = "terminal" | AgentKind | "ide" | "kanban";
 
 /** Runtime-only status for agent tabs. Never persisted. */
 export type TabStatus = "idle" | "busy" | "ready" | "waiting";
@@ -15,6 +15,12 @@ export const MAX_SPLIT_MEMBERS = 4;
 
 export function isAgentKind(kind: TabKind): kind is AgentKind {
   return kind === "claude" || kind === "opencode" || kind === "codex";
+}
+
+/** Tabs that render their own full-area surface (VS Code, the Kanban board)
+ *  instead of a PTY, so they can't be split or injected into. */
+export function isSurfaceKind(kind: TabKind): boolean {
+  return kind === "ide" || kind === "kanban";
 }
 
 export interface Tab {
@@ -76,6 +82,7 @@ const TAB_TITLES: Record<TabKind, string> = {
   opencode: "OpenCode",
   codex: "Codex",
   ide: "VS Code",
+  kanban: "Board",
 };
 
 export function defaultTitle(kind: TabKind): string {
@@ -219,7 +226,7 @@ export function viewSplit(state: TabsState, projectId: string, splitId: string):
 export function openTabToSide(state: TabsState, projectId: string, tabId: string): TabsState {
   const current = projectTabs(state, projectId);
   const target = current.tabs.find((t) => t.id === tabId);
-  if (!target || target.kind === "ide") return state;
+  if (!target || isSurfaceKind(target.kind)) return state;
   const owner = findSplitByMember(current, tabId);
   if (owner) {
     const memberIdx = owner.memberIds.indexOf(tabId);
@@ -239,10 +246,10 @@ export function openTabToSide(state: TabsState, projectId: string, tabId: string
     ? current.tabs.find((t) => t.id === current.activeTabId)
     : undefined;
   const leftId =
-    activeTab && activeTab.kind !== "ide" && activeTab.id !== tabId
+    activeTab && !isSurfaceKind(activeTab.kind) && activeTab.id !== tabId
       ? activeTab.id
       : (current.tabs.find(
-          (t) => t.kind !== "ide" && t.id !== tabId && !findSplitByMember(current, t.id),
+          (t) => !isSurfaceKind(t.kind) && t.id !== tabId && !findSplitByMember(current, t.id),
         )?.id ?? null);
   if (!leftId) {
     return { ...state, [projectId]: { ...current, activeTabId: tabId, viewingSplitId: null } };
@@ -280,7 +287,7 @@ export function addToSplit(
   const split = current.splits.find((s) => s.id === splitId);
   if (!split) return state;
   const target = current.tabs.find((t) => t.id === tabId);
-  if (!target || target.kind === "ide") return state;
+  if (!target || isSurfaceKind(target.kind)) return state;
   if (
     split.memberIds.includes(tabId) ||
     split.memberIds.length >= MAX_SPLIT_MEMBERS ||

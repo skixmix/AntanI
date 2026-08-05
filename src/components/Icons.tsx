@@ -451,3 +451,29 @@ export function OpenCodeIcon({ size = 14, className = "" }: IconProps) {
     />
   );
 }
+
+export function BoardIcon({ size = 13, className = "" }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect
+        x="1.5"
+        y="2.5"
+        width="13"
+        height="11"
+        rx="1.5"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <rect x="4" y="5" width="2.2" height="5" rx="0.6" fill="currentColor" />
+      <rect x="6.9" y="5" width="2.2" height="6.5" rx="0.6" fill="currentColor" />
+      <rect x="9.8" y="5" width="2.2" height="3" rx="0.6" fill="currentColor" />
+    </svg>
+  );
+}

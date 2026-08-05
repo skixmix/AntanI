@@ -1,5 +1,6 @@
 import type React from "react";
 import { type RefObject, useRef, useState } from "react";
+import { pastDragThreshold, setBodyDragCursor } from "./dragGesture";
 import type { PaneRect } from "./splitLayout";
 
 /**
@@ -118,16 +119,26 @@ export function useDragReorder(
     const target = e.target as Element;
     if (target.closest("button, input")) return;
     e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let moved = false;
 
     dragIdRef.current = id;
     insertRef.current = undefined;
     overDropRef.current = false;
-    setDraggingId(id);
-    setInsertBeforeId(undefined);
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "grabbing";
+
+    function beginDrag() {
+      moved = true;
+      setDraggingId(id);
+      setInsertBeforeId(undefined);
+      setBodyDragCursor(true);
+    }
 
     function onMove(ev: PointerEvent) {
+      if (!moved) {
+        if (!pastDragThreshold(ev.clientX - startX, ev.clientY - startY)) return;
+        beginDrag();
+      }
       if (pointerInDropZone(ev)) {
         if (!overDropRef.current) {
           overDropRef.current = true;
@@ -153,8 +164,11 @@ export function useDragReorder(
     function onUp(ev: PointerEvent) {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
+      setBodyDragCursor(false);
+      if (!moved) {
+        dragIdRef.current = null;
+        return;
+      }
       const droppedInZone = pointerInDropZone(ev);
       setHighlight(false);
       overDropRef.current = false;
