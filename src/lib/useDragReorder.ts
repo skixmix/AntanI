@@ -35,6 +35,8 @@ export interface SplitDropTarget {
  *                    distinct from null, not fall back to end-of-list
  *   startDrag
  */
+const DRAG_THRESHOLD_PX = 4;
+
 export function useDragReorder(
   scope: string,
   isVertical: boolean,
@@ -118,16 +120,27 @@ export function useDragReorder(
     const target = e.target as Element;
     if (target.closest("button, input")) return;
     e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let moved = false;
 
     dragIdRef.current = id;
     insertRef.current = undefined;
     overDropRef.current = false;
-    setDraggingId(id);
-    setInsertBeforeId(undefined);
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "grabbing";
+
+    function beginDrag() {
+      moved = true;
+      setDraggingId(id);
+      setInsertBeforeId(undefined);
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "grabbing";
+    }
 
     function onMove(ev: PointerEvent) {
+      if (!moved) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) <= DRAG_THRESHOLD_PX) return;
+        beginDrag();
+      }
       if (pointerInDropZone(ev)) {
         if (!overDropRef.current) {
           overDropRef.current = true;
@@ -155,6 +168,10 @@ export function useDragReorder(
       window.removeEventListener("pointerup", onUp);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
+      if (!moved) {
+        dragIdRef.current = null;
+        return;
+      }
       const droppedInZone = pointerInDropZone(ev);
       setHighlight(false);
       overDropRef.current = false;
