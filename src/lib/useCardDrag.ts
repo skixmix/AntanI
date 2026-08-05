@@ -1,9 +1,9 @@
 import type React from "react";
 import { useRef, useState } from "react";
+import { pastDragThreshold, setBodyDragCursor } from "./dragGesture";
 import type { TaskStatus } from "./types";
 
 const COLUMN_ATTR = "data-kanban-column";
-const DRAG_THRESHOLD_PX = 4;
 
 function columnStatusAt(x: number, y: number): TaskStatus | null {
   const columns = Array.from(document.querySelectorAll<HTMLElement>(`[${COLUMN_ATTR}]`));
@@ -51,13 +51,12 @@ export function useCardDrag(
       moved = true;
       setDraggingTaskId(taskId);
       setOverStatus(null);
-      document.body.style.userSelect = "none";
-      document.body.style.cursor = "grabbing";
+      setBodyDragCursor(true);
     }
 
     function onPointerMove(ev: PointerEvent) {
       if (!moved) {
-        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) <= DRAG_THRESHOLD_PX) return;
+        if (!pastDragThreshold(ev.clientX - startX, ev.clientY - startY)) return;
         beginDrag();
       }
       const status = columnStatusAt(ev.clientX, ev.clientY);
@@ -70,8 +69,7 @@ export function useCardDrag(
     function onPointerUp() {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
+      setBodyDragCursor(false);
       const id = taskIdRef.current;
       const from = fromStatusRef.current;
       const to = overRef.current;

@@ -14,8 +14,10 @@ fn briefs_dir() -> PathBuf {
 /// reads this file — instead of being pasted through the PTY, which has
 /// paste-size and TUI-composer limits. Briefs are scratch, never persisted app
 /// state; `clear_briefs` reaps them at startup.
+const MAX_STEM_LEN: usize = 64;
+
 pub fn write_brief(task_id: &str, contents: &str) -> io::Result<PathBuf> {
-    let safe: String = task_id
+    let mut safe: String = task_id
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
@@ -25,6 +27,7 @@ pub fn write_brief(task_id: &str, contents: &str) -> io::Result<PathBuf> {
             }
         })
         .collect();
+    safe.truncate(MAX_STEM_LEN);
     let stem = if safe.is_empty() { "task" } else { &safe };
     let dir = briefs_dir();
     fs::create_dir_all(&dir)?;
@@ -59,6 +62,16 @@ mod tests {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         assert!(!name.contains('/'));
         assert!(!name.contains(".."));
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn truncates_long_task_id_stem() {
+        let long_id = "a".repeat(300);
+        let path = write_brief(&long_id, "hi").unwrap();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with(&"a".repeat(MAX_STEM_LEN)));
+        assert!(!name.starts_with(&"a".repeat(MAX_STEM_LEN + 1)));
         let _ = fs::remove_file(&path);
     }
 }

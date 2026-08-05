@@ -1,5 +1,6 @@
 import type React from "react";
 import { type RefObject, useRef, useState } from "react";
+import { pastDragThreshold, setBodyDragCursor } from "./dragGesture";
 import type { PaneRect } from "./splitLayout";
 
 /**
@@ -35,8 +36,6 @@ export interface SplitDropTarget {
  *                    distinct from null, not fall back to end-of-list
  *   startDrag
  */
-const DRAG_THRESHOLD_PX = 4;
-
 export function useDragReorder(
   scope: string,
   isVertical: boolean,
@@ -132,13 +131,12 @@ export function useDragReorder(
       moved = true;
       setDraggingId(id);
       setInsertBeforeId(undefined);
-      document.body.style.userSelect = "none";
-      document.body.style.cursor = "grabbing";
+      setBodyDragCursor(true);
     }
 
     function onMove(ev: PointerEvent) {
       if (!moved) {
-        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) <= DRAG_THRESHOLD_PX) return;
+        if (!pastDragThreshold(ev.clientX - startX, ev.clientY - startY)) return;
         beginDrag();
       }
       if (pointerInDropZone(ev)) {
@@ -166,8 +164,7 @@ export function useDragReorder(
     function onUp(ev: PointerEvent) {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
+      setBodyDragCursor(false);
       if (!moved) {
         dragIdRef.current = null;
         return;
