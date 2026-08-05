@@ -1,8 +1,9 @@
-import { useRef } from "react";
+import { type ReactNode, useRef } from "react";
 import { type PaneRect, paneCellRect } from "../lib/splitLayout";
 import {
   DEFAULT_SPLIT_RATIO,
   focusedTab,
+  isSurfaceKind,
   MAX_SPLIT_MEMBERS,
   type PaneId,
   projectTabs,
@@ -41,6 +42,8 @@ interface WorkspaceProps {
   onRecolorTab: (tabId: string, color: string) => void;
   onReorderTab: (fromId: string, insertBeforeId: string | null) => void;
   onOpenIde: () => void;
+  onOpenBoard: () => void;
+  board?: ReactNode;
   onStatusChange: (tabId: string, status: TabStatus) => void;
   onRunningChange: (tabId: string, running: boolean) => void;
   onOpenFile: (target: TerminalFileOpenTarget) => void;
@@ -73,6 +76,8 @@ export function Workspace({
   onRecolorTab,
   onReorderTab,
   onOpenIde,
+  onOpenBoard,
+  board,
   onStatusChange,
   onRunningChange,
   onOpenFile,
@@ -128,15 +133,15 @@ export function Workspace({
   const paneTabIds = members.length > 0 ? members.map((t) => t.id) : soloTab ? [soloTab.id] : [];
   geometryRef.current = { colRatio, rowRatio, memberCount: members.length };
   const focused = focusedTab(pt);
-  const showInjectBar = focused !== null && focused.kind !== "ide";
+  const showInjectBar = focused !== null && !isSurfaceKind(focused.kind);
 
   const canTabDropToSplit = (fromId: string): boolean => {
     if (!onOpenToSide && !onAddToSplit) return false;
     const tab = projectTabList.find((t) => t.id === fromId);
-    if (!tab || tab.kind === "ide") return false;
+    if (!tab || isSurfaceKind(tab.kind)) return false;
     if (splits.some((s) => s.memberIds.includes(fromId))) return false;
     if (viewedSplit) return viewedSplit.memberIds.length < MAX_SPLIT_MEMBERS;
-    return soloTab != null && soloTab.kind !== "ide" && soloTab.id !== fromId;
+    return soloTab != null && !isSurfaceKind(soloTab.kind) && soloTab.id !== fromId;
   };
 
   const handleTabDropToSplit = (fromId: string) => {
@@ -178,6 +183,7 @@ export function Workspace({
           onRecolor={onRecolorTab}
           onReorder={onReorderTab}
           onOpenIde={onOpenIde}
+          onOpenBoard={onOpenBoard}
           onOpenToSide={onOpenToSide}
           onAddToSplit={onAddToSplit}
           onUnsplit={onUnsplit}
@@ -208,6 +214,7 @@ export function Workspace({
             onOpenFile={onOpenFile}
           />
           <IdeLayer projects={projects} tabs={tabs} activeProjectId={project.id} />
+          {soloTab?.kind === "kanban" && board && <div className="absolute inset-0">{board}</div>}
           {isEmpty && (
             <div className="absolute inset-0">
               <EmptyPane project={project} onOpen={onOpenTab} onOpenIde={onOpenIde} />

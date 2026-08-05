@@ -3,6 +3,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FirstRunVscodeModal } from "./components/FirstRunVscodeModal";
 import { ImportVscodeModal } from "./components/ImportVscodeModal";
+import { KanbanBoard } from "./components/KanbanBoard";
 import {
   type CommandsSubTab,
   SettingsPage,
@@ -15,6 +16,7 @@ import { useIdeFileOpen } from "./components/useIdeFileOpen";
 import { Workspace } from "./components/Workspace";
 import * as api from "./lib/api.ipc";
 import { basename, defaultColorForIndex, MAX_QUICK_SWITCH } from "./lib/constants";
+import { encodeInjection } from "./lib/inject";
 import {
   initNotifications,
   notifyAgentReady,
@@ -23,6 +25,7 @@ import {
 } from "./lib/notifications.ipc";
 import { playSystemSound } from "./lib/sound.ipc";
 import {
+  type AgentKind,
   activePaneTabs,
   addTab,
   addToSplit,
@@ -50,7 +53,8 @@ import {
   unsplit,
   viewSplit,
 } from "./lib/tabs";
-import type { AppData, CustomCommand, InjectTarget, Settings } from "./lib/types";
+import { buildTaskBrief, buildTaskInstruction } from "./lib/taskPrompt";
+import type { AppData, CustomCommand, InjectTarget, Project, Settings, Task } from "./lib/types";
 import { isNewerVersion } from "./lib/updateCheck";
 import { fetchLatestVersion } from "./lib/updateCheck.ipc";
 
@@ -115,6 +119,10 @@ function App() {
   // document would then wrongly report "unfocused" and fire notifications
   // the user is actually looking right at.
   const windowFocusedRef = useRef(true);
+  // A freshly triggered agent tab can't receive its prompt until its CLI has
+  // booted; we stash the instruction here keyed by tab id and fire it once the
+  // tab first reports ready/waiting (see handleStatusChange).
+  const pendingInjectionsRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     Promise.all([api.getAppState(), api.getSettings()])
@@ -238,6 +246,24 @@ function App() {
     [activeId],
   );
 
+  const triggerTask = useCallback(
+    async (project: Project, task: Task, kind: AgentKind) => {
+      if (!settings) return;
+      try {
+        const brief = buildTaskBrief(project.name, task);
+        const briefPath = await api.writeTaskBrief(task.taskId, brief);
+        const instruction = buildTaskInstruction(project.name, task, briefPath);
+        const tab = { ...createTab(kind, settings), title: task.taskId };
+        pendingInjectionsRef.current[tab.id] = instruction;
+        setTabs((t) => addTab(t, project.id, tab));
+        await run(() => api.setTaskStatus(project.id, task.id, "inProgress"));
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [settings, run],
+  );
+
   const selectTab = useCallback(
     (tabId: string) => {
       if (!activeId) return;
@@ -263,6 +289,7 @@ function App() {
   const handleCloseTab = useCallback(
     (tabId: string) => {
       if (!activeId) return;
+      delete pendingInjectionsRef.current[tabId];
       setTabs((t) => closeTab(t, activeId, tabId));
       setTabStatuses((s) => {
         const next = { ...s };
@@ -312,6 +339,19 @@ function App() {
       // prevStatus twice and double-notify.
       if (prevStatus === status) return;
       tabStatusesRef.current = { ...tabStatusesRef.current, [tabId]: status };
+
+      const pending = pendingInjectionsRef.current[tabId];
+      if (pending && (status === "ready" || status === "waiting")) {
+        delete pendingInjectionsRef.current[tabId];
+        const owner = findTabOwner(tabsRef.current, tabId);
+        const kind = owner?.tab.kind ?? "terminal";
+        void (async () => {
+          await api.writePty(tabId, encodeInjection(pending, kind));
+          await api.writePty(tabId, "\r");
+        })();
+        setTabStatuses(tabStatusesRef.current);
+        return;
+      }
 
       let notify = false;
       if (status === "ready" && prevStatus === "busy") {
@@ -499,6 +539,15 @@ function App() {
     },
     [settings],
   );
+
+  const openBoard = useCallback(() => {
+    if (!activeId || !settings) return;
+    setTabs((t) => {
+      const existing = projectTabs(t, activeId).tabs.find((tab) => tab.kind === "kanban");
+      if (existing) return setActiveTab(t, activeId, existing.id);
+      return addTab(t, activeId, createTab("kanban", settings));
+    });
+  }, [activeId, settings]);
 
   const requestOpenIde = useCallback(
     (id: string) => {
@@ -731,6 +780,25 @@ function App() {
           onRecolorTab={handleRecolorTab}
           onReorderTab={handleReorderTab}
           onOpenIde={handleOpenIde}
+          onOpenBoard={openBoard}
+          board={
+            active && (
+              <KanbanBoard
+                project={active}
+                onAddTask={(title, description, taskId, status) =>
+                  run(() => api.addTask(active.id, title, description, taskId, status))
+                }
+                onUpdateTask={(id, title, description, taskId) =>
+                  run(() => api.updateTask(active.id, id, title, description, taskId))
+                }
+                onMoveTask={(id, status) => run(() => api.setTaskStatus(active.id, id, status))}
+                onRemoveTask={(id) => run(() => api.removeTask(active.id, id))}
+                onClearDone={() => run(() => api.clearDoneTasks(active.id))}
+                onSetPrefix={(prefix) => run(() => api.setTaskPrefix(active.id, prefix))}
+                onTrigger={(task, kind) => triggerTask(active, task, kind)}
+              />
+            )
+          }
           onStatusChange={handleStatusChange}
           onRunningChange={handleRunningChange}
           onOpenFile={handleOpenFile}

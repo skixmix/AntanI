@@ -57,6 +57,43 @@ pub struct Injectable {
     pub color: String,
 }
 
+/// Which Kanban column a task sits in.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskStatus {
+    Todo,
+    InProgress,
+    Done,
+}
+
+/// A Kanban task on a project's board. Persisted (unlike tabs), so the board and
+/// its column layout survive restarts. Timestamps are epoch milliseconds, always
+/// generated server-side under the state lock so they're authoritative. Distinct
+/// from the internal uuid `id`, `task_id` is the human-facing key (e.g. "OE-3")
+/// shown on the card and used to rename the agent tab; keeping it separate lets it
+/// be user-chosen and stay stable even if the project is later renamed.
+///
+/// `started_at` records the first move into `InProgress` and stays put; `done_at`
+/// is set on entering `Done` and cleared if the task is reopened, so a derived
+/// `done_at - started_at` duration stays accurate.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Task {
+    pub id: String,
+    pub task_id: String,
+    pub title: String,
+    pub description: String,
+    pub status: TaskStatus,
+    pub created_at: i64,
+    pub updated_at: i64,
+    #[serde(default)]
+    pub started_at: Option<i64>,
+    #[serde(default)]
+    pub done_at: Option<i64>,
+    #[serde(default)]
+    pub entered_column_at: Option<i64>,
+}
+
 /// A project is a local folder the user has added to the sidebar.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +110,19 @@ pub struct Project {
     /// `serde(default)` for the same back-compat reason as `custom_commands`.
     #[serde(default)]
     pub injectables: Vec<Injectable>,
+    /// Kanban tasks. `serde(default)` for back-compat with pre-board files.
+    #[serde(default)]
+    pub tasks: Vec<Task>,
+    /// Prefix for auto-generated task ids (e.g. "OE" → "OE-3"). Seeded from the
+    /// project name's initials on creation and user-editable. Empty on projects
+    /// created before this field existed; `add_task` self-heals it from the name
+    /// on first use.
+    #[serde(default)]
+    pub task_prefix: String,
+    /// Monotonic counter behind auto task numbers. Never reuses a number even
+    /// after a task is deleted, so ids stay stable references.
+    #[serde(default)]
+    pub next_task_seq: u32,
 }
 
 /// The full persisted application state (Phase 1: projects + last active project).
@@ -86,6 +136,7 @@ pub struct AppData {
 impl AppData {
     /// Append a new project. The first project added becomes the active one.
     pub fn add_project(&mut self, path: String, name: String, color: String) -> Project {
+        let task_prefix = initials(&name);
         let project = Project {
             id: uuid::Uuid::new_v4().to_string(),
             name,
@@ -93,6 +144,9 @@ impl AppData {
             color,
             custom_commands: Vec::new(),
             injectables: Vec::new(),
+            tasks: Vec::new(),
+            task_prefix,
+            next_task_seq: 0,
         };
         self.projects.push(project.clone());
         if self.active_project_id.is_none() {
@@ -249,6 +303,143 @@ impl AppData {
             _ => {}
         }
     }
+
+    pub fn add_task(
+        &mut self,
+        project_id: &str,
+        title: String,
+        description: String,
+        task_id: Option<String>,
+        status: TaskStatus,
+    ) -> Option<Task> {
+        let project = self.projects.iter_mut().find(|p| p.id == project_id)?;
+        if project.task_prefix.is_empty() {
+            project.task_prefix = initials(&project.name);
+        }
+        let task_id = match task_id {
+            Some(chosen) if !chosen.trim().is_empty() => chosen.trim().to_string(),
+            _ => loop {
+                project.next_task_seq += 1;
+                let candidate = format!("{}-{}", project.task_prefix, project.next_task_seq);
+                if !project.tasks.iter().any(|t| t.task_id == candidate) {
+                    break candidate;
+                }
+            },
+        };
+        let now = now_ms();
+        let task = Task {
+            id: uuid::Uuid::new_v4().to_string(),
+            task_id,
+            title,
+            description,
+            status,
+            created_at: now,
+            updated_at: now,
+            started_at: if status == TaskStatus::InProgress {
+                Some(now)
+            } else {
+                None
+            },
+            done_at: if status == TaskStatus::Done {
+                Some(now)
+            } else {
+                None
+            },
+            entered_column_at: Some(now),
+        };
+        project.tasks.push(task.clone());
+        Some(task)
+    }
+
+    pub fn update_task(
+        &mut self,
+        project_id: &str,
+        id: &str,
+        title: String,
+        description: String,
+        task_id: String,
+    ) {
+        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            if let Some(task) = project.tasks.iter_mut().find(|t| t.id == id) {
+                task.title = title;
+                task.description = description;
+                task.task_id = task_id;
+                task.updated_at = now_ms();
+            }
+        }
+    }
+
+    /// First entry to `InProgress` stamps `started_at` and it then stays put;
+    /// entering `Done` stamps `done_at`; any move out of `Done` clears `done_at`
+    /// so completion time and the derived duration stay accurate on reopen.
+    pub fn set_task_status(&mut self, project_id: &str, id: &str, status: TaskStatus) {
+        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            if let Some(task) = project.tasks.iter_mut().find(|t| t.id == id) {
+                let now = now_ms();
+                task.status = status;
+                task.updated_at = now;
+                task.entered_column_at = Some(now);
+                match status {
+                    TaskStatus::InProgress => {
+                        if task.started_at.is_none() {
+                            task.started_at = Some(now);
+                        }
+                        task.done_at = None;
+                    }
+                    TaskStatus::Done => task.done_at = Some(now),
+                    TaskStatus::Todo => task.done_at = None,
+                }
+            }
+        }
+    }
+
+    pub fn remove_task(&mut self, project_id: &str, id: &str) {
+        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            project.tasks.retain(|t| t.id != id);
+        }
+    }
+
+    pub fn clear_done_tasks(&mut self, project_id: &str) {
+        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            project.tasks.retain(|t| t.status != TaskStatus::Done);
+        }
+    }
+
+    pub fn set_task_prefix(&mut self, project_id: &str, prefix: String) {
+        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            project.task_prefix = prefix;
+        }
+    }
+}
+
+/// Current time as epoch milliseconds, saturating to 0 before the epoch rather
+/// than panicking (unreachable in practice; keeps this off any panic path).
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Two-letter uppercase prefix from a project name: initials of the first two
+/// words, else the first two characters of a single word. Mirrors the frontend
+/// `projectInitials` so auto task ids match the sidebar badge.
+fn initials(name: &str) -> String {
+    let words: Vec<&str> = name
+        .split(|c: char| c.is_whitespace() || c == '_' || c == '-')
+        .filter(|word| !word.is_empty())
+        .collect();
+    let picked: String = if words.len() >= 2 {
+        [words[0], words[1]]
+            .iter()
+            .filter_map(|word| word.chars().next())
+            .collect()
+    } else if let Some(first) = words.first() {
+        first.chars().take(2).collect()
+    } else {
+        String::new()
+    };
+    picked.to_uppercase()
 }
 
 /// Load JSON state from `path`. A missing or unparseable file yields defaults —
@@ -844,6 +1035,205 @@ mod tests {
         assert_eq!(loaded.codex_command, "codex");
         assert!(!loaded.vscode_import_prompted);
         assert!(loaded.notifications_enabled);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn add_task_generates_sequential_prefixed_ids() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "Orca Engine".into(), "#ef4444".into());
+        let t1 = d
+            .add_task(&p.id, "One".into(), String::new(), None, TaskStatus::Todo)
+            .unwrap();
+        let t2 = d
+            .add_task(&p.id, "Two".into(), String::new(), None, TaskStatus::Todo)
+            .unwrap();
+        assert_eq!(t1.task_id, "OE-1");
+        assert_eq!(t2.task_id, "OE-2");
+        assert_ne!(t1.id, t2.id);
+        assert_eq!(d.projects[0].tasks.len(), 2);
+        assert_eq!(t1.status, TaskStatus::Todo);
+    }
+
+    #[test]
+    fn add_task_unknown_project_returns_none() {
+        let mut d = with_three();
+        assert!(d
+            .add_task("bogus", "T".into(), String::new(), None, TaskStatus::Todo)
+            .is_none());
+    }
+
+    #[test]
+    fn add_task_never_reuses_number_after_delete() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "Orca Engine".into(), "#ef4444".into());
+        let t1 = d
+            .add_task(&p.id, "One".into(), String::new(), None, TaskStatus::Todo)
+            .unwrap();
+        d.remove_task(&p.id, &t1.id);
+        let t2 = d
+            .add_task(&p.id, "Two".into(), String::new(), None, TaskStatus::Todo)
+            .unwrap();
+        assert_eq!(t2.task_id, "OE-2");
+        assert_eq!(d.projects[0].tasks.len(), 1);
+    }
+
+    #[test]
+    fn add_task_auto_skips_number_taken_by_custom_id() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "Orca Engine".into(), "#ef4444".into());
+        d.add_task(
+            &p.id,
+            "Manual".into(),
+            String::new(),
+            Some("OE-1".into()),
+            TaskStatus::Todo,
+        );
+        let auto = d
+            .add_task(&p.id, "Auto".into(), String::new(), None, TaskStatus::Todo)
+            .unwrap();
+        assert_eq!(auto.task_id, "OE-2");
+    }
+
+    #[test]
+    fn set_task_status_stamps_started_then_done_and_clears_on_reopen() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
+        let t = d
+            .add_task(&p.id, "T".into(), String::new(), None, TaskStatus::Todo)
+            .unwrap();
+        d.set_task_status(&p.id, &t.id, TaskStatus::InProgress);
+        let started = d.projects[0].tasks[0].started_at;
+        assert!(started.is_some());
+        assert!(d.projects[0].tasks[0].done_at.is_none());
+        d.set_task_status(&p.id, &t.id, TaskStatus::Done);
+        assert!(d.projects[0].tasks[0].done_at.is_some());
+        d.set_task_status(&p.id, &t.id, TaskStatus::InProgress);
+        assert!(d.projects[0].tasks[0].done_at.is_none());
+        assert_eq!(d.projects[0].tasks[0].started_at, started);
+    }
+
+    #[test]
+    fn task_straight_to_done_leaves_started_unset() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
+        let t = d
+            .add_task(&p.id, "T".into(), String::new(), None, TaskStatus::Todo)
+            .unwrap();
+        d.set_task_status(&p.id, &t.id, TaskStatus::Done);
+        assert!(d.projects[0].tasks[0].started_at.is_none());
+        assert!(d.projects[0].tasks[0].done_at.is_some());
+    }
+
+    #[test]
+    fn update_task_changes_fields_and_bumps_updated_at() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
+        let t = d
+            .add_task(&p.id, "Old".into(), "old".into(), None, TaskStatus::Todo)
+            .unwrap();
+        d.update_task(&p.id, &t.id, "New".into(), "new".into(), "A-99".into());
+        assert_eq!(d.projects[0].tasks[0].title, "New");
+        assert_eq!(d.projects[0].tasks[0].description, "new");
+        assert_eq!(d.projects[0].tasks[0].task_id, "A-99");
+        assert!(d.projects[0].tasks[0].updated_at >= t.created_at);
+    }
+
+    #[test]
+    fn tasks_survive_save_load_round_trip_with_huge_description() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "Orca Engine".into(), "#ef4444".into());
+        let t = d
+            .add_task(
+                &p.id,
+                "Big".into(),
+                "x".repeat(200_000),
+                None,
+                TaskStatus::Todo,
+            )
+            .unwrap();
+        d.set_task_status(&p.id, &t.id, TaskStatus::InProgress);
+        let path = std::env::temp_dir().join(format!("antani-tasks-{}.json", uuid::Uuid::new_v4()));
+        save(&path, &d).unwrap();
+        let loaded: AppData = load(&path);
+        assert_eq!(loaded, d);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn old_project_without_task_fields_self_heals_prefix() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "Orca Engine".into(), "#ef4444".into());
+        d.set_task_prefix(&p.id, String::new());
+        let t = d
+            .add_task(&p.id, "One".into(), String::new(), None, TaskStatus::Todo)
+            .unwrap();
+        assert_eq!(t.task_id, "OE-1");
+        assert_eq!(d.projects[0].task_prefix, "OE");
+    }
+
+    #[test]
+    fn add_task_in_progress_stamps_started_and_entry_time() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
+        let t = d
+            .add_task(
+                &p.id,
+                "T".into(),
+                String::new(),
+                None,
+                TaskStatus::InProgress,
+            )
+            .unwrap();
+        assert_eq!(t.status, TaskStatus::InProgress);
+        assert!(t.started_at.is_some());
+        assert!(t.done_at.is_none());
+        assert!(t.entered_column_at.is_some());
+    }
+
+    #[test]
+    fn set_task_status_updates_entered_column_at() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
+        let t = d
+            .add_task(&p.id, "T".into(), String::new(), None, TaskStatus::Todo)
+            .unwrap();
+        let created_entry = d.projects[0].tasks[0].entered_column_at;
+        d.set_task_status(&p.id, &t.id, TaskStatus::InProgress);
+        let moved_entry = d.projects[0].tasks[0].entered_column_at;
+        assert!(created_entry.is_some());
+        assert!(moved_entry >= created_entry);
+    }
+
+    #[test]
+    fn clear_done_tasks_removes_only_done() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
+        let todo = d
+            .add_task(&p.id, "todo".into(), String::new(), None, TaskStatus::Todo)
+            .unwrap();
+        let done = d
+            .add_task(&p.id, "done".into(), String::new(), None, TaskStatus::Done)
+            .unwrap();
+        d.clear_done_tasks(&p.id);
+        let ids: Vec<String> = d.projects[0].tasks.iter().map(|t| t.id.clone()).collect();
+        assert!(ids.contains(&todo.id));
+        assert!(!ids.contains(&done.id));
+    }
+
+    #[test]
+    fn project_json_without_task_fields_loads_with_empty_board() {
+        let path =
+            std::env::temp_dir().join(format!("antani-legacy-tasks-{}.json", uuid::Uuid::new_v4()));
+        fs::write(
+            &path,
+            br##"{"projects":[{"id":"a","name":"A","path":"/a","color":"#ef4444"}],"activeProjectId":"a"}"##,
+        )
+        .unwrap();
+        let loaded: AppData = load(&path);
+        assert_eq!(loaded.projects[0].tasks, Vec::new());
+        assert_eq!(loaded.projects[0].task_prefix, "");
+        assert_eq!(loaded.projects[0].next_task_seq, 0);
         let _ = fs::remove_file(&path);
     }
 }

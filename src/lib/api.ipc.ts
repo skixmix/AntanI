@@ -3,7 +3,7 @@ import { type Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import type { AppData, BackupSelection, InjectTarget, Settings } from "./types";
+import type { AppData, BackupSelection, InjectTarget, Settings, TaskStatus } from "./types";
 
 /**
  * Typed wrappers around the Rust Tauri commands. Every mutating command
@@ -106,6 +106,48 @@ export function updateInjectable(
 
 export function setActiveProject(id: string | null): Promise<AppData> {
   return invoke<AppData>("set_active_project", { id });
+}
+
+export function addTask(
+  projectId: string,
+  title: string,
+  description: string,
+  taskId: string | null,
+  status: TaskStatus,
+): Promise<AppData> {
+  return invoke<AppData>("add_task", { projectId, title, description, taskId, status });
+}
+
+export function updateTask(
+  projectId: string,
+  id: string,
+  title: string,
+  description: string,
+  taskId: string,
+): Promise<AppData> {
+  return invoke<AppData>("update_task", { projectId, id, title, description, taskId });
+}
+
+export function setTaskStatus(projectId: string, id: string, status: TaskStatus): Promise<AppData> {
+  return invoke<AppData>("set_task_status", { projectId, id, status });
+}
+
+export function removeTask(projectId: string, id: string): Promise<AppData> {
+  return invoke<AppData>("remove_task", { projectId, id });
+}
+
+export function clearDoneTasks(projectId: string): Promise<AppData> {
+  return invoke<AppData>("clear_done_tasks", { projectId });
+}
+
+export function setTaskPrefix(projectId: string, prefix: string): Promise<AppData> {
+  return invoke<AppData>("set_task_prefix", { projectId, prefix });
+}
+
+/** Write a task's full brief to a temp file and return its path, so a huge
+ *  description reaches the agent by file reference rather than a PTY paste. */
+export function writeTaskBrief(taskId: string, contents: string): Promise<string> {
+  return invoke<string>("write_task_brief", { taskId, contents });
 }
 
 export function getSettings(): Promise<Settings> {

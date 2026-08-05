@@ -8,12 +8,14 @@ mod opencode_theme;
 mod pty;
 mod sound;
 mod state;
+mod task_brief;
 mod updater;
 mod vscode_server;
 mod window_restore;
 
 use state::{
-    AppData, AppState, InjectTarget, Settings, SettingsState, PROJECTS_FILE, SETTINGS_FILE,
+    AppData, AppState, InjectTarget, Settings, SettingsState, TaskStatus, PROJECTS_FILE,
+    SETTINGS_FILE,
 };
 use std::path::Path;
 use tauri::{Manager, RunEvent, State, WindowEvent};
@@ -178,6 +180,73 @@ fn set_active_project(state: State<AppState>, id: Option<String>) -> Result<AppD
 }
 
 #[tauri::command]
+fn add_task(
+    state: State<AppState>,
+    project_id: String,
+    title: String,
+    description: String,
+    task_id: Option<String>,
+    status: TaskStatus,
+) -> Result<AppData, String> {
+    mutate(&state, |d| {
+        d.add_task(&project_id, title, description, task_id, status);
+    })
+}
+
+#[tauri::command]
+fn update_task(
+    state: State<AppState>,
+    project_id: String,
+    id: String,
+    title: String,
+    description: String,
+    task_id: String,
+) -> Result<AppData, String> {
+    mutate(&state, |d| {
+        d.update_task(&project_id, &id, title, description, task_id);
+    })
+}
+
+#[tauri::command]
+fn set_task_status(
+    state: State<AppState>,
+    project_id: String,
+    id: String,
+    status: TaskStatus,
+) -> Result<AppData, String> {
+    mutate(&state, |d| d.set_task_status(&project_id, &id, status))
+}
+
+#[tauri::command]
+fn remove_task(state: State<AppState>, project_id: String, id: String) -> Result<AppData, String> {
+    mutate(&state, |d| d.remove_task(&project_id, &id))
+}
+
+#[tauri::command]
+fn clear_done_tasks(state: State<AppState>, project_id: String) -> Result<AppData, String> {
+    mutate(&state, |d| d.clear_done_tasks(&project_id))
+}
+
+#[tauri::command]
+fn set_task_prefix(
+    state: State<AppState>,
+    project_id: String,
+    prefix: String,
+) -> Result<AppData, String> {
+    mutate(&state, |d| d.set_task_prefix(&project_id, prefix))
+}
+
+/// Write a task's full brief to a temp file (see `task_brief`) and return its
+/// path, so a huge description reaches the agent by file reference rather than a
+/// fragile PTY paste. Not persisted state, so it does not go through `mutate`.
+#[tauri::command]
+fn write_task_brief(task_id: String, contents: String) -> Result<String, String> {
+    task_brief::write_brief(&task_id, &contents)
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn get_settings(settings: State<SettingsState>) -> Result<Settings, String> {
     settings
         .data
@@ -290,6 +359,7 @@ pub fn run() {
 
             let dir = app.path().app_data_dir()?;
             backup::recover_interrupted_import(&dir)?;
+            task_brief::clear_briefs();
             app.manage(backup::BackupMaintenance::default());
             app.manage(AppState::new(dir.join(PROJECTS_FILE)));
             app.manage(SettingsState::new(dir.join(SETTINGS_FILE)));
@@ -351,6 +421,13 @@ pub fn run() {
             remove_injectable,
             update_injectable,
             set_active_project,
+            add_task,
+            update_task,
+            set_task_status,
+            remove_task,
+            clear_done_tasks,
+            set_task_prefix,
+            write_task_brief,
             get_settings,
             update_settings,
             export_backup,

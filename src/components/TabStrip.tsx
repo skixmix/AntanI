@@ -1,11 +1,19 @@
 import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 import { projectInitials } from "../lib/constants";
 import type { PaneRect } from "../lib/splitLayout";
-import { MAX_SPLIT_MEMBERS, type Split, type Tab, type TabKind, type TabStatus } from "../lib/tabs";
+import {
+  isSurfaceKind,
+  MAX_SPLIT_MEMBERS,
+  type Split,
+  type Tab,
+  type TabKind,
+  type TabStatus,
+} from "../lib/tabs";
 import type { CustomCommand, Project } from "../lib/types";
 import { type SplitDropTarget, useDragReorder } from "../lib/useDragReorder";
 import {
   AnthropicIcon,
+  BoardIcon,
   CodexIcon,
   CustomCommandIcon,
   OpenCodeIcon,
@@ -35,6 +43,7 @@ interface TabStripProps {
   onRecolor: (tabId: string, color: string) => void;
   onReorder: (fromId: string, insertBeforeId: string | null) => void;
   onOpenIde: () => void;
+  onOpenBoard: () => void;
   onOpenToSide?: (tabId: string) => void;
   onAddToSplit?: (splitId: string, tabId: string) => void;
   onUnsplit?: (splitId: string) => void;
@@ -72,6 +81,7 @@ export function TabStrip({
   onRecolor,
   onReorder,
   onOpenIde,
+  onOpenBoard,
   onOpenToSide,
   onAddToSplit,
   onUnsplit,
@@ -102,7 +112,7 @@ export function TabStrip({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const currentTab = tabs.find((t) => t.id === activeTabId);
-  const canSplitWithCurrent = currentTab != null && currentTab.kind !== "ide";
+  const canSplitWithCurrent = currentTab != null && !isSurfaceKind(currentTab.kind);
   const viewedSplit = viewingSplitId ? (splits.find((s) => s.id === viewingSplitId) ?? null) : null;
   const canGrowSplit = viewedSplit != null && viewedSplit.memberIds.length < MAX_SPLIT_MEMBERS;
 
@@ -195,7 +205,7 @@ export function TabStrip({
                     : undefined
                 }
                 onAddToSplit={
-                  onAddToSplit && canGrowSplit && tab.kind !== "ide" && viewedSplit
+                  onAddToSplit && canGrowSplit && !isSurfaceKind(tab.kind) && viewedSplit
                     ? () => onAddToSplit(viewedSplit.id, tab.id)
                     : undefined
                 }
@@ -250,6 +260,16 @@ export function TabStrip({
           >
             <VSCodeIcon size={13} className="text-[#007ACC]" />
             <span>VS Code</span>
+          </button>
+
+          <button
+            type="button"
+            title="Open the task board"
+            onClick={onOpenBoard}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          >
+            <BoardIcon size={13} />
+            <span>Board</span>
           </button>
 
           {QUICK_OPEN.map((item) => (

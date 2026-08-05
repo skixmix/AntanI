@@ -2,6 +2,7 @@ import { paneRect } from "../lib/splitLayout";
 import {
   DEFAULT_SPLIT_RATIO,
   isAgentKind,
+  isSurfaceKind,
   PANE_IDS,
   type PaneId,
   projectTabs,
@@ -48,7 +49,7 @@ export function TerminalLayer({
       {projects.flatMap((project) => {
         const { tabs: projectTabList } = projectTabs(tabs, project.id);
         return projectTabList
-          .filter((tab) => tab.kind !== "ide")
+          .filter((tab) => !isSurfaceKind(tab.kind))
           .map((tab) => {
             const isActiveProject = project.id === activeProjectId;
             const index = paneTabIds.indexOf(tab.id);

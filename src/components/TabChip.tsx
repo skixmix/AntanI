@@ -1,9 +1,16 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { isAgentKind, type Tab, type TabStatus } from "../lib/tabs";
+import { isAgentKind, isSurfaceKind, type Tab, type TabStatus } from "../lib/tabs";
 import { ColorPicker } from "./ColorPicker";
 import { ConfirmPopover } from "./ConfirmPopover";
-import { AnthropicIcon, CodexIcon, OpenCodeIcon, TerminalIcon, VSCodeIcon } from "./Icons";
+import {
+  AnthropicIcon,
+  BoardIcon,
+  CodexIcon,
+  OpenCodeIcon,
+  TerminalIcon,
+  VSCodeIcon,
+} from "./Icons";
 
 interface TabChipProps {
   tab: Tab;
@@ -30,6 +37,7 @@ export const KIND_ICON: Record<string, ReactNode> = {
   claude: <AnthropicIcon size={12} className="text-[#d4622a]" />,
   codex: <CodexIcon size={12} className="opacity-80" />,
   ide: <VSCodeIcon size={12} className="text-[#007ACC] opacity-80" />,
+  kanban: <BoardIcon size={12} className="opacity-80" />,
 };
 
 export function AiStatusDot({ status }: { status: TabStatus }) {
@@ -254,7 +262,7 @@ export function TabChip({
           >
             Change color
           </button>
-          {tab.kind !== "ide" && onOpenToSide && (
+          {!isSurfaceKind(tab.kind) && onOpenToSide && (
             <button
               type="button"
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-secondary"
