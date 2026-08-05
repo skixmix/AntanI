@@ -37,6 +37,7 @@ Built with Tauri v2 + React. And AI.
 - Save **custom quick actions/prompts** per project for commands you run often.
 - See the **current branch** you're working on and the diff with **source control** utilities.
 - **Export/import a backup** of projects, preferences, colors, and the VS Code profile/extensions.
+- Track tasks on a **Kanban board** per project.
 - And any other feature that I'll add when it comes to my mind.
 
 ## Installation
