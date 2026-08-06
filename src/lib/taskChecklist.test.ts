@@ -61,6 +61,10 @@ describe("toggleChecklistItem", () => {
   it("returns the input unchanged for an out-of-range index", () => {
     expect(toggleChecklistItem(md, 99)).toBe(md);
   });
+
+  it("flips a checked item back to unchecked", () => {
+    expect(parseChecklist(toggleChecklistItem(md, 1))[1].checked).toBe(false);
+  });
 });
 
 describe("stripChecklist", () => {
@@ -70,5 +74,12 @@ describe("stripChecklist", () => {
     expect(out).toContain("More prose.");
     expect(out).not.toContain("first");
     expect(out).not.toContain("nested third");
+  });
+
+  it("keeps checkbox syntax inside fenced code blocks intact", () => {
+    const withFence = "- [ ] real\n\n```\n- [ ] not a task\n```";
+    const out = stripChecklist(withFence);
+    expect(out).not.toContain("real");
+    expect(out).toContain("- [ ] not a task");
   });
 });
