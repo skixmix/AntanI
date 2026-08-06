@@ -23,6 +23,8 @@ export function Markdown({ source, className, onToggleCheckbox }: MarkdownProps)
     if (!el) return;
     const html = marked.parse(source, { async: false });
     const raw = interactive ? html.replace(/ disabled=""/g, "") : html;
+    // Keep DOMPurify.sanitize() inline at the assignment (not an intermediate
+    // variable) so static analyzers can see the sink is sanitized.
     el.innerHTML = DOMPurify.sanitize(raw);
   }, [source, interactive]);
 
