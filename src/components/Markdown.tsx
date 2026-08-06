@@ -22,8 +22,8 @@ export function Markdown({ source, className, onToggleCheckbox }: MarkdownProps)
     const el = ref.current;
     if (!el) return;
     const html = marked.parse(source, { async: false });
-    const clean = DOMPurify.sanitize(html);
-    el.innerHTML = interactive ? clean.replace(/ disabled=""/g, "") : clean;
+    const raw = interactive ? html.replace(/ disabled=""/g, "") : html;
+    el.innerHTML = DOMPurify.sanitize(raw);
   }, [source, interactive]);
 
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
