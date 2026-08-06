@@ -4,6 +4,7 @@ import { pastDragThreshold, setBodyDragCursor } from "./dragGesture";
 import type { TaskStatus } from "./types";
 
 const COLUMN_ATTR = "data-kanban-column";
+const CARD_ATTR = "data-task-id";
 
 function columnStatusAt(x: number, y: number): TaskStatus | null {
   const columns = Array.from(document.querySelectorAll<HTMLElement>(`[${COLUMN_ATTR}]`));
@@ -17,26 +18,43 @@ function columnStatusAt(x: number, y: number): TaskStatus | null {
   return null;
 }
 
+/** Within `status`'s column, the id of the first card whose vertical midpoint is
+ *  below `y` (the card the dragged one should slot before), or `null` for the
+ *  column end. The dragged card is skipped so it never targets itself. */
+function insertBeforeIn(status: TaskStatus, y: number, draggingId: string | null): string | null {
+  const column = document.querySelector<HTMLElement>(`[${COLUMN_ATTR}="${status}"]`);
+  if (!column) return null;
+  const cards = Array.from(column.querySelectorAll<HTMLElement>(`[${CARD_ATTR}]`));
+  for (const card of cards) {
+    const id = card.getAttribute(CARD_ATTR);
+    if (!id || id === draggingId) continue;
+    const rect = card.getBoundingClientRect();
+    if (y < (rect.top + rect.bottom) / 2) return id;
+  }
+  return null;
+}
+
 /**
- * Pointer-events card drag for moving a task between Kanban columns (WKWebView
- * has no working HTML5 drag API — same reason `useDragReorder` exists). Each
- * column must carry `data-kanban-column="<status>"`; dropping a card over a
- * different column fires `onMove` with that column's status. A drop on the
- * origin column, or outside any column, is a no-op. A press that never moves
- * past `DRAG_THRESHOLD_PX` is treated as a click and fires `onClick` instead,
- * so the card stays clickable without a competing HTML5 click handler.
+ * Pointer-events card drag for the Kanban board (WKWebView has no working HTML5
+ * drag API, the same reason `useDragReorder` exists). A drag both moves a task
+ * between columns and positions it within one: on drop it fires
+ * `onReorder(taskId, status, beforeId)`, where `beforeId` is the card to slot in
+ * front of (or `null` for the column end). A press that never passes
+ * `DRAG_THRESHOLD_PX` is treated as a click and fires `onClick` instead, keeping
+ * cards clickable. Columns need `data-kanban-column`, cards `data-task-id`.
  */
 export function useCardDrag(
-  onMove: (taskId: string, status: TaskStatus) => void,
+  onReorder: (taskId: string, status: TaskStatus, beforeId: string | null) => void,
   onClick?: (taskId: string) => void,
 ) {
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [overStatus, setOverStatus] = useState<TaskStatus | null>(null);
+  const [insertBeforeId, setInsertBeforeId] = useState<string | null>(null);
   const taskIdRef = useRef<string | null>(null);
-  const fromStatusRef = useRef<TaskStatus | null>(null);
   const overRef = useRef<TaskStatus | null>(null);
+  const beforeRef = useRef<string | null>(null);
 
-  function startDrag(e: React.PointerEvent, taskId: string, currentStatus: TaskStatus) {
+  function startDrag(e: React.PointerEvent, taskId: string) {
     if (e.button !== 0) return;
     if ((e.target as Element).closest("button, input, textarea, a")) return;
     e.preventDefault();
@@ -44,13 +62,14 @@ export function useCardDrag(
     const startY = e.clientY;
     let moved = false;
     taskIdRef.current = taskId;
-    fromStatusRef.current = currentStatus;
     overRef.current = null;
+    beforeRef.current = null;
 
     function beginDrag() {
       moved = true;
       setDraggingTaskId(taskId);
       setOverStatus(null);
+      setInsertBeforeId(null);
       setBodyDragCursor(true);
     }
 
@@ -64,6 +83,11 @@ export function useCardDrag(
         overRef.current = status;
         setOverStatus(status);
       }
+      const before = status ? insertBeforeIn(status, ev.clientY, taskId) : null;
+      if (before !== beforeRef.current) {
+        beforeRef.current = before;
+        setInsertBeforeId(before);
+      }
     }
 
     function onPointerUp() {
@@ -71,17 +95,18 @@ export function useCardDrag(
       window.removeEventListener("pointerup", onPointerUp);
       setBodyDragCursor(false);
       const id = taskIdRef.current;
-      const from = fromStatusRef.current;
       const to = overRef.current;
+      const before = beforeRef.current;
       taskIdRef.current = null;
-      fromStatusRef.current = null;
       overRef.current = null;
+      beforeRef.current = null;
       setDraggingTaskId(null);
       setOverStatus(null);
+      setInsertBeforeId(null);
       if (!moved) {
         if (id) onClick?.(id);
-      } else if (id && to && to !== from) {
-        onMove(id, to);
+      } else if (id && to) {
+        onReorder(id, to, before);
       }
     }
 
@@ -89,5 +114,5 @@ export function useCardDrag(
     window.addEventListener("pointerup", onPointerUp);
   }
 
-  return { draggingTaskId, overStatus, startDrag };
+  return { draggingTaskId, overStatus, insertBeforeId, startDrag };
 }

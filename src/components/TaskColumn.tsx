@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { AgentKind } from "../lib/tabs";
 import type { Task, TaskStatus } from "../lib/types";
 import { ConfirmPopover } from "./ConfirmPopover";
@@ -12,13 +12,15 @@ interface TaskColumnProps {
   label: string;
   tasks: Task[];
   dropActive: boolean;
+  insertBeforeId: string | null;
   draggingTaskId: string | null;
-  onStartDrag: (e: React.PointerEvent, taskId: string, status: TaskStatus) => void;
+  onStartDrag: (e: React.PointerEvent, taskId: string) => void;
   onAdd: () => void;
   onClearDone?: () => void;
   onTrigger: (task: Task, kind: AgentKind) => void;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
+  onToggleCheckbox: (task: Task, index: number) => void;
 }
 
 export function TaskColumn({
@@ -26,6 +28,7 @@ export function TaskColumn({
   label,
   tasks,
   dropActive,
+  insertBeforeId,
   draggingTaskId,
   onStartDrag,
   onAdd,
@@ -33,6 +36,7 @@ export function TaskColumn({
   onTrigger,
   onEdit,
   onDelete,
+  onToggleCheckbox,
 }: TaskColumnProps) {
   const [confirm, setConfirm] = useState<{ x: number; y: number } | null>(null);
   const accent = COLUMN_ACCENT[status];
@@ -78,16 +82,24 @@ export function TaskColumn({
         }`}
       >
         {tasks.map((task) => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            dragging={draggingTaskId === task.id}
-            onStartDrag={(e) => onStartDrag(e, task.id, status)}
-            onTrigger={(kind) => onTrigger(task, kind)}
-            onEdit={() => onEdit(task)}
-            onDelete={() => onDelete(task)}
-          />
+          <Fragment key={task.id}>
+            {dropActive && insertBeforeId === task.id && (
+              <div className="h-0.5 shrink-0 rounded-full bg-primary" />
+            )}
+            <TaskCard
+              task={task}
+              dragging={draggingTaskId === task.id}
+              onStartDrag={(e) => onStartDrag(e, task.id)}
+              onTrigger={(kind) => onTrigger(task, kind)}
+              onEdit={() => onEdit(task)}
+              onDelete={() => onDelete(task)}
+              onToggleCheckbox={(index) => onToggleCheckbox(task, index)}
+            />
+          </Fragment>
         ))}
+        {dropActive && insertBeforeId === null && tasks.length > 0 && (
+          <div className="h-0.5 shrink-0 rounded-full bg-primary" />
+        )}
         {tasks.length === 0 && (
           <p className="px-1 py-6 text-center text-xs text-muted-foreground/50 no-select">
             {dropActive ? "Release to drop here" : "No tasks"}

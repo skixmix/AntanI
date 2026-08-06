@@ -16,7 +16,9 @@ fn briefs_dir() -> PathBuf {
 /// state; `clear_briefs` reaps them at startup.
 const MAX_STEM_LEN: usize = 64;
 
-pub fn write_brief(task_id: &str, contents: &str) -> io::Result<PathBuf> {
+/// Filesystem-safe filename stem for a task id. `write_brief` and
+/// `remove_briefs_for` must derive it identically or cleanup can't match.
+fn safe_stem(task_id: &str) -> String {
     let mut safe: String = task_id
         .chars()
         .map(|c| {
@@ -28,12 +30,39 @@ pub fn write_brief(task_id: &str, contents: &str) -> io::Result<PathBuf> {
         })
         .collect();
     safe.truncate(MAX_STEM_LEN);
-    let stem = if safe.is_empty() { "task" } else { &safe };
+    if safe.is_empty() {
+        "task".to_string()
+    } else {
+        safe
+    }
+}
+
+pub fn write_brief(task_id: &str, contents: &str) -> io::Result<PathBuf> {
+    let stem = safe_stem(task_id);
     let dir = briefs_dir();
     fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{}-{}.md", stem, uuid::Uuid::new_v4()));
     fs::write(&path, contents)?;
     Ok(path)
+}
+
+/// Delete every scratch brief for `task_id` (each "Send to AI" adds one
+/// `<stem>-<uuid>.md`). The trailing `-` in the match prefix stops `OE-1` from
+/// also matching `OE-15`. Best-effort. Two projects sharing an identical task
+/// id would clear each other's briefs, which is harmless and self-corrects on
+/// the next send.
+pub fn remove_briefs_for(task_id: &str) {
+    let prefix = format!("{}-", safe_stem(task_id));
+    let Ok(entries) = fs::read_dir(briefs_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(&prefix) && name.ends_with(".md") {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// Delete every task brief. Called once at startup: a brief is read by the agent
@@ -73,5 +102,20 @@ mod tests {
         assert!(name.starts_with(&"a".repeat(MAX_STEM_LEN)));
         assert!(!name.starts_with(&"a".repeat(MAX_STEM_LEN + 1)));
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn remove_briefs_for_deletes_matching_stems_only() {
+        let a = write_brief("REAPTEST-3", "one").unwrap();
+        let b = write_brief("REAPTEST-3", "two").unwrap();
+        let sibling = write_brief("REAPTEST-30", "keep").unwrap();
+        remove_briefs_for("REAPTEST-3");
+        assert!(!a.exists());
+        assert!(!b.exists());
+        assert!(
+            sibling.exists(),
+            "sibling stem must not be reaped by prefix"
+        );
+        let _ = fs::remove_file(&sibling);
     }
 }

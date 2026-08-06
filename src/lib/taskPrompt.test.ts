@@ -6,7 +6,9 @@ const task: Task = {
   id: "u1",
   taskId: "OE-3",
   title: "Add login",
-  description: "Full brief body.",
+  description: "Human notes.",
+  prompt: "Full brief body.",
+  color: null,
   status: "todo",
   createdAt: 0,
   updatedAt: 0,
@@ -16,7 +18,7 @@ const task: Task = {
 };
 
 describe("buildTaskBrief", () => {
-  it("includes the task id, title, project name and description", () => {
+  it("includes the task id, title, project name and prompt", () => {
     const brief = buildTaskBrief("My App", task);
     expect(brief).toContain("OE-3");
     expect(brief).toContain("Add login");
@@ -24,9 +26,19 @@ describe("buildTaskBrief", () => {
     expect(brief).toContain("Full brief body.");
   });
 
-  it("preserves a huge description verbatim", () => {
+  it("sends the AI prompt, not the human notes", () => {
+    const brief = buildTaskBrief("My App", {
+      ...task,
+      description: "secret human notes",
+      prompt: "do the thing",
+    });
+    expect(brief).toContain("do the thing");
+    expect(brief).not.toContain("secret human notes");
+  });
+
+  it("preserves a huge prompt verbatim", () => {
     const huge = "x".repeat(200_000);
-    const brief = buildTaskBrief("My App", { ...task, description: huge });
+    const brief = buildTaskBrief("My App", { ...task, prompt: huge });
     expect(brief).toContain(huge);
   });
 });

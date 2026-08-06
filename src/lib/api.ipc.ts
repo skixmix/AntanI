@@ -3,7 +3,14 @@ import { type Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import type { AppData, BackupSelection, InjectTarget, Settings, TaskStatus } from "./types";
+import type {
+  AppData,
+  BackupSelection,
+  InjectTarget,
+  Settings,
+  TaskContent,
+  TaskStatus,
+} from "./types";
 
 /**
  * Typed wrappers around the Rust Tauri commands. Every mutating command
@@ -110,26 +117,33 @@ export function setActiveProject(id: string | null): Promise<AppData> {
 
 export function addTask(
   projectId: string,
-  title: string,
-  description: string,
+  content: TaskContent,
   taskId: string | null,
   status: TaskStatus,
 ): Promise<AppData> {
-  return invoke<AppData>("add_task", { projectId, title, description, taskId, status });
+  return invoke<AppData>("add_task", { projectId, content, taskId, status });
 }
 
 export function updateTask(
   projectId: string,
   id: string,
-  title: string,
-  description: string,
+  content: TaskContent,
   taskId: string,
 ): Promise<AppData> {
-  return invoke<AppData>("update_task", { projectId, id, title, description, taskId });
+  return invoke<AppData>("update_task", { projectId, id, content, taskId });
 }
 
 export function setTaskStatus(projectId: string, id: string, status: TaskStatus): Promise<AppData> {
   return invoke<AppData>("set_task_status", { projectId, id, status });
+}
+
+export function reorderTask(
+  projectId: string,
+  id: string,
+  status: TaskStatus,
+  beforeId: string | null,
+): Promise<AppData> {
+  return invoke<AppData>("reorder_task", { projectId, id, status, beforeId });
 }
 
 export function removeTask(projectId: string, id: string): Promise<AppData> {

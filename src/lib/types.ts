@@ -25,12 +25,21 @@ export interface Task {
   taskId: string;
   title: string;
   description: string;
+  prompt: string;
+  color: string | null;
   status: TaskStatus;
   createdAt: number;
   updatedAt: number;
   startedAt: number | null;
   doneAt: number | null;
   enteredColumnAt: number | null;
+}
+
+export interface TaskContent {
+  title: string;
+  description: string;
+  prompt: string;
+  color: string | null;
 }
 
 export interface Project {

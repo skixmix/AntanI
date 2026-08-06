@@ -18,4 +18,8 @@ describe("isNewerVersion", () => {
     expect(isNewerVersion("0.9.0", "0.10")).toBe(true);
     expect(isNewerVersion("0.9", "0.9.0")).toBe(false);
   });
+
+  it("treats a candidate's missing trailing part as 0", () => {
+    expect(isNewerVersion("0.9.1", "0.9")).toBe(false);
+  });
 });

@@ -215,6 +215,19 @@ export function setActiveTab(state: TabsState, projectId: string, tabId: string)
   return { ...state, [projectId]: { ...current, activeTabId: tabId, viewingSplitId: null } };
 }
 
+/** Focus the project's existing tab of `kind` (surface tabs like the board and
+ *  IDE are singletons per project), or add a fresh one when none exists yet. */
+export function openOrFocusTab(
+  state: TabsState,
+  projectId: string,
+  kind: TabKind,
+  settings: Settings,
+): TabsState {
+  const existing = projectTabs(state, projectId).tabs.find((t) => t.kind === kind);
+  if (existing) return setActiveTab(state, projectId, existing.id);
+  return addTab(state, projectId, createTab(kind, settings));
+}
+
 export function viewSplit(state: TabsState, projectId: string, splitId: string): TabsState {
   const current = projectTabs(state, projectId);
   if (!current.splits.some((s) => s.id === splitId)) return state;

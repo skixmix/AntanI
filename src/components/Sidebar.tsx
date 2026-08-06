@@ -7,7 +7,7 @@ import { reorderProjectSubset } from "../lib/projectOrder";
 import type { Project } from "../lib/types";
 import { useDragReorder } from "../lib/useDragReorder";
 import { ContextMenu } from "./ContextMenu";
-import { ChevronRightIcon, ProjectsIcon, WrenchIcon } from "./Icons";
+import { BoardIcon, ChevronRightIcon, ProjectsIcon, WrenchIcon } from "./Icons";
 import { ProjectRow } from "./ProjectRow";
 
 interface SidebarProps {
@@ -17,6 +17,7 @@ interface SidebarProps {
   projectStatuses: Record<string, "busy" | "waiting">;
   projectNeedsAttention: Record<string, "ready" | "waiting" | "neutral">;
   onAdd: () => void;
+  onOpenGlobalBoard: () => void;
   onSelect: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onRecolor: (id: string, color: string) => void;
@@ -58,6 +59,7 @@ export function Sidebar({
   projectStatuses,
   projectNeedsAttention,
   onAdd,
+  onOpenGlobalBoard,
   onSelect,
   onRename,
   onRecolor,
@@ -538,11 +540,23 @@ export function Sidebar({
       <div style={{ borderTop: "1px solid var(--color-sidebar-border)" }}>
         <button
           type="button"
+          onClick={onOpenGlobalBoard}
+          title="Overview board"
+          className={`flex w-full items-center text-sm text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors no-select ${
+            collapsed ? "justify-center py-3" : "gap-2.5 px-3 py-3.5"
+          }`}
+        >
+          <BoardIcon size={15} className="shrink-0 opacity-60" />
+          {!collapsed && "Overview"}
+        </button>
+        <button
+          type="button"
           onClick={onAdd}
           title="Add project"
           className={`flex w-full items-center text-sm text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors no-select ${
             collapsed ? "justify-center py-3" : "gap-2.5 px-3 py-3.5"
           }`}
+          style={{ borderTop: "1px solid var(--color-sidebar-border)" }}
         >
           <svg
             width="15"

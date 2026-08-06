@@ -12,6 +12,7 @@ import {
   MAX_SPLIT_MEMBERS,
   MAX_SPLIT_RATIO,
   MIN_SPLIT_RATIO,
+  openOrFocusTab,
   openTabToSide,
   type PaneId,
   type ProjectTabs,
@@ -277,6 +278,25 @@ describe("setActiveTab", () => {
     expect(p.activeTabId).toBe(ide.id);
     expect(p.viewingSplitId).toBeNull();
     expect(p.splits).toHaveLength(1);
+  });
+});
+
+describe("openOrFocusTab", () => {
+  it("focuses the existing singleton tab of that kind instead of duplicating it", () => {
+    const state = seed(["terminal", "kanban"]);
+    const kanban = projectTabs(state, PROJECT).tabs.find((t) => t.kind === "kanban");
+    if (!kanban) throw new Error("kanban tab missing");
+    const next = openOrFocusTab(state, PROJECT, "kanban", SETTINGS);
+    expect(projectTabs(next, PROJECT).tabs).toHaveLength(2);
+    expect(projectTabs(next, PROJECT).activeTabId).toBe(kanban.id);
+  });
+
+  it("adds a new tab of that kind when none exists yet", () => {
+    const state = seed(["terminal"]);
+    const next = openOrFocusTab(state, PROJECT, "kanban", SETTINGS);
+    const tabs = projectTabs(next, PROJECT).tabs;
+    expect(tabs).toHaveLength(2);
+    expect(tabs.find((t) => t.kind === "kanban")).toBeDefined();
   });
 });
 

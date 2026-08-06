@@ -1,7 +1,7 @@
 import type { Task } from "./types";
 
 export function buildTaskBrief(projectName: string, task: Task): string {
-  return `# ${task.taskId}: ${task.title}\n\nProject: ${projectName}\n\n${task.description}\n`;
+  return `# ${task.taskId}: ${task.title}\n\nProject: ${projectName}\n\n${task.prompt}\n`;
 }
 
 export function buildTaskInstruction(projectName: string, task: Task, briefPath: string): string {

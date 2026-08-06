@@ -14,8 +14,8 @@ mod vscode_server;
 mod window_restore;
 
 use state::{
-    AppData, AppState, InjectTarget, Settings, SettingsState, TaskStatus, PROJECTS_FILE,
-    SETTINGS_FILE,
+    AppData, AppState, InjectTarget, Settings, SettingsState, TaskContent, TaskStatus,
+    PROJECTS_FILE, SETTINGS_FILE,
 };
 use std::path::Path;
 use tauri::{Manager, RunEvent, State, WindowEvent};
@@ -55,6 +55,21 @@ where
     f(&mut data);
     state::save(&state.file_path, &*data).map_err(|e| e.to_string())?;
     Ok(data.clone())
+}
+
+/// Reap a task's scratch briefs once it lands in Done: the agent reads a brief
+/// at dispatch, so a completed task's brief is spent and safe to delete.
+fn reap_brief_if_done(data: &AppData, project_id: &str, id: &str) {
+    let done_task_id = data
+        .projects
+        .iter()
+        .find(|p| p.id == project_id)
+        .and_then(|p| p.tasks.iter().find(|t| t.id == id))
+        .filter(|t| t.status == TaskStatus::Done)
+        .map(|t| t.task_id.clone());
+    if let Some(task_id) = done_task_id {
+        task_brief::remove_briefs_for(&task_id);
+    }
 }
 
 #[tauri::command]
@@ -183,13 +198,12 @@ fn set_active_project(state: State<AppState>, id: Option<String>) -> Result<AppD
 fn add_task(
     state: State<AppState>,
     project_id: String,
-    title: String,
-    description: String,
+    content: TaskContent,
     task_id: Option<String>,
     status: TaskStatus,
 ) -> Result<AppData, String> {
     mutate(&state, |d| {
-        d.add_task(&project_id, title, description, task_id, status);
+        d.add_task(&project_id, content, task_id, status);
     })
 }
 
@@ -198,12 +212,11 @@ fn update_task(
     state: State<AppState>,
     project_id: String,
     id: String,
-    title: String,
-    description: String,
+    content: TaskContent,
     task_id: String,
 ) -> Result<AppData, String> {
     mutate(&state, |d| {
-        d.update_task(&project_id, &id, title, description, task_id);
+        d.update_task(&project_id, &id, content, task_id);
     })
 }
 
@@ -214,17 +227,48 @@ fn set_task_status(
     id: String,
     status: TaskStatus,
 ) -> Result<AppData, String> {
-    mutate(&state, |d| d.set_task_status(&project_id, &id, status))
+    let data = mutate(&state, |d| d.set_task_status(&project_id, &id, status))?;
+    reap_brief_if_done(&data, &project_id, &id);
+    Ok(data)
+}
+
+#[tauri::command]
+fn reorder_task(
+    state: State<AppState>,
+    project_id: String,
+    id: String,
+    status: TaskStatus,
+    before_id: Option<String>,
+) -> Result<AppData, String> {
+    let data = mutate(&state, |d| {
+        d.reorder_task(&project_id, &id, status, before_id.as_deref());
+    })?;
+    reap_brief_if_done(&data, &project_id, &id);
+    Ok(data)
 }
 
 #[tauri::command]
 fn remove_task(state: State<AppState>, project_id: String, id: String) -> Result<AppData, String> {
-    mutate(&state, |d| d.remove_task(&project_id, &id))
+    let mut removed = None;
+    let data = mutate(&state, |d| {
+        removed = d.remove_task(&project_id, &id);
+    })?;
+    if let Some(task_id) = removed {
+        task_brief::remove_briefs_for(&task_id);
+    }
+    Ok(data)
 }
 
 #[tauri::command]
 fn clear_done_tasks(state: State<AppState>, project_id: String) -> Result<AppData, String> {
-    mutate(&state, |d| d.clear_done_tasks(&project_id))
+    let mut removed = Vec::new();
+    let data = mutate(&state, |d| {
+        removed = d.clear_done_tasks(&project_id);
+    })?;
+    for task_id in &removed {
+        task_brief::remove_briefs_for(task_id);
+    }
+    Ok(data)
 }
 
 #[tauri::command]
@@ -424,6 +468,7 @@ pub fn run() {
             add_task,
             update_task,
             set_task_status,
+            reorder_task,
             remove_task,
             clear_done_tasks,
             set_task_prefix,
