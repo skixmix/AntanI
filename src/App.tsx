@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FirstRunVscodeModal } from "./components/FirstRunVscodeModal";
+import { GlobalBoard } from "./components/GlobalBoard";
 import { ImportVscodeModal } from "./components/ImportVscodeModal";
 import { KanbanBoard } from "./components/KanbanBoard";
 import {
@@ -33,6 +34,7 @@ import {
   createCustomTab,
   createTab,
   findTabOwner,
+  openOrFocusTab,
   openTabToSide,
   type PaneId,
   projectTabs,
@@ -79,6 +81,7 @@ function App() {
   const [pendingIdeOpenProjectId, setPendingIdeOpenProjectId] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState("");
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [showGlobalBoard, setShowGlobalBoard] = useState(false);
 
   useEffect(() => {
     void api.getAppVersion().then(setAppVersion);
@@ -531,23 +534,27 @@ function App() {
   const openIdeNow = useCallback(
     (id: string) => {
       if (!settings) return;
-      setTabs((t) => {
-        const existing = projectTabs(t, id).tabs.find((tab) => tab.kind === "ide");
-        if (existing) return setActiveTab(t, id, existing.id);
-        return addTab(t, id, createTab("ide", settings));
-      });
+      setTabs((t) => openOrFocusTab(t, id, "ide", settings));
     },
     [settings],
   );
 
   const openBoard = useCallback(() => {
     if (!activeId || !settings) return;
-    setTabs((t) => {
-      const existing = projectTabs(t, activeId).tabs.find((tab) => tab.kind === "kanban");
-      if (existing) return setActiveTab(t, activeId, existing.id);
-      return addTab(t, activeId, createTab("kanban", settings));
-    });
+    setTabs((t) => openOrFocusTab(t, activeId, "kanban", settings));
   }, [activeId, settings]);
+
+  const openProjectBoard = useCallback(
+    (id: string) => {
+      if (!settings) return;
+      setTabs((t) => openOrFocusTab(t, id, "kanban", settings));
+      void run(() => api.setActiveProject(id));
+      setShowGlobalBoard(false);
+    },
+    [settings, run],
+  );
+
+  const openGlobalBoard = useCallback(() => setShowGlobalBoard(true), []);
 
   const requestOpenIde = useCallback(
     (id: string) => {
@@ -753,6 +760,7 @@ function App() {
           projectStatuses={projectStatuses}
           projectNeedsAttention={projectNeedsAttention}
           onAdd={handleAdd}
+          onOpenGlobalBoard={openGlobalBoard}
           onSelect={handleSelectProject}
           onRename={(id, name) => run(() => api.renameProject(id, name))}
           onRecolor={(id, color) => run(() => api.setProjectColor(id, color))}
@@ -865,6 +873,14 @@ function App() {
       )}
 
       {showFirstRunImportModal && <FirstRunVscodeModal onFinish={handleFirstRunFinish} />}
+
+      {showGlobalBoard && (
+        <GlobalBoard
+          projects={data.projects}
+          onSelectProject={openProjectBoard}
+          onClose={() => setShowGlobalBoard(false)}
+        />
+      )}
 
       {error && (
         <div className="fixed bottom-3 right-3 z-50 max-w-sm rounded-md border border-destructive bg-destructive/90 px-3 py-2 text-xs text-foreground shadow-lg">
