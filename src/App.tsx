@@ -785,13 +785,15 @@ function App() {
             active && (
               <KanbanBoard
                 project={active}
-                onAddTask={(title, description, taskId, status) =>
-                  run(() => api.addTask(active.id, title, description, taskId, status))
+                onAddTask={(content, taskId, status) =>
+                  run(() => api.addTask(active.id, content, taskId, status))
                 }
-                onUpdateTask={(id, title, description, taskId) =>
-                  run(() => api.updateTask(active.id, id, title, description, taskId))
+                onUpdateTask={(id, content, taskId) =>
+                  run(() => api.updateTask(active.id, id, content, taskId))
                 }
-                onMoveTask={(id, status) => run(() => api.setTaskStatus(active.id, id, status))}
+                onReorderTask={(id, status, beforeId) =>
+                  run(() => api.reorderTask(active.id, id, status, beforeId))
+                }
                 onRemoveTask={(id) => run(() => api.removeTask(active.id, id))}
                 onClearDone={() => run(() => api.clearDoneTasks(active.id))}
                 onSetPrefix={(prefix) => run(() => api.setTaskPrefix(active.id, prefix))}

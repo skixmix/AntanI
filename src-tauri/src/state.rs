@@ -83,6 +83,14 @@ pub struct Task {
     pub task_id: String,
     pub title: String,
     pub description: String,
+    /// Plain-text brief sent to the AI (separate from the human-facing
+    /// `description`, which is markdown notes). Optional; empty when unset.
+    #[serde(default)]
+    pub prompt: String,
+    /// User-chosen label color (a palette hex string), independent of the
+    /// column accent. `None` renders the neutral id badge.
+    #[serde(default)]
+    pub color: Option<String>,
     pub status: TaskStatus,
     pub created_at: i64,
     pub updated_at: i64,
@@ -92,6 +100,17 @@ pub struct Task {
     pub done_at: Option<i64>,
     #[serde(default)]
     pub entered_column_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskContent {
+    pub title: String,
+    pub description: String,
+    #[serde(default)]
+    pub prompt: String,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 /// A project is a local folder the user has added to the sidebar.
@@ -307,8 +326,7 @@ impl AppData {
     pub fn add_task(
         &mut self,
         project_id: &str,
-        title: String,
-        description: String,
+        content: TaskContent,
         task_id: Option<String>,
         status: TaskStatus,
     ) -> Option<Task> {
@@ -330,8 +348,10 @@ impl AppData {
         let task = Task {
             id: uuid::Uuid::new_v4().to_string(),
             task_id,
-            title,
-            description,
+            title: content.title,
+            description: content.description,
+            prompt: content.prompt,
+            color: content.color,
             status,
             created_at: now,
             updated_at: now,
@@ -355,14 +375,15 @@ impl AppData {
         &mut self,
         project_id: &str,
         id: &str,
-        title: String,
-        description: String,
+        content: TaskContent,
         task_id: String,
     ) {
         if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
             if let Some(task) = project.tasks.iter_mut().find(|t| t.id == id) {
-                task.title = title;
-                task.description = description;
+                task.title = content.title;
+                task.description = content.description;
+                task.prompt = content.prompt;
+                task.color = content.color;
                 task.task_id = task_id;
                 task.updated_at = now_ms();
             }
@@ -393,16 +414,76 @@ impl AppData {
         }
     }
 
-    pub fn remove_task(&mut self, project_id: &str, id: &str) {
-        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
-            project.tasks.retain(|t| t.id != id);
-        }
+    pub fn remove_task(&mut self, project_id: &str, id: &str) -> Option<String> {
+        let project = self.projects.iter_mut().find(|p| p.id == project_id)?;
+        let pos = project.tasks.iter().position(|t| t.id == id)?;
+        Some(project.tasks.remove(pos).task_id)
     }
 
-    pub fn clear_done_tasks(&mut self, project_id: &str) {
-        if let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) {
-            project.tasks.retain(|t| t.status != TaskStatus::Done);
+    pub fn clear_done_tasks(&mut self, project_id: &str) -> Vec<String> {
+        let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) else {
+            return Vec::new();
+        };
+        let mut removed = Vec::new();
+        project.tasks.retain(|t| {
+            if t.status == TaskStatus::Done {
+                removed.push(t.task_id.clone());
+                false
+            } else {
+                true
+            }
+        });
+        removed
+    }
+
+    /// Move a task to `status` and reposition it directly before `before_id`
+    /// within that column, or to the column's end when `before_id` is `None`.
+    /// A pure in-column reorder (status unchanged) must leave the column-age
+    /// timers untouched, so the status side-effects (mirroring `set_task_status`)
+    /// fire only on an actual column change.
+    pub fn reorder_task(
+        &mut self,
+        project_id: &str,
+        id: &str,
+        status: TaskStatus,
+        before_id: Option<&str>,
+    ) {
+        let Some(project) = self.projects.iter_mut().find(|p| p.id == project_id) else {
+            return;
+        };
+        let Some(pos) = project.tasks.iter().position(|t| t.id == id) else {
+            return;
+        };
+        let mut task = project.tasks.remove(pos);
+        if task.status != status {
+            let now = now_ms();
+            task.status = status;
+            task.updated_at = now;
+            task.entered_column_at = Some(now);
+            match status {
+                TaskStatus::InProgress => {
+                    if task.started_at.is_none() {
+                        task.started_at = Some(now);
+                    }
+                    task.done_at = None;
+                }
+                TaskStatus::Done => task.done_at = Some(now),
+                TaskStatus::Todo => task.done_at = None,
+            }
         }
+        let insert_at = match before_id {
+            Some(before) => project
+                .tasks
+                .iter()
+                .position(|t| t.id == before)
+                .unwrap_or(project.tasks.len()),
+            None => project
+                .tasks
+                .iter()
+                .rposition(|t| t.status == status)
+                .map_or(project.tasks.len(), |i| i + 1),
+        };
+        project.tasks.insert(insert_at, task);
     }
 
     pub fn set_task_prefix(&mut self, project_id: &str, prefix: String) {
@@ -1043,10 +1124,10 @@ mod tests {
         let mut d = AppData::default();
         let p = d.add_project("/a".into(), "Orca Engine".into(), "#ef4444".into());
         let t1 = d
-            .add_task(&p.id, "One".into(), String::new(), None, TaskStatus::Todo)
+            .add_task(&p.id, content("One"), None, TaskStatus::Todo)
             .unwrap();
         let t2 = d
-            .add_task(&p.id, "Two".into(), String::new(), None, TaskStatus::Todo)
+            .add_task(&p.id, content("Two"), None, TaskStatus::Todo)
             .unwrap();
         assert_eq!(t1.task_id, "OE-1");
         assert_eq!(t2.task_id, "OE-2");
@@ -1059,7 +1140,7 @@ mod tests {
     fn add_task_unknown_project_returns_none() {
         let mut d = with_three();
         assert!(d
-            .add_task("bogus", "T".into(), String::new(), None, TaskStatus::Todo)
+            .add_task("bogus", content("T"), None, TaskStatus::Todo)
             .is_none());
     }
 
@@ -1068,11 +1149,11 @@ mod tests {
         let mut d = AppData::default();
         let p = d.add_project("/a".into(), "Orca Engine".into(), "#ef4444".into());
         let t1 = d
-            .add_task(&p.id, "One".into(), String::new(), None, TaskStatus::Todo)
+            .add_task(&p.id, content("One"), None, TaskStatus::Todo)
             .unwrap();
         d.remove_task(&p.id, &t1.id);
         let t2 = d
-            .add_task(&p.id, "Two".into(), String::new(), None, TaskStatus::Todo)
+            .add_task(&p.id, content("Two"), None, TaskStatus::Todo)
             .unwrap();
         assert_eq!(t2.task_id, "OE-2");
         assert_eq!(d.projects[0].tasks.len(), 1);
@@ -1084,13 +1165,12 @@ mod tests {
         let p = d.add_project("/a".into(), "Orca Engine".into(), "#ef4444".into());
         d.add_task(
             &p.id,
-            "Manual".into(),
-            String::new(),
+            content("Manual"),
             Some("OE-1".into()),
             TaskStatus::Todo,
         );
         let auto = d
-            .add_task(&p.id, "Auto".into(), String::new(), None, TaskStatus::Todo)
+            .add_task(&p.id, content("Auto"), None, TaskStatus::Todo)
             .unwrap();
         assert_eq!(auto.task_id, "OE-2");
     }
@@ -1100,7 +1180,7 @@ mod tests {
         let mut d = AppData::default();
         let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
         let t = d
-            .add_task(&p.id, "T".into(), String::new(), None, TaskStatus::Todo)
+            .add_task(&p.id, content("T"), None, TaskStatus::Todo)
             .unwrap();
         d.set_task_status(&p.id, &t.id, TaskStatus::InProgress);
         let started = d.projects[0].tasks[0].started_at;
@@ -1118,7 +1198,7 @@ mod tests {
         let mut d = AppData::default();
         let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
         let t = d
-            .add_task(&p.id, "T".into(), String::new(), None, TaskStatus::Todo)
+            .add_task(&p.id, content("T"), None, TaskStatus::Todo)
             .unwrap();
         d.set_task_status(&p.id, &t.id, TaskStatus::Done);
         assert!(d.projects[0].tasks[0].started_at.is_none());
@@ -1130,11 +1210,23 @@ mod tests {
         let mut d = AppData::default();
         let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
         let t = d
-            .add_task(&p.id, "Old".into(), "old".into(), None, TaskStatus::Todo)
+            .add_task(&p.id, content("Old"), None, TaskStatus::Todo)
             .unwrap();
-        d.update_task(&p.id, &t.id, "New".into(), "new".into(), "A-99".into());
+        d.update_task(
+            &p.id,
+            &t.id,
+            TaskContent {
+                title: "New".into(),
+                description: "new".into(),
+                prompt: "brief".into(),
+                color: Some("#ef4444".into()),
+            },
+            "A-99".into(),
+        );
         assert_eq!(d.projects[0].tasks[0].title, "New");
         assert_eq!(d.projects[0].tasks[0].description, "new");
+        assert_eq!(d.projects[0].tasks[0].prompt, "brief");
+        assert_eq!(d.projects[0].tasks[0].color.as_deref(), Some("#ef4444"));
         assert_eq!(d.projects[0].tasks[0].task_id, "A-99");
         assert!(d.projects[0].tasks[0].updated_at >= t.created_at);
     }
@@ -1146,8 +1238,11 @@ mod tests {
         let t = d
             .add_task(
                 &p.id,
-                "Big".into(),
-                "x".repeat(200_000),
+                TaskContent {
+                    title: "Big".into(),
+                    description: "x".repeat(200_000),
+                    ..Default::default()
+                },
                 None,
                 TaskStatus::Todo,
             )
@@ -1166,7 +1261,7 @@ mod tests {
         let p = d.add_project("/a".into(), "Orca Engine".into(), "#ef4444".into());
         d.set_task_prefix(&p.id, String::new());
         let t = d
-            .add_task(&p.id, "One".into(), String::new(), None, TaskStatus::Todo)
+            .add_task(&p.id, content("One"), None, TaskStatus::Todo)
             .unwrap();
         assert_eq!(t.task_id, "OE-1");
         assert_eq!(d.projects[0].task_prefix, "OE");
@@ -1177,13 +1272,7 @@ mod tests {
         let mut d = AppData::default();
         let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
         let t = d
-            .add_task(
-                &p.id,
-                "T".into(),
-                String::new(),
-                None,
-                TaskStatus::InProgress,
-            )
+            .add_task(&p.id, content("T"), None, TaskStatus::InProgress)
             .unwrap();
         assert_eq!(t.status, TaskStatus::InProgress);
         assert!(t.started_at.is_some());
@@ -1196,7 +1285,7 @@ mod tests {
         let mut d = AppData::default();
         let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
         let t = d
-            .add_task(&p.id, "T".into(), String::new(), None, TaskStatus::Todo)
+            .add_task(&p.id, content("T"), None, TaskStatus::Todo)
             .unwrap();
         let created_entry = d.projects[0].tasks[0].entered_column_at;
         d.set_task_status(&p.id, &t.id, TaskStatus::InProgress);
@@ -1210,10 +1299,10 @@ mod tests {
         let mut d = AppData::default();
         let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
         let todo = d
-            .add_task(&p.id, "todo".into(), String::new(), None, TaskStatus::Todo)
+            .add_task(&p.id, content("todo"), None, TaskStatus::Todo)
             .unwrap();
         let done = d
-            .add_task(&p.id, "done".into(), String::new(), None, TaskStatus::Done)
+            .add_task(&p.id, content("done"), None, TaskStatus::Done)
             .unwrap();
         d.clear_done_tasks(&p.id);
         let ids: Vec<String> = d.projects[0].tasks.iter().map(|t| t.id.clone()).collect();
@@ -1235,5 +1324,96 @@ mod tests {
         assert_eq!(loaded.projects[0].task_prefix, "");
         assert_eq!(loaded.projects[0].next_task_seq, 0);
         let _ = fs::remove_file(&path);
+    }
+
+    fn content(title: &str) -> TaskContent {
+        TaskContent {
+            title: title.into(),
+            ..Default::default()
+        }
+    }
+
+    fn todo_task(d: &mut AppData, project_id: &str, title: &str, status: TaskStatus) -> String {
+        d.add_task(project_id, content(title), None, status)
+            .unwrap()
+            .id
+    }
+
+    #[test]
+    fn reorder_task_within_column_moves_and_keeps_entered_at() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
+        let a = todo_task(&mut d, &p.id, "a", TaskStatus::Todo);
+        let b = todo_task(&mut d, &p.id, "b", TaskStatus::Todo);
+        let c = todo_task(&mut d, &p.id, "c", TaskStatus::Todo);
+        let entered_before = d.projects[0]
+            .tasks
+            .iter()
+            .find(|t| t.id == c)
+            .unwrap()
+            .entered_column_at;
+        d.reorder_task(&p.id, &c, TaskStatus::Todo, Some(&a));
+        let order: Vec<String> = d.projects[0].tasks.iter().map(|t| t.id.clone()).collect();
+        assert_eq!(order, vec![c.clone(), a, b]);
+        let moved = d.projects[0].tasks.iter().find(|t| t.id == c).unwrap();
+        assert_eq!(moved.status, TaskStatus::Todo);
+        assert_eq!(
+            moved.entered_column_at, entered_before,
+            "in-column reorder must not reset the column-age timer"
+        );
+    }
+
+    #[test]
+    fn reorder_task_across_column_sets_status_and_stamps_done() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
+        let a = todo_task(&mut d, &p.id, "a", TaskStatus::Todo);
+        d.reorder_task(&p.id, &a, TaskStatus::Done, None);
+        let task = &d.projects[0].tasks[0];
+        assert_eq!(task.status, TaskStatus::Done);
+        assert!(task.done_at.is_some());
+    }
+
+    #[test]
+    fn reorder_task_to_column_end_inserts_after_last_sibling() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
+        let t1 = todo_task(&mut d, &p.id, "t1", TaskStatus::Todo);
+        let d1 = todo_task(&mut d, &p.id, "d1", TaskStatus::Done);
+        let _t2 = todo_task(&mut d, &p.id, "t2", TaskStatus::Todo);
+        d.reorder_task(&p.id, &t1, TaskStatus::Done, None);
+        let done_ids: Vec<String> = d.projects[0]
+            .tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Done)
+            .map(|t| t.id.clone())
+            .collect();
+        assert_eq!(done_ids, vec![d1, t1]);
+    }
+
+    #[test]
+    fn remove_task_returns_removed_task_id() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
+        let id = todo_task(&mut d, &p.id, "T", TaskStatus::Todo);
+        let task_id = d.projects[0].tasks[0].task_id.clone();
+        assert_eq!(d.remove_task(&p.id, &id), Some(task_id));
+        assert_eq!(d.remove_task(&p.id, &id), None);
+    }
+
+    #[test]
+    fn clear_done_tasks_returns_removed_task_ids() {
+        let mut d = AppData::default();
+        let p = d.add_project("/a".into(), "A".into(), "#ef4444".into());
+        todo_task(&mut d, &p.id, "todo", TaskStatus::Todo);
+        todo_task(&mut d, &p.id, "done", TaskStatus::Done);
+        let done_task_id = d.projects[0]
+            .tasks
+            .iter()
+            .find(|t| t.status == TaskStatus::Done)
+            .unwrap()
+            .task_id
+            .clone();
+        assert_eq!(d.clear_done_tasks(&p.id), vec![done_task_id]);
     }
 }

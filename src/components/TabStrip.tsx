@@ -124,10 +124,14 @@ export function TabStrip({
     const cr = container.getBoundingClientRect();
     const er = el.getBoundingClientRect();
     const PEEK = 48;
-    container.scrollTo({
-      left: Math.max(0, container.scrollLeft + er.left - cr.left - PEEK),
-      behavior: "smooth",
-    });
+    // Only scroll when the active tab is actually clipped. A tab already fully in
+    // view must stay put; scrolling it to a fixed offset on every click made
+    // clicking a visible tab visibly yank it toward the left edge.
+    if (er.left < cr.left) {
+      container.scrollBy({ left: er.left - cr.left - PEEK, behavior: "smooth" });
+    } else if (er.right > cr.right) {
+      container.scrollBy({ left: er.right - cr.right + PEEK, behavior: "smooth" });
+    }
   }, [activeTabId]);
 
   return (

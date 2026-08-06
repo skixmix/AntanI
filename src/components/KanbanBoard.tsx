@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { projectInitials } from "../lib/constants";
 import type { AgentKind } from "../lib/tabs";
-import type { Project, Task, TaskStatus } from "../lib/types";
+import { toggleChecklistItem } from "../lib/taskChecklist";
+import type { Project, Task, TaskContent, TaskStatus } from "../lib/types";
 import { useCardDrag } from "../lib/useCardDrag";
 import { BoardIcon, PlusIcon } from "./Icons";
 import { TaskColumn } from "./TaskColumn";
 import { TaskEditor } from "./TaskEditor";
+import { TaskView } from "./TaskView";
 
 const COLUMNS: { status: TaskStatus; label: string }[] = [
   { status: "todo", label: "To Do" },
@@ -15,14 +17,9 @@ const COLUMNS: { status: TaskStatus; label: string }[] = [
 
 interface KanbanBoardProps {
   project: Project;
-  onAddTask: (
-    title: string,
-    description: string,
-    taskId: string | null,
-    status: TaskStatus,
-  ) => void;
-  onUpdateTask: (id: string, title: string, description: string, taskId: string) => void;
-  onMoveTask: (id: string, status: TaskStatus) => void;
+  onAddTask: (content: TaskContent, taskId: string | null, status: TaskStatus) => void;
+  onUpdateTask: (id: string, content: TaskContent, taskId: string) => void;
+  onReorderTask: (id: string, status: TaskStatus, beforeId: string | null) => void;
   onRemoveTask: (id: string) => void;
   onClearDone: () => void;
   onSetPrefix: (prefix: string) => void;
@@ -33,28 +30,44 @@ export function KanbanBoard({
   project,
   onAddTask,
   onUpdateTask,
-  onMoveTask,
+  onReorderTask,
   onRemoveTask,
   onClearDone,
   onSetPrefix,
   onTrigger,
 }: KanbanBoardProps) {
   const fallbackPrefix = project.taskPrefix || projectInitials(project.name);
-  const [editing, setEditing] = useState<Task | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState<TaskStatus | null>(null);
   const [prefixDraft, setPrefixDraft] = useState(fallbackPrefix);
-  const { draggingTaskId, overStatus, startDrag } = useCardDrag(onMoveTask, (taskId) => {
-    const task = project.tasks.find((t) => t.id === taskId);
-    if (task) setEditing(task);
-  });
+  const { draggingTaskId, overStatus, insertBeforeId, startDrag } = useCardDrag(
+    onReorderTask,
+    (id) => setViewingId(id),
+  );
 
   const suggestedId = `${fallbackPrefix}-${project.nextTaskSeq + 1}`;
   const existingIds = project.tasks.map((t) => t.taskId);
+  const viewingTask = viewingId ? (project.tasks.find((t) => t.id === viewingId) ?? null) : null;
+  const editingTask = editingId ? (project.tasks.find((t) => t.id === editingId) ?? null) : null;
 
   function commitPrefix() {
     const next = prefixDraft.trim();
     if (next && next !== project.taskPrefix) onSetPrefix(next);
     else setPrefixDraft(fallbackPrefix);
+  }
+
+  function toggleChecklist(task: Task, index: number) {
+    onUpdateTask(
+      task.id,
+      {
+        title: task.title,
+        description: toggleChecklistItem(task.description, index),
+        prompt: task.prompt,
+        color: task.color,
+      },
+      task.taskId,
+    );
   }
 
   return (
@@ -100,31 +113,50 @@ export function KanbanBoard({
             label={col.label}
             tasks={project.tasks.filter((t) => t.status === col.status)}
             dropActive={draggingTaskId !== null && overStatus === col.status}
+            insertBeforeId={insertBeforeId}
             draggingTaskId={draggingTaskId}
             onStartDrag={startDrag}
             onAdd={() => setAdding(col.status)}
             onClearDone={col.status === "done" ? onClearDone : undefined}
             onTrigger={onTrigger}
-            onEdit={(task) => setEditing(task)}
+            onEdit={(task) => {
+              setViewingId(null);
+              setEditingId(task.id);
+            }}
             onDelete={(task) => onRemoveTask(task.id)}
+            onToggleCheckbox={toggleChecklist}
           />
         ))}
       </div>
 
-      {(adding !== null || editing !== null) && (
+      {viewingTask && !editingTask && adding === null && (
+        <TaskView
+          task={viewingTask}
+          onClose={() => setViewingId(null)}
+          onEdit={() => {
+            setEditingId(viewingTask.id);
+            setViewingId(null);
+          }}
+          onToggleCheckbox={(index) => toggleChecklist(viewingTask, index)}
+        />
+      )}
+
+      {(adding !== null || editingTask !== null) && (
         <TaskEditor
-          task={editing}
+          task={editingTask}
           suggestedId={suggestedId}
-          existingIds={editing ? existingIds.filter((id) => id !== editing.taskId) : existingIds}
+          existingIds={
+            editingTask ? existingIds.filter((id) => id !== editingTask.taskId) : existingIds
+          }
           onCancel={() => {
             setAdding(null);
-            setEditing(null);
+            setEditingId(null);
           }}
-          onSave={(title, description, taskId) => {
-            if (editing) onUpdateTask(editing.id, title, description, taskId ?? editing.taskId);
-            else if (adding !== null) onAddTask(title, description, taskId, adding);
+          onSave={(content, taskId) => {
+            if (editingTask) onUpdateTask(editingTask.id, content, taskId ?? editingTask.taskId);
+            else if (adding !== null) onAddTask(content, taskId, adding);
             setAdding(null);
-            setEditing(null);
+            setEditingId(null);
           }}
         />
       )}
