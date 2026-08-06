@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "antani"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "libc",
  "portable-pty",
