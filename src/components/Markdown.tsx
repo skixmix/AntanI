@@ -1,4 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import DOMPurify from "dompurify";
 import { marked } from "marked";
 import type React from "react";
 import { useEffect, useRef } from "react";
@@ -21,7 +22,8 @@ export function Markdown({ source, className, onToggleCheckbox }: MarkdownProps)
     const el = ref.current;
     if (!el) return;
     const html = marked.parse(source, { async: false });
-    el.innerHTML = interactive ? html.replace(/ disabled=""/g, "") : html;
+    const clean = DOMPurify.sanitize(html);
+    el.innerHTML = interactive ? clean.replace(/ disabled=""/g, "") : clean;
   }, [source, interactive]);
 
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
