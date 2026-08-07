@@ -132,7 +132,7 @@ export function TabChip({
           : active
             ? "bg-accent/50 text-muted-foreground hover:bg-accent/70"
             : "bg-transparent text-muted-foreground hover:bg-secondary"
-      } ${isDragging ? "opacity-30 scale-95" : ""} ${
+      } ${isDragging ? "opacity-30" : ""} ${
         needsAttention
           ? tab.kind === "terminal"
             ? "needs-attention-glow-neutral"
