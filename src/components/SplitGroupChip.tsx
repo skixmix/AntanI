@@ -97,7 +97,7 @@ export function SplitGroupChip({
         viewingSplit
           ? "bg-accent text-foreground"
           : "bg-transparent text-muted-foreground hover:bg-secondary"
-      } ${isDragging ? "opacity-30" : ""} ${glowClass}`}
+      } ${isDragging ? "opacity-30 scale-95" : ""} ${glowClass}`}
       style={{ borderBottomColor: accentColor }}
     >
       {showInsertBefore && (

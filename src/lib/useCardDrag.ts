@@ -60,6 +60,7 @@ export function useCardDrag(
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
+    const startTime = performance.now();
     let moved = false;
     taskIdRef.current = taskId;
     overRef.current = null;
@@ -75,7 +76,8 @@ export function useCardDrag(
 
     function onPointerMove(ev: PointerEvent) {
       if (!moved) {
-        if (!pastDragThreshold(ev.clientX - startX, ev.clientY - startY)) return;
+        const elapsed = performance.now() - startTime;
+        if (!pastDragThreshold(ev.clientX - startX, ev.clientY - startY, elapsed)) return;
         beginDrag();
       }
       const status = columnStatusAt(ev.clientX, ev.clientY);

@@ -121,6 +121,7 @@ export function useDragReorder(
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
+    const startTime = performance.now();
     let moved = false;
 
     dragIdRef.current = id;
@@ -136,7 +137,8 @@ export function useDragReorder(
 
     function onMove(ev: PointerEvent) {
       if (!moved) {
-        if (!pastDragThreshold(ev.clientX - startX, ev.clientY - startY)) return;
+        const elapsed = performance.now() - startTime;
+        if (!pastDragThreshold(ev.clientX - startX, ev.clientY - startY, elapsed)) return;
         beginDrag();
       }
       if (pointerInDropZone(ev)) {
