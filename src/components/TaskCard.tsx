@@ -32,6 +32,7 @@ interface TaskCardProps {
   task: Task;
   dragging: boolean;
   onStartDrag: (e: React.PointerEvent) => void;
+  enabledAgents: AgentKind[];
   onTrigger: (kind: AgentKind) => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -47,6 +48,7 @@ export function TaskCard({
   task,
   dragging,
   onStartDrag,
+  enabledAgents,
   onTrigger,
   onEdit,
   onDelete,
@@ -58,6 +60,7 @@ export function TaskCard({
   const isDone = task.status === "done";
   const ageDays = daysBetween(task.enteredColumnAt ?? task.updatedAt, Date.now());
   const ageLevel = columnAgeLevel(ageDays);
+  const agents = AGENTS.filter((agent) => enabledAgents.includes(agent.kind));
   const accent = COLUMN_ACCENT[task.status];
 
   const notes = stripChecklist(task.description);
@@ -192,7 +195,7 @@ export function TaskCard({
           {formatTimestamp(task.createdAt)}
         </span>
         {duration !== null && <span title="In progress → done">· {formatDuration(duration)}</span>}
-        {!isDone && hasPrompt && (
+        {!isDone && hasPrompt && agents.length > 0 && (
           <button
             type="button"
             title="Start this task on a new AI panel"
@@ -214,7 +217,7 @@ export function TaskCard({
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
-          items={AGENTS.map((agent) => ({
+          items={agents.map((agent) => ({
             label: `Start with ${agent.label}`,
             icon: agent.icon,
             onSelect: () => onTrigger(agent.kind),

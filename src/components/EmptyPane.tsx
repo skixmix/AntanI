@@ -1,10 +1,11 @@
 import { projectInitials } from "../lib/constants";
-import type { TabKind } from "../lib/tabs";
+import type { AgentKind, TabKind } from "../lib/tabs";
 import type { Project } from "../lib/types";
 import { AnthropicIcon, CodexIcon, OpenCodeIcon, TerminalIcon, VSCodeIcon } from "./Icons";
 
 interface EmptyPaneProps {
   project: Project;
+  enabledAgents: AgentKind[];
   onOpen: (kind: TabKind) => void;
   onOpenIde: () => void;
 }
@@ -15,16 +16,23 @@ interface Action {
   onClick: () => void;
 }
 
-export function EmptyPane({ project, onOpen, onOpenIde }: EmptyPaneProps) {
+const AGENT_ACTIONS: { kind: AgentKind; label: string; icon: React.ReactNode }[] = [
+  { kind: "opencode", label: "Open OpenCode", icon: <OpenCodeIcon size={15} /> },
+  { kind: "claude", label: "Open Claude", icon: <AnthropicIcon size={15} /> },
+  { kind: "codex", label: "Open Codex", icon: <CodexIcon size={15} /> },
+];
+
+export function EmptyPane({ project, enabledAgents, onOpen, onOpenIde }: EmptyPaneProps) {
+  const agentActions: Action[] = AGENT_ACTIONS.filter((agent) =>
+    enabledAgents.includes(agent.kind),
+  ).map((agent) => ({ label: agent.label, icon: agent.icon, onClick: () => onOpen(agent.kind) }));
   const actions: Action[] = [
     {
       label: "Open Terminal",
       icon: <TerminalIcon size={15} className="text-muted-foreground" />,
       onClick: () => onOpen("terminal"),
     },
-    { label: "Open OpenCode", icon: <OpenCodeIcon size={15} />, onClick: () => onOpen("opencode") },
-    { label: "Open Claude", icon: <AnthropicIcon size={15} />, onClick: () => onOpen("claude") },
-    { label: "Open Codex", icon: <CodexIcon size={15} />, onClick: () => onOpen("codex") },
+    ...agentActions,
     {
       label: "Open VS Code",
       icon: <VSCodeIcon size={15} className="text-[#007ACC]" />,

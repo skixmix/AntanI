@@ -33,6 +33,7 @@ import {
   closeTab,
   createCustomTab,
   createTab,
+  enabledAgents,
   findTabOwner,
   openOrFocusTab,
   openTabToSide,
@@ -776,6 +777,7 @@ function App() {
           runningTabs={runningTabs}
           needsAttention={needsAttention}
           terminalFontSize={settings.terminalFontSize}
+          enabledAgents={enabledAgents(settings)}
           onOpenTab={openTab}
           onOpenCustomTab={openCustomTab}
           onOpenCommandSettings={(subTab) => {
@@ -805,6 +807,7 @@ function App() {
                 onRemoveTask={(id) => run(() => api.removeTask(active.id, id))}
                 onClearDone={() => run(() => api.clearDoneTasks(active.id))}
                 onSetPrefix={(prefix) => run(() => api.setTaskPrefix(active.id, prefix))}
+                enabledAgents={enabledAgents(settings)}
                 onTrigger={(task, kind) => triggerTask(active, task, kind)}
               />
             )

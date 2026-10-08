@@ -96,3 +96,11 @@ Agent composers use Ctrl+J for soft-newlines. Do not send CSI-u Shift+Enter
 through xterm/WKWebView: Codex can interpret it as its clipboard-image action.
 Plain shells still need Ctrl-V + Ctrl-J. Keep both physical Shift+Enter handling
 and injectable multiline text routed through `softNewlineForKind`.
+
+Injected prompts reach agent tabs wrapped in bracketed-paste markers
+(`ESC[200~` … `ESC[201~`), the same bytes xterm sends for a Cmd+V paste. Don't
+write raw multi-line text instead: macOS delivers a large PTY write in chunks,
+and Claude Code guesses paste boundaries from those chunks, keeping only a
+fragment behind a "paste again to expand" hint. All three agent CLIs enable
+bracketed paste mode (DECSET 2004). Plain shells keep the unwrapped
+Ctrl-V + Ctrl-J encoding.

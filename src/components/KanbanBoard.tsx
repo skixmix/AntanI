@@ -23,6 +23,7 @@ interface KanbanBoardProps {
   onRemoveTask: (id: string) => void;
   onClearDone: () => void;
   onSetPrefix: (prefix: string) => void;
+  enabledAgents: AgentKind[];
   onTrigger: (task: Task, kind: AgentKind) => void;
 }
 
@@ -34,6 +35,7 @@ export function KanbanBoard({
   onRemoveTask,
   onClearDone,
   onSetPrefix,
+  enabledAgents,
   onTrigger,
 }: KanbanBoardProps) {
   const fallbackPrefix = project.taskPrefix || projectInitials(project.name);
@@ -118,6 +120,7 @@ export function KanbanBoard({
             onStartDrag={startDrag}
             onAdd={() => setAdding(col.status)}
             onClearDone={col.status === "done" ? onClearDone : undefined}
+            enabledAgents={enabledAgents}
             onTrigger={onTrigger}
             onEdit={(task) => {
               setViewingId(null);

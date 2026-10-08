@@ -579,6 +579,9 @@ pub struct Settings {
     pub claude_command: String,
     pub opencode_command: String,
     pub codex_command: String,
+    pub claude_enabled: bool,
+    pub opencode_enabled: bool,
+    pub codex_enabled: bool,
     pub notifications_enabled: bool,
     /// Whether the one-time "import your VS Code setup?" prompt has already
     /// been shown (regardless of the user's answer). Must only ever flip
@@ -596,6 +599,9 @@ impl Default for Settings {
             claude_command: DEFAULT_CLAUDE_COMMAND.to_string(),
             opencode_command: DEFAULT_OPENCODE_COMMAND.to_string(),
             codex_command: DEFAULT_CODEX_COMMAND.to_string(),
+            claude_enabled: true,
+            opencode_enabled: false,
+            codex_enabled: false,
             notifications_enabled: true,
             vscode_import_prompted: false,
             sound_enabled: true,
@@ -746,6 +752,9 @@ mod tests {
             claude_command: "custom".into(),
             opencode_command: "oc".into(),
             codex_command: "codex --profile work".into(),
+            claude_enabled: false,
+            opencode_enabled: true,
+            codex_enabled: true,
             notifications_enabled: false,
             vscode_import_prompted: true,
             sound_enabled: false,
@@ -796,6 +805,9 @@ mod tests {
             claude_command: "my-claude --flag".into(),
             opencode_command: "oc".into(),
             codex_command: "codex --oss".into(),
+            claude_enabled: false,
+            opencode_enabled: true,
+            codex_enabled: true,
             notifications_enabled: false,
             vscode_import_prompted: true,
             sound_enabled: false,
@@ -1116,6 +1128,18 @@ mod tests {
         assert_eq!(loaded.codex_command, "codex");
         assert!(!loaded.vscode_import_prompted);
         assert!(loaded.notifications_enabled);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn settings_upgrade_without_agent_toggles_enables_only_claude() {
+        let path =
+            std::env::temp_dir().join(format!("antani-agents-{}.json", uuid::Uuid::new_v4()));
+        fs::write(&path, br#"{"opencodeCommand":"oc"}"#).unwrap();
+        let loaded: Settings = load(&path);
+        assert!(loaded.claude_enabled);
+        assert!(!loaded.opencode_enabled);
+        assert!(!loaded.codex_enabled);
         let _ = fs::remove_file(&path);
     }
 
