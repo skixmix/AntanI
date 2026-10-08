@@ -8,6 +8,7 @@ import { ColorPicker } from "./ColorPicker";
 import { CloseIcon, TerminalIcon, VSCodeIcon } from "./Icons";
 import { OpencodeThemeSettings } from "./OpencodeThemeSettings";
 import { SettingsSection as SectionCard } from "./SettingsSection";
+import { Switch } from "./Switch";
 
 interface SettingsPageProps {
   settings: Settings;
@@ -145,11 +146,15 @@ function CommandField({
   value,
   placeholder,
   onCommit,
+  enabled,
+  onToggleEnabled,
 }: {
   label: string;
   value: string;
   placeholder: string;
   onCommit: (value: string) => void;
+  enabled: boolean;
+  onToggleEnabled: (enabled: boolean) => void;
 }) {
   const [draft, setDraft] = useState(value);
 
@@ -163,9 +168,17 @@ function CommandField({
   }
 
   return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-foreground">{label}</span>
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-xs font-medium text-foreground">{label}</span>
+        <Switch
+          checked={enabled}
+          onChange={onToggleEnabled}
+          title={enabled ? "Shown in the toolbar" : "Hidden from the toolbar"}
+        />
+      </div>
       <input
+        aria-label={label}
         value={draft}
         placeholder={placeholder}
         onChange={(e) => setDraft(e.currentTarget.value)}
@@ -177,7 +190,7 @@ function CommandField({
         spellCheck={false}
         className="w-full rounded-md bg-tertiary px-2.5 py-1.5 font-mono text-xs text-foreground outline-none ring-1 ring-border transition-shadow focus:ring-primary/60"
       />
-    </label>
+    </div>
   );
 }
 
@@ -607,43 +620,21 @@ export function SettingsPage({
                     <span className="text-xs text-muted-foreground">
                       {settings.notificationsEnabled ? "Enabled" : "Disabled"}
                     </span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={settings.notificationsEnabled}
-                      onClick={() =>
-                        onUpdateSettings({ notificationsEnabled: !settings.notificationsEnabled })
+                    <Switch
+                      checked={settings.notificationsEnabled}
+                      onChange={(notificationsEnabled) =>
+                        onUpdateSettings({ notificationsEnabled })
                       }
-                      className={`relative h-5 w-9 shrink-0 appearance-none rounded-full border-0 p-0 outline-none transition-colors ${
-                        settings.notificationsEnabled ? "bg-primary" : "bg-secondary"
-                      }`}
-                    >
-                      <span
-                        className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                          settings.notificationsEnabled ? "translate-x-[18px]" : "translate-x-0"
-                        }`}
-                      />
-                    </button>
+                    />
                   </div>
 
                   <div className="flex flex-col gap-3 border-t border-border pt-3">
                     <div className="flex items-center justify-between gap-4">
                       <span className="text-xs font-medium text-foreground">Sound</span>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={settings.soundEnabled}
-                        onClick={() => onUpdateSettings({ soundEnabled: !settings.soundEnabled })}
-                        className={`relative h-5 w-9 shrink-0 appearance-none rounded-full border-0 p-0 outline-none transition-colors ${
-                          settings.soundEnabled ? "bg-primary" : "bg-secondary"
-                        }`}
-                      >
-                        <span
-                          className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                            settings.soundEnabled ? "translate-x-[18px]" : "translate-x-0"
-                          }`}
-                        />
-                      </button>
+                      <Switch
+                        checked={settings.soundEnabled}
+                        onChange={(soundEnabled) => onUpdateSettings({ soundEnabled })}
+                      />
                     </div>
                     {settings.soundEnabled && (
                       <div className="flex flex-col gap-2.5">
@@ -689,7 +680,7 @@ export function SettingsPage({
                 {commandsSubTab === "launch" && (
                   <SectionCard
                     title="Launch commands"
-                    description="Override the shell command run when opening an agent tab — useful for aliases, wrappers, or extra flags."
+                    description="Choose which agents show as quick-access buttons, and override the shell command each one runs (aliases, wrappers, extra flags)."
                   >
                     <div className="flex flex-col gap-4">
                       <CommandField
@@ -697,18 +688,24 @@ export function SettingsPage({
                         value={settings.opencodeCommand}
                         placeholder="opencode"
                         onCommit={(opencodeCommand) => onUpdateSettings({ opencodeCommand })}
+                        enabled={settings.opencodeEnabled}
+                        onToggleEnabled={(opencodeEnabled) => onUpdateSettings({ opencodeEnabled })}
                       />
                       <CommandField
                         label="Claude command"
                         value={settings.claudeCommand}
                         placeholder="claude"
                         onCommit={(claudeCommand) => onUpdateSettings({ claudeCommand })}
+                        enabled={settings.claudeEnabled}
+                        onToggleEnabled={(claudeEnabled) => onUpdateSettings({ claudeEnabled })}
                       />
                       <CommandField
                         label="Codex command"
                         value={settings.codexCommand}
                         placeholder="codex"
                         onCommit={(codexCommand) => onUpdateSettings({ codexCommand })}
+                        enabled={settings.codexEnabled}
+                        onToggleEnabled={(codexEnabled) => onUpdateSettings({ codexEnabled })}
                       />
                     </div>
                   </SectionCard>

@@ -7,6 +7,7 @@ import {
   createCustomTab,
   createTab,
   defaultTitle,
+  enabledAgents,
   findTabOwner,
   focusedTab,
   MAX_SPLIT_MEMBERS,
@@ -41,6 +42,9 @@ const SETTINGS: Settings = {
   claudeCommand: "claude --resume",
   opencodeCommand: "oc",
   codexCommand: "codex --oss",
+  claudeEnabled: true,
+  opencodeEnabled: false,
+  codexEnabled: true,
   notificationsEnabled: true,
   vscodeImportPrompted: true,
   soundEnabled: true,
@@ -91,6 +95,17 @@ describe("startupCommandForKind", () => {
     expect(startupCommandForKind("codex", SETTINGS)).toBe("codex --oss");
     expect(startupCommandForKind("terminal", SETTINGS)).toBeNull();
     expect(startupCommandForKind("ide", SETTINGS)).toBeNull();
+  });
+});
+
+describe("enabledAgents", () => {
+  it("lists only the agents switched on in settings", () => {
+    expect(enabledAgents(SETTINGS)).toEqual(["claude", "codex"]);
+  });
+
+  it("is empty when every agent is switched off", () => {
+    const off = { ...SETTINGS, claudeEnabled: false, codexEnabled: false };
+    expect(enabledAgents(off)).toEqual([]);
   });
 });
 

@@ -1,6 +1,7 @@
 import { type ReactNode, useRef } from "react";
 import { type PaneRect, paneCellRect } from "../lib/splitLayout";
 import {
+  type AgentKind,
   DEFAULT_SPLIT_RATIO,
   focusedTab,
   isSurfaceKind,
@@ -33,6 +34,7 @@ interface WorkspaceProps {
   runningTabs: Record<string, true>;
   needsAttention: Record<string, true>;
   terminalFontSize: number;
+  enabledAgents: AgentKind[];
   onOpenTab: (kind: TabKind) => void;
   onOpenCustomTab: (cmd: CustomCommand) => void;
   onOpenCommandSettings: (subTab?: CommandsSubTab) => void;
@@ -67,6 +69,7 @@ export function Workspace({
   runningTabs,
   needsAttention,
   terminalFontSize,
+  enabledAgents,
   onOpenTab,
   onOpenCustomTab,
   onOpenCommandSettings,
@@ -174,6 +177,7 @@ export function Workspace({
           needsAttention={needsAttention}
           project={project}
           ideTabId={ideTabId}
+          enabledAgents={enabledAgents}
           onOpen={onOpenTab}
           onOpenCustom={onOpenCustomTab}
           onOpenCommandSettings={onOpenCommandSettings}
@@ -217,7 +221,12 @@ export function Workspace({
           {soloTab?.kind === "kanban" && board && <div className="absolute inset-0">{board}</div>}
           {isEmpty && (
             <div className="absolute inset-0">
-              <EmptyPane project={project} onOpen={onOpenTab} onOpenIde={onOpenIde} />
+              <EmptyPane
+                project={project}
+                enabledAgents={enabledAgents}
+                onOpen={onOpenTab}
+                onOpenIde={onOpenIde}
+              />
             </div>
           )}
           {members.length > 1 && (

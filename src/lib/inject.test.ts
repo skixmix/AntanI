@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { encodeInjection, softNewlineForKind } from "./inject";
 
+const paste = (text: string) => `\x1b[200~${text}\x1b[201~`;
+
 describe("encodeInjection", () => {
-  it("leaves single-line text untouched", () => {
+  it("leaves single-line shell text untouched", () => {
     expect(encodeInjection("bun test", "terminal")).toBe("bun test");
-    expect(encodeInjection("explain this", "claude")).toBe("explain this");
+  });
+
+  it.each(["claude", "opencode", "codex"] as const)("bracket-pastes %s text", (kind) => {
+    expect(encodeInjection("explain this", kind)).toBe(paste("explain this"));
   });
 
   it("translates newlines to the shell soft-newline for terminal tabs", () => {
@@ -12,16 +17,16 @@ describe("encodeInjection", () => {
   });
 
   it.each(["claude", "opencode", "codex"] as const)("uses Ctrl-J soft-newlines for %s", (kind) => {
-    expect(encodeInjection("a\nb", kind)).toBe("a\nb");
+    expect(encodeInjection("a\nb", kind)).toBe(paste("a\nb"));
   });
 
   it("normalizes CRLF and CR to the same soft-newline", () => {
-    expect(encodeInjection("a\r\nb\rc", "codex")).toBe("a\nb\nc");
+    expect(encodeInjection("a\r\nb\rc", "codex")).toBe(paste("a\nb\nc"));
     expect(encodeInjection("a\r\nb\rc", "terminal")).toBe("a\x16\nb\x16\nc");
   });
 
   it("never appends a trailing newline (nothing is submitted)", () => {
-    expect(encodeInjection("run", "claude").endsWith("\n")).toBe(false);
+    expect(encodeInjection("run", "claude")).not.toContain("\n");
     expect(encodeInjection("run", "terminal").endsWith("\n")).toBe(false);
   });
 });

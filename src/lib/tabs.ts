@@ -96,6 +96,15 @@ export function startupCommandForKind(kind: TabKind, settings: Settings): string
   return null;
 }
 
+export function enabledAgents(settings: Settings): AgentKind[] {
+  const agents: [AgentKind, boolean][] = [
+    ["opencode", settings.opencodeEnabled],
+    ["claude", settings.claudeEnabled],
+    ["codex", settings.codexEnabled],
+  ];
+  return agents.filter(([, enabled]) => enabled).map(([kind]) => kind);
+}
+
 export function createTab(kind: TabKind, settings: Settings): Tab {
   return {
     id: crypto.randomUUID(),

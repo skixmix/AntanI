@@ -17,6 +17,7 @@ interface TaskColumnProps {
   onStartDrag: (e: React.PointerEvent, taskId: string) => void;
   onAdd: () => void;
   onClearDone?: () => void;
+  enabledAgents: AgentKind[];
   onTrigger: (task: Task, kind: AgentKind) => void;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
@@ -33,6 +34,7 @@ export function TaskColumn({
   onStartDrag,
   onAdd,
   onClearDone,
+  enabledAgents,
   onTrigger,
   onEdit,
   onDelete,
@@ -90,6 +92,7 @@ export function TaskColumn({
               task={task}
               dragging={draggingTaskId === task.id}
               onStartDrag={(e) => onStartDrag(e, task.id)}
+              enabledAgents={enabledAgents}
               onTrigger={(kind) => onTrigger(task, kind)}
               onEdit={() => onEdit(task)}
               onDelete={() => onDelete(task)}

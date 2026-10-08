@@ -63,6 +63,9 @@ export interface Settings {
   claudeCommand: string;
   opencodeCommand: string;
   codexCommand: string;
+  claudeEnabled: boolean;
+  opencodeEnabled: boolean;
+  codexEnabled: boolean;
   notificationsEnabled: boolean;
   vscodeImportPrompted: boolean;
   soundEnabled: boolean;

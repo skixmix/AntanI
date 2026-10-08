@@ -2,6 +2,7 @@ import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 import { projectInitials } from "../lib/constants";
 import type { PaneRect } from "../lib/splitLayout";
 import {
+  type AgentKind,
   isSurfaceKind,
   MAX_SPLIT_MEMBERS,
   type Split,
@@ -34,6 +35,7 @@ interface TabStripProps {
   needsAttention: Record<string, true>;
   project: Project;
   ideTabId: string | null;
+  enabledAgents: AgentKind[];
   onOpen: (kind: TabKind) => void;
   onOpenCustom: (cmd: CustomCommand) => void;
   onOpenCommandSettings: (subTab?: CommandsSubTab) => void;
@@ -56,7 +58,7 @@ interface TabStripProps {
   tabDropPreviewRect?: (fromId: string) => PaneRect | null;
 }
 
-const QUICK_OPEN: { kind: TabKind; label: string; icon: ReactNode }[] = [
+const QUICK_OPEN: { kind: AgentKind; label: string; icon: ReactNode }[] = [
   { kind: "opencode", label: "OpenCode", icon: <OpenCodeIcon size={13} /> },
   { kind: "claude", label: "Claude", icon: <AnthropicIcon size={13} /> },
   { kind: "codex", label: "Codex", icon: <CodexIcon size={13} /> },
@@ -72,6 +74,7 @@ export function TabStrip({
   needsAttention,
   project,
   ideTabId,
+  enabledAgents,
   onOpen,
   onOpenCustom,
   onOpenCommandSettings,
@@ -276,7 +279,7 @@ export function TabStrip({
             <span>Board</span>
           </button>
 
-          {QUICK_OPEN.map((item) => (
+          {QUICK_OPEN.filter((item) => enabledAgents.includes(item.kind)).map((item) => (
             <button
               key={item.kind}
               type="button"
