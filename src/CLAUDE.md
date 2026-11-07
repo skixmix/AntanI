@@ -95,7 +95,11 @@ a CLI changes its wording.
 Agent composers use Ctrl+J for soft-newlines. Do not send CSI-u Shift+Enter
 through xterm/WKWebView: Codex can interpret it as its clipboard-image action.
 Plain shells still need Ctrl-V + Ctrl-J. Keep both physical Shift+Enter handling
-and injectable multiline text routed through `softNewlineForKind`.
+and injectable multiline text routed through `softNewlineForKind`. Physical
+Shift+Enter goes through `shiftEnterSequence`, which sends Ctrl-V only when the
+PTY's foreground process is a shell (`shellInForeground` from the Rust
+running poll): an agent launched by hand in a terminal tab reads Ctrl-V as
+clipboard paste.
 
 Injected prompts reach agent tabs wrapped in bracketed-paste markers
 (`ESC[200~` … `ESC[201~`), the same bytes xterm sends for a Cmd+V paste. Don't

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeInjection, softNewlineForKind } from "./inject";
+import { encodeInjection, shiftEnterSequence, softNewlineForKind } from "./inject";
 
 const paste = (text: string) => `\x1b[200~${text}\x1b[201~`;
 
@@ -37,5 +37,20 @@ describe("softNewlineForKind", () => {
     expect(softNewlineForKind("opencode")).toBe("\n");
     expect(softNewlineForKind("codex")).toBe("\n");
     expect(softNewlineForKind("terminal")).toBe("\x16\n");
+  });
+});
+
+describe("shiftEnterSequence", () => {
+  it("keeps the shell soft-newline at a bare shell prompt", () => {
+    expect(shiftEnterSequence("terminal", true)).toBe("\x16\n");
+  });
+
+  it("never sends Ctrl-V while a non-shell program owns a terminal tab", () => {
+    expect(shiftEnterSequence("terminal", false)).toBe("\n");
+  });
+
+  it("uses Ctrl-J for agent tabs", () => {
+    expect(shiftEnterSequence("claude", false)).toBe("\n");
+    expect(shiftEnterSequence("codex", true)).toBe("\n");
   });
 });

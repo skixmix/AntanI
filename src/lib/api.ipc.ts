@@ -242,6 +242,7 @@ export function onPtyExit(handler: (event: PtyExit) => void): Promise<UnlistenFn
 export interface PtyRunning {
   tabId: string;
   running: boolean;
+  shellInForeground: boolean;
 }
 
 /** Subscribe to foreground-process-group changes for any PTY: `running` is

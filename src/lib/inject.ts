@@ -14,6 +14,13 @@ export function softNewlineForKind(kind: TabKind): string {
   return SHELL_SOFT_NEWLINE;
 }
 
+/** A terminal tab can host an agent CLI the user launched by hand, where
+ *  Ctrl-V is Claude Code's clipboard paste: the shell's Ctrl-V + Ctrl-J must
+ *  only ever reach a shell. */
+export function shiftEnterSequence(kind: TabKind, shellInForeground: boolean): string {
+  return shellInForeground ? softNewlineForKind(kind) : AGENT_INSERT_NEWLINE;
+}
+
 /** Encode injectable text for writing straight into a tab's PTY without
  *  submitting it: every embedded newline becomes the tab's soft-newline so the
  *  whole block lands as one unsent draft the user reviews, then sends.

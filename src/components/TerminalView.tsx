@@ -20,7 +20,7 @@ import {
 } from "../lib/api.ipc";
 import { PTY_RESIZE_DEBOUNCE_MS, TERMINAL_SCROLLBACK } from "../lib/constants";
 import { fileDrag } from "../lib/fileDrag";
-import { softNewlineForKind } from "../lib/inject";
+import { shiftEnterSequence } from "../lib/inject";
 import type { AgentKind, TabStatus } from "../lib/tabs";
 import type { Project } from "../lib/types";
 import {
@@ -179,6 +179,7 @@ export function TerminalView({
     // the user never touched. Also cleared whenever a turn genuinely
     // resolves to "ready", so idle-time redraws after that don't re-arm it.
     let armed = true;
+    let shellInForeground = true;
 
     // The live bottom screen, not a rolling window of raw output bytes or the
     // user-controlled scrollback viewport:
@@ -325,7 +326,7 @@ export function TerminalView({
         event.preventDefault();
         armed = true;
         composing = true;
-        void writePty(tabId, softNewlineForKind(agentKind ?? "terminal"));
+        void writePty(tabId, shiftEnterSequence(agentKind ?? "terminal", shellInForeground));
         return false;
       }
       return true;
@@ -360,7 +361,9 @@ export function TerminalView({
 
     let unlistenRunning: UnlistenFn | undefined;
     void onPtyRunning((event) => {
-      if (!disposed && event.tabId === tabId) onRunningChange?.(tabId, event.running);
+      if (disposed || event.tabId !== tabId) return;
+      shellInForeground = event.shellInForeground;
+      onRunningChange?.(tabId, event.running);
     }).then((fn) => {
       if (disposed) fn();
       else unlistenRunning = fn;

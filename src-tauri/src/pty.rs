@@ -81,6 +81,23 @@ struct PtyExit {
 struct PtyRunning {
     tab_id: String,
     running: bool,
+    shell_in_foreground: bool,
+}
+
+const SHELL_NAMES: [&str; 6] = ["zsh", "bash", "sh", "dash", "ksh", "fish"];
+
+fn is_shell_name(name: &str) -> bool {
+    SHELL_NAMES.contains(&name.trim_start_matches('-'))
+}
+
+fn process_name(pid: libc::pid_t) -> Option<String> {
+    let mut buf = [0u8; 256];
+    // SAFETY: buf is valid for buf.len() bytes; proc_name writes at most that.
+    let len = unsafe { libc::proc_name(pid, buf.as_mut_ptr().cast(), buf.len() as u32) };
+    if len <= 0 {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&buf[..len as usize]).into_owned())
 }
 
 /// Resolve the user's login shell. `$SHELL` is unset for apps launched from
@@ -211,7 +228,7 @@ pub fn pty_spawn(
         let app = app.clone();
         let poll_tab_id = tab_id.clone();
         thread::spawn(move || {
-            let mut last_running = false;
+            let mut last_pgrp = shell_pgid;
             while !stop.load(Ordering::Relaxed) {
                 thread::sleep(RUNNING_POLL_INTERVAL);
                 if stop.load(Ordering::Relaxed) {
@@ -224,17 +241,23 @@ pub fn pty_spawn(
                 if pgrp <= 0 {
                     break;
                 }
-                let running = pgrp != shell_pgid;
-                if running != last_running {
-                    last_running = running;
-                    let _ = app.emit(
-                        PTY_RUNNING_EVENT,
-                        PtyRunning {
-                            tab_id: poll_tab_id.clone(),
-                            running,
-                        },
-                    );
+                if pgrp == last_pgrp {
+                    continue;
                 }
+                last_pgrp = pgrp;
+                let running = pgrp != shell_pgid;
+                // A job-control program leads its own process group, so the
+                // group id is the foreground program's pid.
+                let shell_in_foreground =
+                    !running || process_name(pgrp).is_some_and(|name| is_shell_name(&name));
+                let _ = app.emit(
+                    PTY_RUNNING_EVENT,
+                    PtyRunning {
+                        tab_id: poll_tab_id.clone(),
+                        running,
+                        shell_in_foreground,
+                    },
+                );
             }
         });
     }
@@ -295,4 +318,29 @@ pub fn pty_kill(manager: State<PtyManager>, tab_id: String) -> Result<(), String
         .map_err(|e| e.to_string())?
         .remove(&tab_id);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_shells_including_login_shell_names() {
+        assert!(is_shell_name("zsh"));
+        assert!(is_shell_name("-zsh"));
+        assert!(is_shell_name("bash"));
+    }
+
+    #[test]
+    fn agent_clis_are_not_shells() {
+        for name in ["claude", "codex", "opencode", "node", "vim", "zshx"] {
+            assert!(!is_shell_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn reads_a_live_process_name_and_rejects_a_dead_pid() {
+        assert!(process_name(std::process::id() as libc::pid_t).is_some_and(|n| !n.is_empty()));
+        assert_eq!(process_name(i32::MAX), None);
+    }
 }
