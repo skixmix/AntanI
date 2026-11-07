@@ -31,13 +31,18 @@ it never merges, publishes a release, or touches the tap directly.
 
 4. **Bump in sync**, exact same version string in all three:
    - `src-tauri/tauri.conf.json` (`"version"` field)
-   - `src-tauri/Cargo.toml` (`version = "..."` under `[package]`)
+   - `src-tauri/Cargo.toml` (`version = "..."` under `[package]`; BSD sed
+     has no `0,/re/` address, so edit that line explicitly)
    - `package.json` (`"version"` field)
+
+   Then refresh `src-tauri/Cargo.lock` so its `antani` entry matches
+   (`cargo update -p antani --offline` in `src-tauri`). A lagging lockfile
+   breaks any `--locked` build.
 
 5. **Branch**: `git checkout -b release/vX.Y.Z` from `main`.
 
 6. **Commit**: `git commit -am "Release vX.Y.Z"` — only the three version
-   files, nothing else. If other unrelated changes are staged/dirty, stop
+   files plus `Cargo.lock`, nothing else. If other unrelated changes are staged/dirty, stop
    and ask first.
 
 7. **Push**: `git push -u origin release/vX.Y.Z`.
